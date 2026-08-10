@@ -19,7 +19,7 @@ struct AppConfig {
     // I'm on" case without needing a numeric IP/prefix editor UI yet.
     IPAddress subnetBase{192, 168, 1, 0};  // network address, e.g. 192.168.1.0
     uint8_t subnetPrefix = 24;             // CIDR prefix length (/24 = 254 hosts)
-    uint16_t portRangeStart = 1;
+    uint16_t portRangeStart = 1;           // used as-is by PortScanScreen; no range editor UI yet either
     uint16_t portRangeEnd = 1024;
     uint16_t scanTimeoutMs = 400;          // per-host ping / per-port connect timeout
     uint8_t maxConcurrentProbes = 4;       // rate limiting: parallel sockets in flight
@@ -31,7 +31,7 @@ struct AppConfig {
 
     // ui
     uint8_t uiSoundEnabled = 1;
-    uint8_t rainDensity = 6;               // active matrix-rain columns out of ~20 max on a 240px-wide screen
+    uint8_t rainDensity = 6;               // active matrix-rain columns out of 40 max (240px / 6px glyph width)
 
     void load();
     void save() const;

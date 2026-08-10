@@ -10,6 +10,7 @@
 #include "ui/screens/HostListScreen.h"
 #include "scan/OuiDatabase.h"
 #include "scan/ScanManager.h"
+#include "scan/PortScanManager.h"
 
 namespace {
 BootScreen g_bootScreen;
@@ -42,10 +43,12 @@ void setup() {
 
     g_ui.begin();
     g_scanManager.begin(g_ui.scanQueue());
+    g_portScanManager.begin(g_ui.scanQueue());
 
     g_portScanScreen.configure(
         "PORT SCANNER",
-        "TCP connect scan with banner grabbing lands in a later phase.");
+        "Port scanning targets one host at a time: run NETWORK SCAN, select a "
+        "discovered host, then press TAB on its detail screen.");
     g_credAuditScreen.configure(
         "CREDENTIAL AUDIT",
         "Default-credential checks are opt-in and gated behind an authorization disclaimer. Added last, on purpose.");

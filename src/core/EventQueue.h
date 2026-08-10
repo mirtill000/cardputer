@@ -32,9 +32,22 @@ enum class ScanEventType : uint8_t {
     LogLine,
 };
 
+// Which background scanner posted this notification. ScanManager
+// (subnet discovery) and PortScanManager (single-host port scan) share
+// one queue/one UiManager, and both reuse HostChanged+an index to mean
+// "a new result is available" — but the index means something different
+// in each case (a row in ScanManager's host table vs. a row in
+// PortScanManager's open-port list). Without this tag, a discovery scan
+// still running in the background while the user is looking at port-scan
+// results would have its events misread as port results (or vice versa)
+// by whichever screen is on top. Screens must check `source` before
+// acting on hostIndex.
+enum class ScanSource : uint8_t { Discovery, PortScan };
+
 struct ScanNotification {
+    ScanSource source = ScanSource::Discovery;
     ScanEventType type = ScanEventType::LogLine;
-    int16_t hostIndex = -1;   // index into ScanManager's host table, -1 if n/a
+    int16_t hostIndex = -1;   // meaning depends on `source` — see above
     uint8_t progressPct = 0;  // 0-100, valid for ScanProgress
     char text[40] = {0};      // short status text for LogLine, always NUL-terminated
 

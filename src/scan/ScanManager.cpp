@@ -77,6 +77,30 @@ bool ScanManager::getHost(size_t index, HostInfo& out) const {
     return ok;
 }
 
+void ScanManager::setHostPorts(const IPAddress& ip, const std::vector<PortResult>& ports) {
+    if (!_mutex || xSemaphoreTake(_mutex, pdMS_TO_TICKS(300)) != pdTRUE) return;
+
+    for (auto& h : _hosts) {
+        if (!(h.ip == ip)) continue;
+
+        h.ports = ports;
+        bool riskyPortOpen = false;
+        for (const auto& p : ports) {
+            if (p.port == 21 || p.port == 23 || p.port == 139 || p.port == 445 || p.port == 3389) {
+                riskyPortOpen = true;
+                break;
+            }
+        }
+        // Only ever escalate here, never downgrade: a Critical finding
+        // from the credential audit (phase 4) must not be silently
+        // reset back to Warning by a later re-scan of the ports.
+        if (riskyPortOpen && h.risk == RiskLevel::Ok) h.risk = RiskLevel::Warning;
+        break;
+    }
+
+    xSemaphoreGive(_mutex);
+}
+
 void ScanManager::workerTaskEntry(void* arg) {
     auto* args = static_cast<WorkerArgs*>(arg);
     ScanManager* self = args->self;
@@ -162,6 +186,7 @@ void ScanManager::onWorkerFinished() {
 void ScanManager::notify(ScanEventType type, int16_t hostIndex, uint8_t pct, const char* text) {
     if (!_outQueue) return;
     ScanNotification n;
+    n.source = ScanSource::Discovery;
     n.type = type;
     n.hostIndex = hostIndex;
     n.progressPct = pct;

@@ -34,6 +34,13 @@ public:
     size_t hostCount() const;
     bool getHost(size_t index, HostInfo& out) const;
 
+    // Called by PortScanManager once a per-host port scan finishes, to
+    // write the results back into the matching HostInfo row (matched by
+    // IP — port scans aren't indexed by the discovery table's row
+    // index) and bump risk if a legacy/management port known to bite
+    // people (FTP/Telnet/SMB/RDP) is open.
+    void setHostPorts(const IPAddress& ip, const std::vector<PortResult>& ports);
+
 private:
     struct WorkerArgs {
         ScanManager* self;

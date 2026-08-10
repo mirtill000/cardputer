@@ -169,6 +169,38 @@ il dizionario delle credenziali di default e l'export dei risultati.
   `include/secrets.h.example`). Anche questo è un taglio di scope
   deliberato — vedi Roadmap.
 
+### Fase 3: port scanner e banner grabbing
+
+- **Un host alla volta, non l'intera subnet**: il port scan si avvia
+  dalla schermata di dettaglio di un host (`Tab`), non dal menu
+  principale — scansionare la porta 1-1024 su centinaia di host
+  scoperti nella Fase 2 sarebbe proibitivo su un microcontrollore.
+  `PortScanManager` è un singleton (una sola scansione porte alla
+  volta) che riusa lo stesso pattern a pool di worker task di
+  `ScanManager`, partizionando però le *porte* di un host invece degli
+  *host* di una subnet.
+- **Stesso problema "queue POD-only", stessa soluzione, tag in più**:
+  `PortScanManager` posta sulla stessa coda condivisa di
+  `ScanManager` (quella di `UiManager`). Per evitare che un discovery
+  scan ancora in corso in background venga interpretato per errore
+  come un risultato di port scan (o viceversa) dalla schermata in primo
+  piano, `ScanNotification` porta ora anche un campo `source`
+  (`Discovery`/`PortScan`) — vedi il commento in `src/core/EventQueue.h`.
+- **Banner grabbing minimale, non un fingerprinting completo**:
+  `BannerGrabber` riusa la stessa connessione TCP appena aperta dal
+  port scan (nessun secondo connect). Per le porte HTTP-like manda un
+  `HEAD / HTTP/1.0` e legge la prima riga; per FTP/SSH/Telnet/SMTP/
+  POP3/IMAP semplicemente ascolta per una finestra breve (questi
+  servizi tipicamente si presentano da soli alla connessione); per
+  SMB (139/445) non tenta un vero handshake protocollare — la sola
+  evidenza "porta aperta" è già quello che alza il rischio dell'host a
+  `Warning` in `ScanManager::setHostPorts`.
+- **Risk level**: l'apertura di porte legacy/di gestione note per
+  essere spesso mal protette (FTP 21, Telnet 23, SMB 139/445, RDP 3389)
+  alza il rischio dell'host a `Warning` (giallo). `Critical` (rosso) è
+  riservato alla Fase 4, quando l'audit credenziali conferma un
+  problema reale — mai una semplice porta aperta.
+
 ## Compilare e flashare
 
 ```
@@ -206,8 +238,12 @@ originale.
       di dettaglio per host. Credenziali WiFi da `include/secrets.h`
       (niente UI di provisioning ancora); subnet/porte manuali rimandate
       alla Fase Settings.
-- [ ] **Fase 3 — Port scanner**: TCP connect-scan con range configurabile,
-      banner grabbing (HTTP/FTP/SSH/Telnet/SMB), rate limiting.
+- [x] **Fase 3 — Port scanner**: TCP connect-scan per singolo host
+      (avviato da `HOST DETAIL` con `Tab`), banner grabbing di base
+      (HTTP/FTP/SSH/Telnet/SMTP/POP3/IMAP; SMB solo come porta aperta),
+      rate limiting condiviso con la Fase 2 (`maxConcurrentProbes`/
+      `interProbeDelayMs`), risultati persistiti sull'host e riflessi
+      nel risk level.
 - [ ] **Fase 4 — Credential audit**: dizionario credenziali di default,
       opt-in esplicito dietro disclaimer, nessun brute-force generico.
 - [ ] **Fase 5 — Storage/export**: risultati su LittleFS/SD in JSON/CSV.
@@ -275,3 +311,30 @@ silenzio, che è il comportamento atteso in quel caso — non un crash).
    indietro (`Del`) mentre lo scan è ancora in corso, verificare che la
    lista host si aggiorni con eventuali nuovi host trovati nel
    frattempo (copre il path di `rebuildAliveList()` in `onEnter()`).
+
+## Test plan — Fase 3
+
+1. **Avvio da host detail**: su un host scoperto, `Tab` deve aprire
+   `PORT SCAN <ip>`; `Enter` avvia la scansione del range configurato
+   (default 1-1024) con percentuale e conteggio "open" che crescono
+   progressivamente.
+2. **Banner grabbing**: su un host con un webserver noto in ascolto,
+   verificare che la porta 80/8080 mostri `service=http` e un banner
+   (es. header `Server:` o la status line, tagliata a 20 caratteri
+   nella tabella — il dettaglio completo non è ancora esposto in UI in
+   questa fase). Su un servizio SSH noto, verificare che la 22 mostri
+   `service=ssh` con banner tipo `SSH-2.0-...`.
+3. **Nessuna interferenza tra scan**: avviare un `NETWORK SCAN` e,
+   mentre è ancora in corso, entrare nel dettaglio di un host già
+   trovato e avviare un port scan su di esso. Verificare che la lista
+   host (se si torna a `NETWORK SCAN`) e i risultati porte non si
+   corrompano a vicenda — è il caso che il campo `source` in
+   `ScanNotification` esiste per prevenire.
+4. **Persistenza + risk**: tornare su `HOST DETAIL` dopo un port scan
+   completato: la riga `PORTS:` deve riportare il conteggio corretto
+   senza dover rifare la scansione, e se una porta rischiosa
+   (21/23/139/445/3389) è risultata aperta il `RISK:` deve essere
+   passato a `warning` (giallo).
+5. **Rescan**: da `PORT SCAN` a scansione conclusa, `Enter` deve
+   rilanciarla da capo (utile se il target ha aperto/chiuso servizi nel
+   frattempo).

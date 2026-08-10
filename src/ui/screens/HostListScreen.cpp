@@ -29,6 +29,7 @@ void HostListScreen::rebuildAliveList() {
 }
 
 void HostListScreen::onScanEvent(const ScanNotification& ev) {
+    if (ev.source != ScanSource::Discovery) return;  // not ours — see ScanSource in EventQueue.h
     switch (ev.type) {
         case ScanEventType::ScanStarted:
             _aliveIndices.clear();

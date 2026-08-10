@@ -1,4 +1,5 @@
 #include "HostDetailScreen.h"
+#include "PortScanScreen.h"
 #include "../UiManager.h"
 #include "../Theme.h"
 #include "../../core/Types.h"
@@ -10,8 +11,16 @@ HostDetailScreen& HostDetailScreen::instance() {
 }
 
 void HostDetailScreen::onKey(UiKey key, char /*ch*/) {
-    if (key == UiKey::Back || key == UiKey::Enter) {
+    if (key == UiKey::Back) {
         g_ui.popScreen();
+        return;
+    }
+    if (key == UiKey::Tab) {
+        HostInfo h;
+        if (g_scanManager.getHost(_hostIndex, h)) {
+            PortScanScreen::instance().setTarget(h.ip);
+            g_ui.pushScreen(&PortScanScreen::instance());
+        }
     }
 }
 
@@ -55,10 +64,16 @@ void HostDetailScreen::draw(M5Canvas& gfx) {
 
     gfx.setTextColor(theme::GREY, theme::BG);
     gfx.setCursor(6, 86);
-    gfx.print("PORTS: not scanned yet");
+    if (h.ports.empty()) {
+        gfx.print("PORTS: not scanned (TAB)");
+    } else {
+        gfx.print("PORTS: ");
+        gfx.print((unsigned)h.ports.size());
+        gfx.print(" open (TAB to rescan)");
+    }
     gfx.setCursor(6, 96);
     gfx.print("CRED AUDIT: not run");
 
     gfx.setCursor(4, gfx.height() - 9);
-    gfx.print("ENTER/DEL:back");
+    gfx.print("TAB:ports  DEL:back");
 }
