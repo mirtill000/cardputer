@@ -235,6 +235,37 @@ il dizionario delle credenziali di default e l'export dei risultati.
   resta `Warning`, Fase 3), solo credenziali di default confermate
   funzionanti.
 
+### Fase 5: export risultati
+
+- **JSON/CSV scritti in streaming, non in RAM**: `ResultStore` scrive
+  riga per riga/campo per campo direttamente sul file, senza costruire
+  prima un documento in memoria — con centinaia di host possibili e
+  zero PSRAM, bufferizzare l'intero export in RAM prima di scriverlo
+  non è un rischio che valga la pena correre per quella che è
+  fondamentalmente una serializzazione lineare.
+- **Escaping vero, non cosmetico**: sia il JSON (`\"`, `\\`, caratteri
+  di controllo come `\u00XX`) sia il CSV (RFC 4180: virgolette
+  raddoppiate, campo tra virgolette se contiene virgola/virgolette/
+  a-capo) gestiscono correttamente stringhe che arrivano dalla rete
+  (hostname NBNS, vendor OUI, banner) e che quindi non sono sotto il
+  nostro controllo — senza escaping corretto, un hostname o banner con
+  un carattere `"` al suo interno romperebbe la struttura del file
+  esportato.
+- **Solo LittleFS di default, SD volutamente non cablata**: `ResultStore`
+  accetta un `fs::FS&` generico (funziona sia con `LittleFS` sia con
+  `SD`), ma questa firmware non chiama `SD.begin(pin)` con un pin di
+  default — non avendo la scheda fisica in mano, non è stato possibile
+  verificare quale GPIO sia collegato al chip-select dello slot
+  microSD del Cardputer ADV, e sbagliarlo avrebbe potuto significare un
+  fallimento silenzioso o peggio. Se conosci il pin CS corretto (dallo
+  schematico ufficiale M5Stack), `ResultStore::exportJson(SD, path)`
+  funziona identico a LittleFS una volta fatto `SD.begin(pin)` — è
+  scritto per questo, semplicemente non abbiamo cablato un default.
+- **Attivazione**: da `NETWORK SCAN`, tasto `E` (funziona anche mentre
+  uno scan è in corso — esporta lo stato attuale, non serve aspettare
+  il completamento). Scrive `/export.json` e `/export.csv` sulla radice
+  di LittleFS.
+
 ## Compilare e flashare
 
 ```
@@ -283,7 +314,11 @@ originale.
       esplicito dietro disclaimer (tasto `Y`, non `Enter`), attivabile
       da `HOST DETAIL` con `C`, mai persistito tra riavvii, nessun
       brute-force generico.
-- [ ] **Fase 5 — Storage/export**: risultati su LittleFS/SD in JSON/CSV.
+- [x] **Fase 5 — Storage/export**: risultati su LittleFS in JSON/CSV
+      (streaming, escaping RFC4180/JSON corretto), attivabile da
+      `NETWORK SCAN` con `E`. Export su SD supportato dal codice
+      (`ResultStore` è agnostico al filesystem) ma non cablato con un
+      pin CS di default — vedi sopra.
 
 ## Test plan — Fase 1
 
@@ -406,3 +441,67 @@ silenzio, che è il comportamento atteso in quel caso — non un crash).
    ricevere più di un tentativo alla volta per servizio (nessuna
    parallelizzazione qui, a differenza di Fase 2/3) — verificabile
    osservando i log del target se disponibili.
+
+## Test plan — Fase 5
+
+1. **Export base**: da `NETWORK SCAN` con almeno un host trovato,
+   premere `E`: deve comparire "exported /export.json + .csv" sopra la
+   riga dei tasti. Scaricare i due file (via `pio run -t downloadfs` o
+   estraendo la LittleFS image) e verificare che siano JSON/CSV validi
+   — un validatore JSON online o `python3 -m json.tool export.json`
+   bastano.
+2. **Contenuto coerente**: il numero di righe/oggetti esportati deve
+   corrispondere al numero di host "found" mostrato in `NETWORK SCAN`.
+   Un host con port scan e cred audit già eseguiti deve riportare le
+   stesse porte/esito visti in `HOST DETAIL`.
+3. **Escaping**: se possibile, forzare un banner con un carattere `"`
+   o `,` al suo interno (es. un webserver di test con un header
+   `Server` fatto apposta) e verificare che il JSON/CSV risultante
+   resti parsabile e non "rompa" la riga/struttura.
+4. **Export durante uno scan**: premere `E` mentre `NETWORK SCAN` è
+   ancora in corso — non deve bloccare l'avanzamento della scansione
+   né corrompere lo stato, e il file deve contenere gli host trovati
+   fino a quel momento.
+5. **Filesystem pieno**: scenario edge-case, difficile da testare
+   deliberatamente — se `LittleFS` è quasi piena (dopo il DB OUI da
+   ~1.2 MB restano ~2.6 MB), verificare che un export fallito riporti
+   "export FAILED" invece di un crash o un file troncato silenzioso.
+
+## Limiti noti e tagli di scope deliberati
+
+Riepilogo di quanto già menzionato nelle sezioni sopra, in un unico
+posto:
+
+- **Nessuna UI di provisioning WiFi**: credenziali da
+  `include/secrets.h`, non da tastiera. Motivo: la tastiera del
+  Cardputer già gestisce input di testo (vedi `UiKey::Char`), ma un
+  editor SSID/password completo (con caratteri speciali, `Fn`/`Opt` per
+  simboli) è un pezzo di UI a sé che non era il cuore di questo
+  incarico.
+- **Nessun editor manuale di subnet/range porte**: `NETWORK SCAN` usa
+  sempre la subnet DHCP-rilevata; `PORT SCAN` usa sempre
+  `g_config.portRangeStart/End` (default 1-1024), modificabili solo
+  ricompilando. Una schermata Settings con campi numerici editabili è
+  lavoro concreto ma rimandabile.
+- **mDNS non implementato**: hostname via NBNS soltanto (vedi Fase 2)
+  — dispositivi Apple/Android/Chromecast tipicamente non avranno un
+  hostname risolto.
+- **Euristica Telnet non affidabile al 100%**: il rilevamento di login
+  riuscito è basato su pattern-matching testuale, non su un parser di
+  protocollo — vedi Fase 4.
+- **SD card non cablata di default**: supportata dal codice
+  (`ResultStore` è filesystem-agnostico) ma senza un pin CS verificato
+  per il Cardputer ADV — vedi Fase 5.
+- **Sound design non implementato**: la spec lo marcava "opzionale";
+  non è stato aggiunto in nessuna fase. `M5Cardputer.Speaker` è
+  disponibile per chi voglia aggiungerlo.
+- **LoRa/GPS**: non presenti di serie sul Cardputer ADV (confermato
+  nella ricerca hardware iniziale di questo progetto), quindi non
+  affrontati.
+- **Nessuna build reale eseguita**: vale per ogni fase di questo
+  progetto — il sandbox di sviluppo non ha accesso al registry
+  PlatformIO. Tutto il codice è stato scritto con attenzione e, dove
+  possibile, la logica non hardware-dipendente è stata verificata con
+  test standalone su host (aritmetica IP, formato DB OUI, encoder
+  Base64) — ma **una build (`pio run`) e un test su hardware reale
+  restano il passo successivo prima di fidarsi di questo firmware.**

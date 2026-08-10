@@ -5,6 +5,8 @@
 #include "../../core/Types.h"
 #include "../../net/WifiManager.h"
 #include "../../scan/ScanManager.h"
+#include "../../storage/ResultStore.h"
+#include <LittleFS.h>
 
 HostListScreen& HostListScreen::instance() {
     static HostListScreen s;
@@ -34,6 +36,7 @@ void HostListScreen::onScanEvent(const ScanNotification& ev) {
         case ScanEventType::ScanStarted:
             _aliveIndices.clear();
             _selected = 0;
+            _statusLine = "";
             break;
         case ScanEventType::HostChanged:
             if (ev.hostIndex >= 0) _aliveIndices.push_back((size_t)ev.hostIndex);
@@ -50,7 +53,7 @@ void HostListScreen::update(uint32_t /*nowMs*/) {
     }
 }
 
-void HostListScreen::onKey(UiKey key, char /*ch*/) {
+void HostListScreen::onKey(UiKey key, char ch) {
     if (!g_wifi.isConnected()) {
         if (key == UiKey::Back) g_ui.popScreen();
         return;
@@ -83,6 +86,14 @@ void HostListScreen::onKey(UiKey key, char /*ch*/) {
             break;
         case UiKey::Back:
             g_ui.popScreen();
+            break;
+        case UiKey::Char:
+            if (ch == 'e' || ch == 'E') {
+                bool okJson = ResultStore::exportJson(LittleFS, "/export.json");
+                bool okCsv = ResultStore::exportCsv(LittleFS, "/export.csv");
+                _statusLine = (okJson && okCsv) ? "exported /export.json + .csv"
+                                                 : "export FAILED (see serial log)";
+            }
             break;
         default:
             break;
@@ -144,14 +155,23 @@ void HostListScreen::draw(M5Canvas& gfx) {
 
     drawTable(gfx, 28);
 
+    if (_statusLine.length()) {
+        gfx.fillRect(0, gfx.height() - 19, gfx.width(), 9, theme::BG);
+        gfx.setTextColor(theme::CYAN, theme::BG);
+        gfx.setCursor(4, gfx.height() - 19);
+        gfx.print(_statusLine);
+    }
+
     gfx.setTextColor(theme::GREY, theme::BG);
     gfx.setCursor(4, gfx.height() - 9);
-    gfx.print("ENTER:detail  DEL:back");
+    gfx.print("ENTER:detail  E:export  DEL:back");
 }
 
 void HostListScreen::drawTable(M5Canvas& gfx, int16_t top) {
     constexpr int16_t kRowH = 10;
-    constexpr int16_t kMaxRows = 10;  // (135 - top - footer) / kRowH, rounded down
+    // Leaves room below the table for the optional status line (shown
+    // after an export) plus the footer hint row — see draw().
+    constexpr int16_t kMaxRows = 8;
 
     size_t first = 0;
     if (_selected >= kMaxRows) first = _selected - kMaxRows + 1;

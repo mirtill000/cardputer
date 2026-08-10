@@ -26,4 +26,5 @@ private:
     std::vector<size_t> _aliveIndices;
     size_t _selected = 0;
     bool _wifiConnectTriggered = false;
+    String _statusLine;  // transient feedback, e.g. after an export (E)
 };

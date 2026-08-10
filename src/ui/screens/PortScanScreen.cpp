@@ -107,7 +107,7 @@ void PortScanScreen::draw(M5Canvas& gfx) {
 
 void PortScanScreen::drawResults(M5Canvas& gfx, int16_t top) {
     constexpr int16_t kRowH = 10;
-    constexpr int16_t kMaxRows = 10;
+    constexpr int16_t kMaxRows = 9;  // top(28) + 9*10 = 118, clears the footer hint row at height-9
 
     size_t count = g_portScanManager.resultCount();
     size_t first = 0;
