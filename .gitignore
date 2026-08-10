@@ -4,8 +4,11 @@
 .vscode/
 .DS_Store
 *.o
-*.bin
 *.elf
 *.map
+# NOT *.bin: that would also match data/oui/oui.bin, which is a real
+# committed LittleFS asset (see tools/gen_oui_db.py), not a build
+# artifact. Compiled firmware binaries live under .pio/, already ignored.
 build/
 .cache/
+include/secrets.h

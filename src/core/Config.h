@@ -10,6 +10,13 @@
 // hammering flash on every keypress.
 struct AppConfig {
     // net/scan
+    // NOTE: subnetBase/subnetPrefix are reserved for a future Settings
+    // screen that lets the user override the scan range manually. The
+    // discovery scan (ScanManager::startDiscoveryScan) currently always
+    // targets the live, DHCP-detected subnet of whatever network the
+    // device is connected to (see WifiManager::networkAddress()) rather
+    // than reading these — that covers the common "audit the network
+    // I'm on" case without needing a numeric IP/prefix editor UI yet.
     IPAddress subnetBase{192, 168, 1, 0};  // network address, e.g. 192.168.1.0
     uint8_t subnetPrefix = 24;             // CIDR prefix length (/24 = 254 hosts)
     uint16_t portRangeStart = 1;

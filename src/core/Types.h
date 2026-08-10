@@ -52,3 +52,5 @@ struct HostInfo {
         return memcmp(mac, other, 6) == 0;
     }
 };
+
+String macToString(const uint8_t mac[6]);

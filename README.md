@@ -120,6 +120,55 @@ Il partition table (`partitions.csv`) non riserva spazio per OTA
 reflash via USB-C), lasciando invece ~3.9 MB a LittleFS per il DB OUI,
 il dizionario delle credenziali di default e l'export dei risultati.
 
+### Fase 2: come funzionano discovery, ARP, OUI e hostname
+
+- **Ping sweep = TCP connect-scan**, non ICMP: vedi il commento in
+  `src/scan/PingSweep.cpp`. In breve, non esiste nell'ecosistema
+  Arduino-ESP32 un'API ICMP abbastanza stabile tra versioni da volerci
+  scommettere senza poterla compilare qui; un connect TCP breve su
+  poche porte comuni (80/443/22/445) usa `WiFiClient`, un'API
+  estremamente stabile, e come effetto collaterale fa comunque
+  risolvere l'ARP dell'host — che è l'altra cosa di cui lo sweep ha
+  bisogno.
+- **Lettura MAC via ARP cache** (`src/scan/ArpResolver.cpp`): passa da
+  `esp_netif_get_handle_from_ifkey("WIFI_STA_DEF")` (chiave stabile con
+  cui Arduino-ESP32 registra l'interfaccia STA in ESP-IDF) e poi
+  `etharp_find_addr()` di lwIP. È il file più sensibile alla versione
+  del framework in tutto il repo — isolato di proposito in un unico
+  punto.
+- **DB vendor OUI reale, non inventato**: `data/oui/oui.bin` è generato
+  da `tools/gen_oui_db.py` a partire da `tools/oui.csv` (35.084 record),
+  estratto con `tools/extract_ieee_oui.py` da uno snapshot reale del
+  registro IEEE MA-L (bundlato nel pacchetto PyPI `netaddr`, usato come
+  fonte perché `standards-oui.ieee.org` non era raggiungibile
+  dall'ambiente di sviluppo sandboxato). È uno snapshot puntuale e può
+  invecchiare: per aggiornarlo, `pip install --upgrade netaddr` poi
+  rilancia i due script (vedi i commenti in testa a ciascuno). Il
+  binario resta su LittleFS e viene interrogato con una binary search
+  via `seek()` diretta sul file, mai caricato in RAM.
+- **Hostname via NBNS, non mDNS** (`src/scan/HostnameResolver.cpp`):
+  `ESPmDNS` è pensata per pubblicizzare il nome di *questo* dispositivo
+  e fare browsing di servizi, non per interrogare l'IP di qualcun
+  altro — farlo richiederebbe costruire/parsare pacchetti mDNS raw a
+  mano, un pezzo di codice protocollare più grosso e rischioso di NBNS.
+  NBNS (UDP/137, query "Node Status") copre comunque una parte
+  concreta di una LAN casa/ufficio tipica (PC Windows, NAS/stampanti
+  con Samba). I dispositivi che parlano solo mDNS (la maggior parte di
+  telefoni, Mac, Chromecast) semplicemente non avranno un hostname in
+  questa fase — è un limite noto e accettato, non un bug.
+- **Range di scansione auto-rilevato**: `NETWORK SCAN` non chiede una
+  subnet manuale — calcola network/prefix dal DHCP lease corrente
+  (`WifiManager::networkAddress()`/`hostCount()`, con aritmetica IP
+  fatta apposta senza usare `(uint32_t)IPAddress` direttamente, vedi il
+  commento in `src/net/IpUtil.h` sul perché quel cast andrebbe
+  byte-swappato rispetto a quanto ci si aspetta). Un editor manuale
+  subnet/porte è rimandato alla Fase Settings futura — scelta di scope
+  deliberata, non dimenticanza.
+- **Credenziali WiFi**: non c'è ancora una UI di provisioning a
+  tastiera; vanno in `include/secrets.h` (gitignored, copia
+  `include/secrets.h.example`). Anche questo è un taglio di scope
+  deliberato — vedi Roadmap.
+
 ## Compilare e flashare
 
 ```
@@ -149,9 +198,14 @@ originale.
       con Matrix rain e boot log "in typing", menu principale navigabile
       da tastiera fisica (`;`/`.`/`,`/`/` come frecce, `Enter` conferma,
       `Del` torna indietro), schermate placeholder per i moduli futuri.
-- [ ] **Fase 2 — Network discovery**: ARP + ping sweep, risoluzione
-      hostname (mDNS), lookup vendor OUI offline, classificazione
-      euristica del device, dashboard host list.
+- [x] **Fase 2 — Network discovery**: subnet auto-rilevata dal DHCP
+      lease, ping sweep (TCP connect-scan) + lettura ARP cache, lookup
+      vendor OUI offline (DB reale IEEE, 35k record), risoluzione
+      hostname via NBNS (non mDNS, vedi sopra), classificazione
+      euristica del device, dashboard host list navigabile + schermata
+      di dettaglio per host. Credenziali WiFi da `include/secrets.h`
+      (niente UI di provisioning ancora); subnet/porte manuali rimandate
+      alla Fase Settings.
 - [ ] **Fase 3 — Port scanner**: TCP connect-scan con range configurabile,
       banner grabbing (HTTP/FTP/SSH/Telnet/SMB), rate limiting.
 - [ ] **Fase 4 — Credential audit**: dizionario credenziali di default,
@@ -180,3 +234,44 @@ Da verificare su hardware reale (non testabile in questo sandbox):
 5. **Persistenza config**: spegnere/riaccendere non deve alterare il
    comportamento in questa fase (la config NVS esiste ma non ha ancora
    uno screen Settings che la modifichi).
+
+## Test plan — Fase 2
+
+Prerequisiti: `include/secrets.h` compilato con credenziali WiFi valide;
+`pio run -t uploadfs` eseguito almeno una volta (altrimenti
+`data/oui/oui.bin` non è su LittleFS e ogni lookup vendor fallisce in
+silenzio, che è il comportamento atteso in quel caso — non un crash).
+
+1. **Boot + LittleFS**: nel log seriale, verificare l'assenza di
+   `OuiDatabase: could not open /oui.bin` e di `main: LittleFS mount
+   failed`. Se compare il primo, mancava l'`uploadfs`.
+2. **Connessione WiFi**: da `NETWORK SCAN`, deve apparire
+   "connecting to wifi..." e poi, entro qualche secondo, la schermata
+   con subnet/gateway rilevati. Se resta bloccato su "connecting", il
+   problema più probabile è `include/secrets.h` mancante/errato — il
+   `#warning` a compile-time lo segnala.
+3. **Avvio scan**: `Enter` su "ENTER: start scan" deve far comparire
+   la percentuale di avanzamento e host che appaiono progressivamente
+   nella tabella (non tutti insieme alla fine) — è la prova che i
+   worker task e le notifiche in coda funzionano, non solo il risultato
+   finale.
+4. **Correttezza discovery**: confrontare l'elenco IP trovati con
+   quello di un tool noto sullo stesso segmento (es. `arp -a` da un PC
+   sulla stessa rete, o l'app Fing). Router e almeno i dispositivi che
+   rispondono su 80/443/22/445 dovrebbero comparire; è normale che
+   dispositivi puramente mDNS-only compaiano come IP senza hostname.
+5. **Classificazione**: il gateway deve sempre risultare `ROUTER`
+   (classificazione via IP, non vendor). Aprire il dettaglio (`Enter`
+   su una riga) di un paio di host noti e verificare vendor/hostname
+   contro quanto sai davvero di quel dispositivo — la classificazione
+   per parola chiave sul vendor è volutamente approssimativa, un
+   risultato `UNKNOWN` non è un bug.
+6. **Concorrenza**: mentre lo scan è in corso, l'input a tastiera deve
+   restare fluido (menu/navigazione non deve bloccarsi) — se si blocca,
+   il task `scan` sta probabilmente monopolizzando qualcosa che non
+   dovrebbe (mutex tenuto troppo a lungo, `interProbeDelayMs` troppo
+   basso).
+7. **Rientro da dettaglio**: aprire il dettaglio di un host, tornare
+   indietro (`Del`) mentre lo scan è ancora in corso, verificare che la
+   lista host si aggiorni con eventuali nuovi host trovati nel
+   frattempo (copre il path di `rebuildAliveList()` in `onEnter()`).
