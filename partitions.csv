@@ -1,0 +1,16 @@
+# Custom partition table — ESP32-S3FN8 (8 MB flash, no PSRAM), no OTA.
+#
+# We don't implement OTA updates in this firmware (reflashing over USB-C
+# is the expected workflow for a pentesting tool you keep on a bench), so
+# the space that a dual-OTA scheme would reserve for a second app slot is
+# given to LittleFS instead. That's what stores the OUI vendor database,
+# the default-credentials dictionary and exported scan results (JSON/CSV),
+# all of which benefit far more from 3.9 MB of room than a second 4 MB app
+# slot nobody writes to would.
+#
+# Name,      Type, SubType,  Offset,   Size,     Flags
+nvs,         data, nvs,      0x9000,   0x5000,
+phy_init,    data, phy,      0xe000,   0x1000,
+factory,     app,  factory,  0x10000,  0x400000,
+littlefs,    data, littlefs, 0x410000, 0x3E0000,
+coredump,    data, coredump, 0x7F0000, 0x10000,
