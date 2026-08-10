@@ -1,11 +1,15 @@
 #include <M5Unified.h>
 #include <M5Cardputer.h>
+#include <LittleFS.h>
 
 #include "core/Config.h"
 #include "ui/UiManager.h"
 #include "ui/screens/BootScreen.h"
 #include "ui/screens/MainMenuScreen.h"
 #include "ui/screens/PlaceholderScreen.h"
+#include "ui/screens/HostListScreen.h"
+#include "scan/OuiDatabase.h"
+#include "scan/ScanManager.h"
 
 namespace {
 BootScreen g_bootScreen;
@@ -13,7 +17,6 @@ BootScreen g_bootScreen;
 // Placeholder targets for modules that land in later development
 // phases (see README.md roadmap). Swapping a MenuItem's target to a
 // real screen is the only change needed once a module ships.
-PlaceholderScreen g_netScanScreen;
 PlaceholderScreen g_portScanScreen;
 PlaceholderScreen g_credAuditScreen;
 PlaceholderScreen g_settingsScreen;
@@ -28,9 +31,18 @@ void setup() {
 
     g_config.load();
 
-    g_netScanScreen.configure(
-        "NETWORK SCAN",
-        "ARP + ping sweep host discovery lands in the next development phase. Menu wiring is ready.");
+    // true = format on mount failure. Only bites on a corrupt/never-
+    // initialized filesystem, which on this codebase only happens on a
+    // brand new board (or a partition-table change) — the OUI database
+    // upload (`pio run -t uploadfs`) is what actually populates it.
+    if (!LittleFS.begin(true)) {
+        log_e("main: LittleFS mount failed");
+    }
+    g_ouiDb.begin();
+
+    g_ui.begin();
+    g_scanManager.begin(g_ui.scanQueue());
+
     g_portScanScreen.configure(
         "PORT SCANNER",
         "TCP connect scan with banner grabbing lands in a later phase.");
@@ -41,19 +53,18 @@ void setup() {
         "SETTINGS",
         "Subnet / port range / rate-limit configuration arrives together with the scan modules that use it.");
 
-    g_menuItems[0] = {"NETWORK SCAN", &g_netScanScreen};
+    g_menuItems[0] = {"NETWORK SCAN", &HostListScreen::instance()};
     g_menuItems[1] = {"PORT SCANNER", &g_portScanScreen};
     g_menuItems[2] = {"CREDENTIAL AUDIT", &g_credAuditScreen};
     g_menuItems[3] = {"SETTINGS", &g_settingsScreen};
     MainMenuScreen::instance().configure(g_menuItems, 4);
 
-    g_ui.begin();
     g_ui.pushScreen(&g_bootScreen);
 }
 
 void loop() {
-    // All real work happens in the UI, input and (later) scan FreeRTOS
-    // tasks created in UiManager::begin(). The Arduino loopTask is left
-    // idle on purpose so it never competes with them for CPU time.
+    // All real work happens in the UI, input and scan FreeRTOS tasks
+    // created in setup()/UiManager::begin(). The Arduino loopTask is
+    // left idle on purpose so it never competes with them for CPU time.
     vTaskDelay(pdMS_TO_TICKS(1000));
 }
