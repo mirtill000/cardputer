@@ -1,7 +1,10 @@
 #include "HostDetailScreen.h"
 #include "PortScanScreen.h"
+#include "CredAuditScreen.h"
+#include "CredDisclaimerScreen.h"
 #include "../UiManager.h"
 #include "../Theme.h"
+#include "../../core/Config.h"
 #include "../../core/Types.h"
 #include "../../scan/ScanManager.h"
 
@@ -10,7 +13,7 @@ HostDetailScreen& HostDetailScreen::instance() {
     return s;
 }
 
-void HostDetailScreen::onKey(UiKey key, char /*ch*/) {
+void HostDetailScreen::onKey(UiKey key, char ch) {
     if (key == UiKey::Back) {
         g_ui.popScreen();
         return;
@@ -20,6 +23,19 @@ void HostDetailScreen::onKey(UiKey key, char /*ch*/) {
         if (g_scanManager.getHost(_hostIndex, h)) {
             PortScanScreen::instance().setTarget(h.ip);
             g_ui.pushScreen(&PortScanScreen::instance());
+        }
+        return;
+    }
+    if (key == UiKey::Char && (ch == 'c' || ch == 'C')) {
+        HostInfo h;
+        if (!g_scanManager.getHost(_hostIndex, h)) return;
+
+        if (g_config.credAuditEnabled) {
+            CredAuditScreen::instance().setTarget(h.ip);
+            g_ui.pushScreen(&CredAuditScreen::instance());
+        } else {
+            CredDisclaimerScreen::instance().setPendingTarget(h.ip);
+            g_ui.pushScreen(&CredDisclaimerScreen::instance());
         }
     }
 }
@@ -71,9 +87,19 @@ void HostDetailScreen::draw(M5Canvas& gfx) {
         gfx.print((unsigned)h.ports.size());
         gfx.print(" open (TAB to rescan)");
     }
-    gfx.setCursor(6, 96);
-    gfx.print("CRED AUDIT: not run");
 
+    gfx.setCursor(6, 96);
+    if (!h.credAudited) {
+        gfx.print("CRED AUDIT: not run (C)");
+    } else if (h.credVulnerable) {
+        gfx.setTextColor(theme::RED, theme::BG);
+        gfx.print("CRED AUDIT: VULNERABLE (C)");
+    } else {
+        gfx.setTextColor(theme::GREEN, theme::BG);
+        gfx.print("CRED AUDIT: clean (C)");
+    }
+
+    gfx.setTextColor(theme::GREY, theme::BG);
     gfx.setCursor(4, gfx.height() - 9);
-    gfx.print("TAB:ports  DEL:back");
+    gfx.print("TAB:ports  C:creds  DEL:back");
 }

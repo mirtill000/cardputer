@@ -11,6 +11,7 @@
 #include "scan/OuiDatabase.h"
 #include "scan/ScanManager.h"
 #include "scan/PortScanManager.h"
+#include "scan/CredAuditManager.h"
 
 namespace {
 BootScreen g_bootScreen;
@@ -44,6 +45,7 @@ void setup() {
     g_ui.begin();
     g_scanManager.begin(g_ui.scanQueue());
     g_portScanManager.begin(g_ui.scanQueue());
+    g_credAuditManager.begin(g_ui.scanQueue());
 
     g_portScanScreen.configure(
         "PORT SCANNER",
@@ -51,7 +53,10 @@ void setup() {
         "discovered host, then press TAB on its detail screen.");
     g_credAuditScreen.configure(
         "CREDENTIAL AUDIT",
-        "Default-credential checks are opt-in and gated behind an authorization disclaimer. Added last, on purpose.");
+        "Also per-host: from a host's detail screen, press C. You'll see an "
+        "authorization disclaimer the first time each session before anything "
+        "runs. Checks a small fixed dictionary of well-known default "
+        "credentials only - never a generic brute-force.");
     g_settingsScreen.configure(
         "SETTINGS",
         "Subnet / port range / rate-limit configuration arrives together with the scan modules that use it.");

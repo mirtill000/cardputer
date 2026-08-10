@@ -201,6 +201,40 @@ il dizionario delle credenziali di default e l'export dei risultati.
   riservato alla Fase 4, quando l'audit credenziali conferma un
   problema reale — mai una semplice porta aperta.
 
+### Fase 4: audit credenziali di default
+
+- **Dizionario fisso, non un brute-force**: `DefaultCredsDictionary`
+  contiene 8 coppie utente/password ben note e generiche (non
+  vendor-specific: niente wordlist enormi). `CredAuditManager` prova
+  esattamente queste, in quest'ordine, e nient'altro — è la differenza
+  tra "verifica di credenziali note" (quello che l'utente ha chiesto) e
+  un brute-forcer generico (esplicitamente escluso).
+- **Due protocolli, entrambi "chiari"**: HTTP Basic Auth (header
+  `Authorization: Basic <base64(user:pass)>`, verificato con un test
+  standalone contro vettori noti prima di essere usato — vedi git log)
+  e login Telnet banner-based. Il riconoscimento del successo su
+  Telnet è euristico (i prompt di login variano molto tra
+  implementazioni) e **deliberatamente sbilanciato verso i falsi
+  negativi**: un dispositivo vulnerabile non rilevato è un problema,
+  ma un allarme falso su un dispositivo che in realtà va bene mina la
+  fiducia in ogni altro risultato di questo strumento — vedi il
+  commento in `CredAuditManager::tryTelnetLogin`.
+- **Gate obbligatorio, non aggirabile con Enter**: `CredDisclaimerScreen`
+  richiede di premere `Y` (non `Enter`, che l'utente preme di riflesso
+  in ogni altra schermata) prima di abilitare il modulo per la sessione
+  corrente. `AppConfig::credAuditEnabled` non viene mai persistito in
+  NVS — ogni riavvio riparte da "non abilitato", anche se
+  `credAuditAcknowledged` (visto almeno una volta) sì.
+- **Per-host, da `HOST DETAIL` con `C`**: stessa logica di scope del
+  port scanner — un audit generico su tutta la subnet non ha senso
+  senza prima sapere quali porte sono aperte su ciascun host (il
+  controllo richiede una porta HTTP o Telnet già scoperta da un port
+  scan).
+- **Risk = Critical**: è l'unico finding di tutta l'app abbastanza
+  forte da giustificare il rosso — mai una singola porta aperta (quella
+  resta `Warning`, Fase 3), solo credenziali di default confermate
+  funzionanti.
+
 ## Compilare e flashare
 
 ```
@@ -244,8 +278,11 @@ originale.
       rate limiting condiviso con la Fase 2 (`maxConcurrentProbes`/
       `interProbeDelayMs`), risultati persistiti sull'host e riflessi
       nel risk level.
-- [ ] **Fase 4 — Credential audit**: dizionario credenziali di default,
-      opt-in esplicito dietro disclaimer, nessun brute-force generico.
+- [x] **Fase 4 — Credential audit**: dizionario fisso di 8 credenziali
+      di default note (HTTP Basic Auth + Telnet banner-based), opt-in
+      esplicito dietro disclaimer (tasto `Y`, non `Enter`), attivabile
+      da `HOST DETAIL` con `C`, mai persistito tra riavvii, nessun
+      brute-force generico.
 - [ ] **Fase 5 — Storage/export**: risultati su LittleFS/SD in JSON/CSV.
 
 ## Test plan — Fase 1
@@ -338,3 +375,34 @@ silenzio, che è il comportamento atteso in quel caso — non un crash).
 5. **Rescan**: da `PORT SCAN` a scansione conclusa, `Enter` deve
    rilanciarla da capo (utile se il target ha aperto/chiuso servizi nel
    frattempo).
+
+## Test plan — Fase 4
+
+**Da fare solo su dispositivi/reti di cui hai autorizzazione esplicita.**
+
+1. **Gate del disclaimer**: al primo `C` su un host, deve comparire
+   `AUTHORIZATION REQUIRED` con il testo del disclaimer. `Enter` non
+   deve fare nulla; solo `Y`/`y` deve procedere. `Del` deve annullare
+   e tornare a `HOST DETAIL` senza abilitare nulla.
+2. **Persistenza della sessione**: dopo aver accettato una volta,
+   aprire l'audit su un *altro* host con `C` non deve rimostrare il
+   disclaimer (stesso boot). Riavviare il dispositivo e ripetere: il
+   disclaimer deve ricomparire (conferma che `credAuditEnabled` non è
+   persistito).
+3. **Nessuna porta scansionata**: su un host senza port scan pregresso,
+   l'audit deve concludersi con "no checkable service" senza tentare
+   connessioni — verificare che non compaiano tentativi di login nei
+   log del dispositivo target (se disponibili).
+4. **Vero positivo controllato**: allestire un servizio HTTP con Basic
+   Auth su credenziali presenti nel dizionario (es. `admin`/`admin`) su
+   un dispositivo di test di tua proprietà, fare un port scan e poi
+   l'audit: deve risultare `VULNERABLE`, `RISK:` deve passare a
+   `critical` (rosso) sia in `HOST DETAIL` sia nella tabella di
+   `NETWORK SCAN`.
+5. **Vero negativo**: stesso servizio ma con credenziali diverse da
+   quelle del dizionario: l'audit deve concludersi "clean", senza falsi
+   allarmi.
+6. **Rate limiting**: durante l'audit, il dispositivo target non deve
+   ricevere più di un tentativo alla volta per servizio (nessuna
+   parallelizzazione qui, a differenza di Fase 2/3) — verificabile
+   osservando i log del target se disponibili.

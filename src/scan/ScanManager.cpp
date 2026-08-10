@@ -77,6 +77,35 @@ bool ScanManager::getHost(size_t index, HostInfo& out) const {
     return ok;
 }
 
+bool ScanManager::getHostByIp(const IPAddress& ip, HostInfo& out) const {
+    if (!_mutex || xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) != pdTRUE) return false;
+    bool found = false;
+    for (const auto& h : _hosts) {
+        if (h.ip == ip) {
+            out = h;
+            found = true;
+            break;
+        }
+    }
+    xSemaphoreGive(_mutex);
+    return found;
+}
+
+void ScanManager::setHostCredResult(const IPAddress& ip, bool vulnerable, const String& note) {
+    if (!_mutex || xSemaphoreTake(_mutex, pdMS_TO_TICKS(300)) != pdTRUE) return;
+
+    for (auto& h : _hosts) {
+        if (!(h.ip == ip)) continue;
+        h.credAudited = true;
+        h.credVulnerable = vulnerable;
+        h.credNote = note;
+        if (vulnerable) h.risk = RiskLevel::Critical;
+        break;
+    }
+
+    xSemaphoreGive(_mutex);
+}
+
 void ScanManager::setHostPorts(const IPAddress& ip, const std::vector<PortResult>& ports) {
     if (!_mutex || xSemaphoreTake(_mutex, pdMS_TO_TICKS(300)) != pdTRUE) return;
 

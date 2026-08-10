@@ -34,12 +34,23 @@ public:
     size_t hostCount() const;
     bool getHost(size_t index, HostInfo& out) const;
 
+    // Same as getHost(), but matched by IP instead of table index —
+    // for callers (PortScanManager, CredAuditManager) that only know
+    // which host they're working on by its address.
+    bool getHostByIp(const IPAddress& ip, HostInfo& out) const;
+
     // Called by PortScanManager once a per-host port scan finishes, to
     // write the results back into the matching HostInfo row (matched by
     // IP — port scans aren't indexed by the discovery table's row
     // index) and bump risk if a legacy/management port known to bite
     // people (FTP/Telnet/SMB/RDP) is open.
     void setHostPorts(const IPAddress& ip, const std::vector<PortResult>& ports);
+
+    // Called by CredAuditManager once a default-credentials check
+    // finishes. A confirmed hit always escalates risk to Critical —
+    // this is the one finding in the whole app strong enough to
+    // warrant that color, see README.
+    void setHostCredResult(const IPAddress& ip, bool vulnerable, const String& note);
 
 private:
     struct WorkerArgs {
