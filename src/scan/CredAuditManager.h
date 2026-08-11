@@ -2,24 +2,31 @@
 
 #include <IPAddress.h>
 #include <atomic>
+#include <vector>
 #include "../core/EventQueue.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 
-// Runs the default-credentials dictionary (DefaultCredsDictionary) against
-// one host's already-discovered open ports, in a single background task
-// — the dictionary is small (8 entries) and the checkable ports few, so
-// the worker-pool pattern ScanManager/PortScanManager use would be
-// pointless overhead here.
+// Real credential-attack tool: tries the built-in quick dictionary
+// (DefaultCredsDictionary, 8 well-known pairs) first, then every
+// username x password combination from the wordlists in
+// data/creds/{users,passwords}.txt against a host's already-discovered
+// HTTP, Telnet or FTP login — one attempt at a time, rate-limited via
+// AppConfig::interProbeDelayMs. This is NOT limited to "known defaults"
+// anymore; see CredDisclaimerScreen for the disclaimer text that
+// reflects that.
+//
+// Single background task, not a worker pool (unlike ScanManager/
+// PortScanManager): a real attack against one login should never be
+// parallelized — it would just make many simultaneous auth failures
+// against the same service, which is both easier for the target to
+// notice/rate-limit and not meaningfully faster given the rate limit
+// applies per attempt regardless.
 //
 // IMPORTANT — opt-in gate lives in the UI layer, not here: this class
-// does not check AppConfig::credAuditEnabled itself. It's a dumb
-// mechanism on purpose; the policy decision (has the user seen and
-// accepted the disclaimer this session?) belongs entirely to
-// CredDisclaimerScreen/CredAuditScreen, which are the only things
-// allowed to call startAudit(). Keeping that check in one place, in the
-// UI, means there's exactly one gate to audit for correctness rather
-// than one per call site.
+// does not check AppConfig::credAuditEnabled itself. See
+// CredDisclaimerScreen/CredAuditScreen, the only things allowed to
+// call startAudit().
 class CredAuditManager {
 public:
     void begin(QueueHandle_t outQueue);
@@ -28,17 +35,34 @@ public:
     bool isRunning() const { return _running; }
     IPAddress target() const { return _target; }
 
+    // Live progress, valid both while running and after completion.
+    uint32_t attemptCount() const { return _attempts; }
+    uint32_t successCount() const { return _successes; }
+
 private:
     static void taskEntry(void* arg);
     void run();
+    void ensureWordlistsLoaded();
     void notify(ScanEventType type, uint8_t pct = 0);
+    void logAttempt(const char* service, const String& user, const String& pass, bool success);
 
-    bool tryHttpBasicAuth(const IPAddress& ip, uint16_t port, String& userOut, String& passOut);
-    bool tryTelnetLogin(const IPAddress& ip, String& userOut, String& passOut);
+    // Tries every dictionary + wordlist combo against one service;
+    // returns true and fills outUser/outPass on the first hit.
+    bool attemptService(const char* serviceName, uint16_t port, String& outUser, String& outPass);
+
+    bool tryHttpBasicAuth(const IPAddress& ip, uint16_t port, const String& user, const String& pass);
+    bool tryTelnetLogin(const IPAddress& ip, const String& user, const String& pass);
+    bool tryFtpLogin(const IPAddress& ip, const String& user, const String& pass);
 
     QueueHandle_t _outQueue = nullptr;
     IPAddress _target;
     std::atomic<bool> _running{false};
+    std::atomic<uint32_t> _attempts{0};
+    std::atomic<uint32_t> _successes{0};
+
+    bool _wordlistsLoaded = false;
+    std::vector<String> _users;
+    std::vector<String> _passwords;
 };
 
 extern CredAuditManager g_credAuditManager;

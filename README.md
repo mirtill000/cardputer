@@ -9,11 +9,15 @@ fosforescente monospace su nero, accenti magenta/ciano. L'effetto
 > ⚠️ **Stato del progetto**: sviluppo incrementale in corso. Vedi
 > [Roadmap](#roadmap--stato-attuale) per cosa è implementato oggi.
 
-> ⚠️ **Uso legale**: questo firmware include (nelle fasi successive) un
-> modulo di audit delle credenziali di default. Va usato **solo** su reti
-> e dispositivi di tua proprietà o per cui hai autorizzazione esplicita
-> alla verifica di sicurezza. Scansionare reti altrui senza permesso è
-> illegale in quasi ogni giurisdizione.
+> ⚠️ **Uso legale**: questo firmware include un modulo di **attacco a
+> credenziali** (brute-force con wordlist su HTTP/Telnet/FTP, non più
+> solo una verifica di default noti — vedi Fase 4), dietro un gate
+> opt-in con disclaimer esplicito. Va usato **solo** su reti e
+> dispositivi di tua proprietà o per cui hai autorizzazione esplicita e
+> documentabile alla verifica di sicurezza. Attaccare dispositivi senza
+> permesso è illegale in quasi ogni giurisdizione. Il resto del
+> firmware (discovery, port scan) resta un tool di audit passivo/attivo
+> ma non distruttivo.
 
 ## Hardware target
 
@@ -253,39 +257,65 @@ sopra quello che vuole prima del proprio contenuto.
   riservato alla Fase 4, quando l'audit credenziali conferma un
   problema reale — mai una semplice porta aperta.
 
-### Fase 4: audit credenziali di default
+### Fase 4: audit credenziali → vero brute-force con wordlist
 
-- **Dizionario fisso, non un brute-force**: `DefaultCredsDictionary`
-  contiene 8 coppie utente/password ben note e generiche (non
-  vendor-specific: niente wordlist enormi). `CredAuditManager` prova
-  esattamente queste, in quest'ordine, e nient'altro — è la differenza
-  tra "verifica di credenziali note" (quello che l'utente ha chiesto) e
-  un brute-forcer generico (esplicitamente escluso).
-- **Due protocolli, entrambi "chiari"**: HTTP Basic Auth (header
-  `Authorization: Basic <base64(user:pass)>`, verificato con un test
-  standalone contro vettori noti prima di essere usato — vedi git log)
-  e login Telnet banner-based. Il riconoscimento del successo su
-  Telnet è euristico (i prompt di login variano molto tra
-  implementazioni) e **deliberatamente sbilanciato verso i falsi
-  negativi**: un dispositivo vulnerabile non rilevato è un problema,
-  ma un allarme falso su un dispositivo che in realtà va bene mina la
+> ⚠️ Questo modulo è cambiato natura durante lo sviluppo: nella sua
+> prima versione era "solo" una verifica di 8 credenziali di default
+> note, esplicitamente non un brute-force. **Ora, su richiesta esplicita
+> dell'utente, è un vero strumento di attacco a credenziali** con
+> wordlist personalizzabili. Resta dietro lo stesso gate opt-in/
+> disclaimer, rafforzato di conseguenza (vedi sotto).
+
+- **Dizionario rapido + wordlist completa**: `CredAuditManager` prova
+  prima le 8 coppie di `DefaultCredsDictionary` (hit rapidi sui casi
+  più comuni), poi — se non trova nulla — l'intero prodotto cartesiano
+  di `data/creds/users.txt` × `data/creds/passwords.txt` (caricati da
+  LittleFS via `WordlistLoader`, plain text, una voce per riga, righe
+  `#...` ignorate). Nessuna UI di upload file su dispositivo (niente
+  SD cablata, niente web server): per personalizzare le liste si edita
+  il file nel repo e si rilancia `pio run -t uploadfs`, stesso workflow
+  già usato per il DB OUI.
+- **Tre protocolli**: HTTP Basic Auth (header `Authorization: Basic
+  <base64(user:pass)>`, encoder verificato con un test standalone
+  contro vettori noti prima di essere usato — vedi git log), FTP
+  (`USER`/`PASS`, controllo sui codici di risposta RFC 959 — `230` =
+  login riuscito, `331` = utente ok serve password — protocollo
+  testuale con codici numerici ben definiti, quindi più affidabile
+  della euristica Telnet) e login Telnet banner-based, la cui
+  rilevazione del successo resta euristica (i prompt variano tra
+  implementazioni) e **deliberatamente sbilanciata verso i falsi
+  negativi**: un dispositivo vulnerabile non rilevato è un problema, ma
+  un allarme falso su un dispositivo che in realtà va bene mina la
   fiducia in ogni altro risultato di questo strumento — vedi il
-  commento in `CredAuditManager::tryTelnetLogin`.
-- **Gate obbligatorio, non aggirabile con Enter**: `CredDisclaimerScreen`
+  commento in `CredAuditManager::tryTelnetLogin`. **SSH non è
+  supportato**: implementare un client SSH (handshake, key exchange,
+  cifratura) da zero e senza poterlo testare su hardware reale non era
+  un rischio accettabile — vedi "Cosa non è stato implementato" sotto.
+- **Un tentativo alla volta, mai in parallelo**: a differenza di
+  discovery/port scan (worker pool), qui la concorrenza è
+  deliberatamente assente — un vero attacco a un login non va
+  parallelizzato, non è più veloce (il rate limit si applica per
+  tentativo comunque) ed è più facile da notare/bloccare per il target.
+  Rate limiting condiviso con le altre fasi (`interProbeDelayMs`).
+- **Log dei tentativi live**: ogni tentativo posta una notifica
+  (`user:pass OK/FAIL`, troncata per stare nel campo fisso a 40 byte di
+  `ScanNotification`) che `CredAuditScreen` mostra in una finestra
+  scorrevole stile terminale, insieme ai contatori tentativi/successi.
+- **Gate rafforzato, non aggirabile con Enter**: `CredDisclaimerScreen`
   richiede di premere `Y` (non `Enter`, che l'utente preme di riflesso
   in ogni altra schermata) prima di abilitare il modulo per la sessione
-  corrente. `AppConfig::credAuditEnabled` non viene mai persistito in
-  NVS — ogni riavvio riparte da "non abilitato", anche se
-  `credAuditAcknowledged` (visto almeno una volta) sì.
+  corrente. Il testo ora dichiara esplicitamente "this IS a real attack
+  tool now, not just a defaults check". `AppConfig::credAuditEnabled`
+  non viene mai persistito in NVS — ogni riavvio riparte da "non
+  abilitato", anche se `credAuditAcknowledged` (visto almeno una volta)
+  sì.
 - **Per-host, da `HOST DETAIL` con `C`**: stessa logica di scope del
-  port scanner — un audit generico su tutta la subnet non ha senso
-  senza prima sapere quali porte sono aperte su ciascun host (il
-  controllo richiede una porta HTTP o Telnet già scoperta da un port
-  scan).
+  port scanner — un attacco generico su tutta la subnet non ha senso
+  senza prima sapere quali porte sono aperte su ciascun host (serve una
+  porta HTTP/Telnet/FTP già scoperta da un port scan).
 - **Risk = Critical**: è l'unico finding di tutta l'app abbastanza
   forte da giustificare il rosso — mai una singola porta aperta (quella
-  resta `Warning`, Fase 3), solo credenziali di default confermate
-  funzionanti.
+  resta `Warning`, Fase 3), solo credenziali confermate funzionanti.
 
 ### Fase 5: export risultati
 
@@ -317,6 +347,68 @@ sopra quello che vuole prima del proprio contenuto.
   uno scan è in corso — esporta lo stato attuale, non serve aspettare
   il completamento). Scrive `/export.json` e `/export.csv` sulla radice
   di LittleFS.
+
+### Fase 6: restyle UI verso il mockup "NETRUNNER"
+
+Su richiesta dell'utente, che ha condiviso un mockup grafico in stile
+dashboard desktop (sidebar a icone, grafici a ciambella, radar
+animato). Prima di implementare, due chiarimenti necessari (vedi la
+conversazione): il mockup era pensato per lo schermo fisico 240×135 —
+non una dashboard web — e l'utente ha confermato esplicitamente di
+volere anche le funzionalità di attacco mostrate nel mockup
+(brute-force con wordlist, non solo verifica credenziali note).
+
+**Cosa è stato adattato:**
+
+- **Header condiviso con status bar**: `chrome::drawHeader()`
+  sostituisce l'header disegnato a mano in ogni singola schermata (~10
+  file), aggiungendo un indicatore WiFi + batteria (`M5.Power.
+  getBatteryLevel()`) sulla stessa riga del titolo — niente riga
+  verticale in più su uno schermo già stretto.
+- **Palette spostata verso ciano/magenta** come accento dominante
+  (bordi, header, selezioni), mantenendo il verde per gli stati "ok" —
+  la semantica rischio (verde/ambra/rosso) già costruita non è stata
+  toccata, solo l'uso cromatico per elementi non legati al rischio.
+- **SETTINGS reale**: prima un placeholder, ora un editor funzionante
+  (timeout, concorrenza, ritardo tra probe, range porte, auto-export)
+  che scrive `AppConfig` in RAM ad ogni modifica e lo persiste in NVS
+  una sola volta all'uscita (`</>` per regolare, `ENTER`/`DEL` per
+  salvare e uscire) — chiudendo un gap lasciato aperto fin dalla Fase 1.
+- **NETWORK SCAN / PORT MAPPING**: aggiunto tempo di scansione
+  (`mm:ss`) e riepilogo porte aperte in fondo schermo, sempre dati
+  reali già disponibili — mai inventati per assomigliare di più al
+  mockup.
+- **CREDENTIAL GUESS**: vedi Fase 4 sopra — upgrade reale, non solo
+  estetico.
+
+**Cosa NON è stato implementato, e perché:**
+
+- **Moduli exploit/RCE** (es. "Synology DSM RCE" nel mockup): scrivere
+  codice di exploitation funzionante per vulnerabilità specifiche è un
+  lavoro tecnico sostanzialmente diverso — e più rischioso — di uno
+  scanner/audit generico, soprattutto senza poterlo testare contro il
+  bersaglio reale in questo ambiente di sviluppo. Non implementato senza
+  un contesto di autorizzazione molto più specifico di quello disponibile
+  qui (un incarico di pentest concreto, con target e autorizzazione
+  documentata).
+- **Brute-force SSH**: implementare un client SSH da zero (handshake,
+  scambio chiavi, cifratura) è un pezzo di codice crittografico/
+  protocollare enormemente più grande e rischioso di quanto ragionevole
+  scrivere senza possibilità di test — un bug qui non fallisce in modo
+  ovvio, fallisce in modo silenziosamente insicuro. HTTP/Telnet/FTP
+  restano i tre servizi supportati.
+- **Rilevamento SMBv1 / enumerazione UPnP**: entrambi richiedono
+  implementare un parsing di protocollo aggiuntivo (negotiate-protocol
+  SMB, SSDP) non ancora scritto — funzionalità reale rimandabile, non
+  scartata per principio, semplicemente fuori dal perimetro di questa
+  passata.
+- **Radar animato, grafici a ciambella, dropdown**: elementi grafici
+  pensati per un display a colori ad alta risoluzione con mouse/touch;
+  su 240×135 con font 6×8 e sola tastiera non sono realisticamente
+  realizzabili in una forma che valga la spesa in complessità/rischio,
+  specialmente dopo aver appena rimosso l'effetto Matrix rain per
+  stabilizzare il boot (vedi sopra) — non sembrava il momento di
+  reintrodurre complessità di rendering non necessaria.
 
 ## Compilare e flashare
 
@@ -373,16 +465,25 @@ originale.
       rate limiting condiviso con la Fase 2 (`maxConcurrentProbes`/
       `interProbeDelayMs`), risultati persistiti sull'host e riflessi
       nel risk level.
-- [x] **Fase 4 — Credential audit**: dizionario fisso di 8 credenziali
-      di default note (HTTP Basic Auth + Telnet banner-based), opt-in
-      esplicito dietro disclaimer (tasto `Y`, non `Enter`), attivabile
-      da `HOST DETAIL` con `C`, mai persistito tra riavvii, nessun
-      brute-force generico.
+- [x] **Fase 4 — Credential audit → brute-force reale**: dizionario
+      rapido (8 coppie) + wordlist completa da LittleFS
+      (`data/creds/{users,passwords}.txt`), HTTP Basic Auth + FTP + Telnet
+      banner-based, log tentativi live, opt-in esplicito dietro
+      disclaimer rafforzato (tasto `Y`, non `Enter`), attivabile da
+      `HOST DETAIL` con `C`, mai persistito tra riavvii. Vedi sopra per
+      il perché del cambio di scope.
 - [x] **Fase 5 — Storage/export**: risultati su LittleFS in JSON/CSV
       (streaming, escaping RFC4180/JSON corretto), attivabile da
-      `NETWORK SCAN` con `E`. Export su SD supportato dal codice
+      `NETWORK SCAN` con `E` (e ora anche in automatico a fine scan se
+      abilitato da `SETTINGS`). Export su SD supportato dal codice
       (`ResultStore` è agnostico al filesystem) ma non cablato con un
       pin CS di default — vedi sopra.
+- [x] **Fase 6 — Restyle UI**: header condiviso con status bar wifi/
+      batteria, palette spostata verso ciano/magenta, `SETTINGS` reale
+      (prima placeholder), stat footer su `NETWORK SCAN`/`PORT MAPPING`.
+      Moduli exploit/RCE, brute-force SSH, rilevamento SMBv1/UPnP e
+      grafica avanzata (radar, grafici a ciambella) deliberatamente non
+      implementati — vedi sopra.
 
 ## Test plan — Fase 1
 
@@ -583,22 +684,65 @@ plan più sotto) — senza credenziali salvate, `NETWORK SCAN` mostra
    ~1.2 MB restano ~2.6 MB), verificare che un export fallito riporti
    "export FAILED" invece di un crash o un file troncato silenzioso.
 
+## Test plan — Fase 6 (restyle + credential audit reale)
+
+**Solo su dispositivi/reti di tua proprietà o con autorizzazione
+esplicita per le voci 4-6 (ora un vero strumento di attacco).**
+
+1. **Header condiviso**: su ogni schermata (menu, network scan, host
+   detail, port scan, cred audit, wifi setup, settings, placeholder),
+   verificare che compaia l'indicatore `W <batteria>%` in alto a destra
+   sulla stessa riga del titolo, colorato ciano se connesso WiFi,
+   grigio se no. Verificare che non si sovrapponga mai al titolo anche
+   con nomi di schermata lunghi.
+2. **Settings**: aprire `SETTINGS` dal menu, navigare i 6 campi con
+   `;`/`.`, modificare un valore con `,`/`/` (es. THREADS da 4 a 6),
+   uscire con `ENTER`. Rientrare in `SETTINGS`: il valore modificato
+   deve essere ancora 6. Riavviare il dispositivo: deve restare 6
+   (persistito in NVS). Verificare che `PORT START` non possa superare
+   `PORT END` e viceversa (clamp reciproco).
+3. **Auto-export**: abilitare `AUTO-EXPORT` (ON) in Settings, avviare
+   un `NETWORK SCAN`: al completamento deve comparire "auto-exported
+   /export.json + .csv" senza dover premere `E` manualmente.
+4. **Wordlist personalizzate**: modificare `data/creds/users.txt` o
+   `passwords.txt` (aggiungere una voce nota di un dispositivo di
+   test), `pio run -t uploadfs`, poi lanciare `CREDENTIAL AUDIT` su
+   quell'host — la nuova voce deve comparire nel log dei tentativi.
+5. **Log tentativi live**: durante un audit, verificare che la
+   finestra scorrevole mostri gli ultimi 5 tentativi (`user:pass
+   OK`/`FAIL`), che il contatore `attempts:`/`success:` cresca in
+   tempo reale, e che un `OK` sia evidenziato in rosso mentre i `FAIL`
+   restano grigi.
+6. **FTP**: su un servizio FTP di test con credenziali note presenti
+   nel dizionario/wordlist, verificare che l'audit lo rilevi come
+   `VULNERABLE` — copre il path RFC 959 (`USER`/`PASS`/codici `230`/
+   `331`) mai testato su un server reale finora.
+7. **Durata**: con le wordlist di default (14 utenti × 25 password =
+   350 combinazioni per servizio, dopo le 8 del dizionario rapido), un
+   audit senza esito su tre servizi può richiedere diversi minuti — è
+   atteso, non un blocco. `DEL` durante l'esecuzione torna a `HOST
+   DETAIL` senza fermare l'audit in background.
+
 ## Limiti noti e tagli di scope deliberati
 
 Riepilogo di quanto già menzionato nelle sezioni sopra, in un unico
 posto:
 
-- **Nessun editor manuale di subnet/range porte**: `NETWORK SCAN` usa
-  sempre la subnet DHCP-rilevata; `PORT SCAN` usa sempre
-  `g_config.portRangeStart/End` (default 1-1024), modificabili solo
-  ricompilando. Una schermata Settings con campi numerici editabili è
-  lavoro concreto ma rimandabile.
+- **Nessun editor manuale di subnet**: `NETWORK SCAN` usa sempre la
+  subnet DHCP-rilevata (non ha senso poterla cambiare finché non c'è
+  un modo di specificare un range arbitrario in modo sicuro). Il range
+  porte invece **è** ora editabile da `SETTINGS` (Fase 6).
 - **mDNS non implementato**: hostname via NBNS soltanto (vedi Fase 2)
   — dispositivi Apple/Android/Chromecast tipicamente non avranno un
   hostname risolto.
 - **Euristica Telnet non affidabile al 100%**: il rilevamento di login
   riuscito è basato su pattern-matching testuale, non su un parser di
-  protocollo — vedi Fase 4.
+  protocollo — vedi Fase 4. FTP invece usa i codici di risposta
+  numerici del protocollo (RFC 959), più affidabile.
+- **Moduli exploit/RCE, brute-force SSH, rilevamento SMBv1/UPnP,
+  grafica avanzata (radar/grafici a ciambella) non implementati** —
+  scelte deliberate motivate in dettaglio nella sezione "Fase 6"
+  sopra, non dimenticanze.
 - **SD card non cablata di default**: supportata dal codice
   (`ResultStore` è filesystem-agnostico) ma senza un pin CS verificato
   per il Cardputer ADV — vedi Fase 5.

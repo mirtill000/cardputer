@@ -4,6 +4,7 @@
 #include "CredDisclaimerScreen.h"
 #include "../UiManager.h"
 #include "../Theme.h"
+#include "../Chrome.h"
 #include "../../core/Config.h"
 #include "../../core/Types.h"
 #include "../../scan/ScanManager.h"
@@ -65,10 +66,7 @@ void HostDetailScreen::draw(M5Canvas& gfx) {
         return;
     }
 
-    gfx.setTextColor(theme::GREEN_BRIGHT, theme::BG);
-    gfx.setCursor(4, 4);
-    gfx.print(">> HOST DETAIL");
-    gfx.drawFastHLine(4, 15, gfx.width() - 8, theme::GREY);
+    chrome::drawHeader(gfx, "HOST DETAIL");
 
     row(gfx, 20, "IP:", h.ip.toString(), theme::GREEN);
     row(gfx, 30, "MAC:", h.macKnown ? macToString(h.mac) : String("unknown"), theme::GREEN);

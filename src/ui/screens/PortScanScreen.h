@@ -21,6 +21,7 @@ public:
 
 private:
     void drawResults(M5Canvas& gfx, int16_t top);
+    void drawTopPortsFooter(M5Canvas& gfx, size_t count);
     bool isForThisHost() const;
 
     IPAddress _target;

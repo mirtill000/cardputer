@@ -1,0 +1,17 @@
+# Generic, well-known default usernames — not vendor-specific, not
+# copied from any wordlist file. Edit this list and run
+# `pio run -t uploadfs` to customize. Lines starting with # are ignored.
+admin
+administrator
+root
+user
+guest
+support
+service
+operator
+manager
+supervisor
+test
+demo
+pi
+ubnt

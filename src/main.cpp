@@ -9,6 +9,7 @@
 #include "ui/screens/PlaceholderScreen.h"
 #include "ui/screens/HostListScreen.h"
 #include "ui/screens/WifiSetupScreen.h"
+#include "ui/screens/SettingsScreen.h"
 #include "scan/OuiDatabase.h"
 #include "scan/ScanManager.h"
 #include "scan/PortScanManager.h"
@@ -23,7 +24,6 @@ BootScreen g_bootScreen;
 // real screen is the only change needed once a module ships.
 PlaceholderScreen g_portScanScreen;
 PlaceholderScreen g_credAuditScreen;
-PlaceholderScreen g_settingsScreen;
 
 MenuItem g_menuItems[5];
 }  // namespace
@@ -52,17 +52,14 @@ void setup() {
         "CREDENTIAL AUDIT",
         "Also per-host: from a host's detail screen, press C. You'll see an "
         "authorization disclaimer the first time each session before anything "
-        "runs. Checks a small fixed dictionary of well-known default "
-        "credentials only - never a generic brute-force.");
-    g_settingsScreen.configure(
-        "SETTINGS",
-        "Subnet / port range / rate-limit configuration arrives together with the scan modules that use it.");
+        "runs - this is a real credential-attack tool (built-in defaults plus "
+        "your own wordlists), not just a known-defaults check.");
 
     g_menuItems[0] = {"WIFI SETUP", &WifiSetupScreen::instance()};
     g_menuItems[1] = {"NETWORK SCAN", &HostListScreen::instance()};
     g_menuItems[2] = {"PORT SCANNER", &g_portScanScreen};
     g_menuItems[3] = {"CREDENTIAL AUDIT", &g_credAuditScreen};
-    g_menuItems[4] = {"SETTINGS", &g_settingsScreen};
+    g_menuItems[4] = {"SETTINGS", &SettingsScreen::instance()};
     MainMenuScreen::instance().configure(g_menuItems, 5);
 
     // MainMenuScreen must already be configured by this point: once the

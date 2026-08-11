@@ -2,21 +2,31 @@
 
 #include "Screen.h"
 #include <IPAddress.h>
+#include <cstddef>
 
-// Per-host default-credentials check. Only reachable once
-// CredDisclaimerScreen has been accepted this session (see
-// HostDetailScreen / CredDisclaimerScreen) — this screen itself doesn't
-// re-check that, trusting the single gate upstream.
+// "CREDENTIAL GUESS": per-host credential attack, showing a live
+// scrolling log of attempts (like a terminal) plus attempt/success
+// counters while CredAuditManager runs in the background. Only
+// reachable once CredDisclaimerScreen has been accepted this session
+// (see HostDetailScreen / CredDisclaimerScreen) — this screen doesn't
+// re-check that itself, trusting the single gate upstream.
 class CredAuditScreen : public Screen {
 public:
     static CredAuditScreen& instance();
 
     void setTarget(const IPAddress& ip) { _target = ip; }
 
+    void onEnter() override;
     void onKey(UiKey key, char ch) override;
     void onScanEvent(const ScanNotification& ev) override;
     void draw(M5Canvas& gfx) override;
 
 private:
+    static constexpr uint8_t kLogLines = 5;
+
     IPAddress _target;
+    String _log[kLogLines];
+    uint8_t _logCount = 0;
+
+    void pushLog(const String& line);
 };

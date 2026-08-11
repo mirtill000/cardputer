@@ -1,6 +1,7 @@
 #include "MainMenuScreen.h"
 #include "../UiManager.h"
 #include "../Theme.h"
+#include "../Chrome.h"
 
 MainMenuScreen& MainMenuScreen::instance() {
     static MainMenuScreen s;
@@ -34,11 +35,8 @@ void MainMenuScreen::onKey(UiKey key, char /*ch*/) {
 }
 
 void MainMenuScreen::draw(M5Canvas& gfx) {
-    gfx.setTextSize(1);
-    gfx.setTextColor(theme::GREEN_BRIGHT, theme::BG);
-    gfx.setCursor(6, 4);
-    gfx.print(">> MAIN MENU");
-    gfx.drawFastHLine(4, 15, gfx.width() - 8, theme::GREY);
+    gfx.fillScreen(theme::BG);
+    chrome::drawHeader(gfx, "MAIN MENU");
 
     constexpr int16_t kRowH = 16;
     constexpr int16_t kTop = 22;
@@ -46,11 +44,14 @@ void MainMenuScreen::draw(M5Canvas& gfx) {
     for (uint8_t i = 0; i < _count; i++) {
         int16_t y = kTop + i * kRowH;
         bool sel = (i == _selected);
-        uint16_t rowBg = sel ? theme::GREEN_DIM : theme::BG;
-        gfx.fillRect(4, y, gfx.width() - 8, kRowH - 2, rowBg);
-        gfx.setTextColor(sel ? theme::GREEN_BRIGHT : theme::GREEN, rowBg);
+        uint16_t rowBg = sel ? theme::PANEL_BG : theme::BG;
+        gfx.drawRect(4, y, gfx.width() - 8, kRowH - 2, sel ? theme::CYAN : theme::GREY);
+        gfx.fillRect(5, y + 1, gfx.width() - 10, kRowH - 4, rowBg);
+
+        gfx.setTextColor(sel ? theme::MAGENTA : theme::GREY, rowBg);
         gfx.setCursor(10, y + 3);
         gfx.print(sel ? "> " : "  ");
+        gfx.setTextColor(sel ? theme::CYAN : theme::GREEN, rowBg);
         gfx.print(_items[i].label);
     }
 

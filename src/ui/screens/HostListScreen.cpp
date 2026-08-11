@@ -3,11 +3,14 @@
 #include "WifiSetupScreen.h"
 #include "../UiManager.h"
 #include "../Theme.h"
+#include "../Chrome.h"
+#include "../../core/Config.h"
 #include "../../core/Types.h"
 #include "../../net/WifiManager.h"
 #include "../../scan/ScanManager.h"
 #include "../../storage/ResultStore.h"
 #include <LittleFS.h>
+#include <cstdio>
 
 HostListScreen& HostListScreen::instance() {
     static HostListScreen s;
@@ -37,9 +40,19 @@ void HostListScreen::onScanEvent(const ScanNotification& ev) {
             _aliveIndices.clear();
             _selected = 0;
             _statusLine = "";
+            _scanStartMs = millis();
             break;
         case ScanEventType::HostChanged:
             if (ev.hostIndex >= 0) _aliveIndices.push_back((size_t)ev.hostIndex);
+            break;
+        case ScanEventType::ScanFinished:
+            _scanFinishMs = millis();
+            if (g_config.autoExportOnScanFinish) {
+                bool okJson = ResultStore::exportJson(LittleFS, "/export.json");
+                bool okCsv = ResultStore::exportCsv(LittleFS, "/export.csv");
+                _statusLine = (okJson && okCsv) ? "auto-exported /export.json + .csv"
+                                                 : "auto-export FAILED (see serial log)";
+            }
             break;
         default:
             break;
@@ -104,11 +117,7 @@ void HostListScreen::onKey(UiKey key, char ch) {
 
 void HostListScreen::draw(M5Canvas& gfx) {
     gfx.fillScreen(theme::BG);
-    gfx.setTextSize(1);
-    gfx.setTextColor(theme::GREEN_BRIGHT, theme::BG);
-    gfx.setCursor(4, 4);
-    gfx.print(">> NETWORK SCAN");
-    gfx.drawFastHLine(4, 15, gfx.width() - 8, theme::GREY);
+    chrome::drawHeader(gfx, "NETWORK SCAN");
 
     if (!g_wifi.isConnected()) {
         gfx.setTextColor(theme::CYAN, theme::BG);
@@ -154,14 +163,21 @@ void HostListScreen::draw(M5Canvas& gfx) {
         return;
     }
 
-    // Progress line (also shown once finished, pinned at 100%, until the
-    // next scan starts — harmless and reassures the user it's done).
+    // Progress + stats line (also shown once finished, pinned at the
+    // final values, until the next scan starts).
+    uint32_t elapsedMs = (running ? millis() : _scanFinishMs) - _scanStartMs;
+    uint32_t sec = elapsedMs / 1000;
+    char timeBuf[8];
+    snprintf(timeBuf, sizeof(timeBuf), "%02u:%02u", (unsigned)(sec / 60), (unsigned)(sec % 60));
+
     gfx.setTextColor(running ? theme::CYAN : theme::GREEN, theme::BG);
     gfx.setCursor(4, 18);
     gfx.print(running ? "scanning " : "done ");
     gfx.print(g_scanManager.progressPct());
-    gfx.print("%  found:");
+    gfx.print("% found:");
     gfx.print((unsigned)_aliveIndices.size());
+    gfx.print(" time:");
+    gfx.print(timeBuf);
 
     drawTable(gfx, 28);
 
@@ -194,10 +210,10 @@ void HostListScreen::drawTable(M5Canvas& gfx, int16_t top) {
 
         int16_t y = top + (int16_t)row * kRowH;
         bool sel = (i == _selected);
-        uint16_t rowBg = sel ? theme::GREEN_DIM : theme::BG;
+        uint16_t rowBg = sel ? theme::PANEL_BG : theme::BG;
         if (sel) gfx.fillRect(0, y, gfx.width(), kRowH, rowBg);
 
-        uint16_t color = sel ? theme::GREEN_BRIGHT : theme::riskColor(h.risk);
+        uint16_t color = sel ? theme::CYAN : theme::riskColor(h.risk);
         gfx.setTextColor(color, rowBg);
         gfx.setCursor(2, y + 1);
 

@@ -27,4 +27,6 @@ private:
     std::vector<size_t> _aliveIndices;
     size_t _selected = 0;
     String _statusLine;  // transient feedback, e.g. after an export (E)
+    uint32_t _scanStartMs = 0;
+    uint32_t _scanFinishMs = 0;  // valid once a scan has completed at least once
 };

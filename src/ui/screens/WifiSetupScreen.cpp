@@ -1,6 +1,7 @@
 #include "WifiSetupScreen.h"
 #include "../UiManager.h"
 #include "../Theme.h"
+#include "../Chrome.h"
 #include <algorithm>
 
 namespace {
@@ -158,10 +159,7 @@ void WifiSetupScreen::update(uint32_t nowMs) {
 
 void WifiSetupScreen::draw(M5Canvas& gfx) {
     gfx.fillScreen(theme::BG);
-    gfx.setTextColor(theme::GREEN_BRIGHT, theme::BG);
-    gfx.setCursor(4, 4);
-    gfx.print(">> WIFI SETUP");
-    gfx.drawFastHLine(4, 15, gfx.width() - 8, theme::GREY);
+    chrome::drawHeader(gfx, "WIFI SETUP");
 
     switch (_state) {
         case State::Idle: {

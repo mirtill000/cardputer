@@ -12,11 +12,11 @@ namespace {
 // whole firmware that a muscle-memory keypress must not be able to
 // clear by accident.
 const char* kDisclaimer =
-    "This checks a small, fixed dictionary of well-known default "
-    "credentials against this host's HTTP/Telnet login. Use this ONLY "
-    "on networks and devices you own or are explicitly authorized to "
-    "test. Scanning devices you don't have permission for is illegal "
-    "in most jurisdictions and this is not a generic brute-forcer.";
+    "Tries username/password combos (built-in defaults + your own "
+    "wordlists) against HTTP/Telnet/FTP login, rate-limited. This is a "
+    "real attack tool now, not just a defaults check. Use ONLY on "
+    "networks/devices you own or are explicitly authorized to test - "
+    "unauthorized use is illegal.";
 }  // namespace
 
 CredDisclaimerScreen& CredDisclaimerScreen::instance() {

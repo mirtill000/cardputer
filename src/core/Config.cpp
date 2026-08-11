@@ -22,6 +22,7 @@ void AppConfig::load() {
     scanTimeoutMs = prefs.getUShort("scanTimeout", scanTimeoutMs);
     maxConcurrentProbes = prefs.getUChar("maxProbes", maxConcurrentProbes);
     interProbeDelayMs = prefs.getUShort("probeDelay", interProbeDelayMs);
+    autoExportOnScanFinish = prefs.getBool("autoExport", autoExportOnScanFinish);
     credAuditAcknowledged = prefs.getBool("credAck", credAuditAcknowledged);
     // credAuditEnabled is intentionally NOT persisted: every boot starts
     // with the audit module off, even if it was acknowledged/used before.
@@ -41,6 +42,7 @@ void AppConfig::save() const {
     prefs.putUShort("scanTimeout", scanTimeoutMs);
     prefs.putUChar("maxProbes", maxConcurrentProbes);
     prefs.putUShort("probeDelay", interProbeDelayMs);
+    prefs.putBool("autoExport", autoExportOnScanFinish);
     prefs.putBool("credAck", credAuditAcknowledged);
     prefs.putUChar("sound", uiSoundEnabled);
 

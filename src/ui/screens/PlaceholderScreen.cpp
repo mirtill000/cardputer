@@ -2,6 +2,7 @@
 #include "../TextWrap.h"
 #include "../UiManager.h"
 #include "../Theme.h"
+#include "../Chrome.h"
 
 void PlaceholderScreen::configure(const char* title, const char* description) {
     _title = title;
@@ -16,13 +17,7 @@ void PlaceholderScreen::onKey(UiKey key, char /*ch*/) {
 
 void PlaceholderScreen::draw(M5Canvas& gfx) {
     gfx.fillScreen(theme::BG);
-
-    gfx.setTextSize(1);
-    gfx.setTextColor(theme::GREEN_BRIGHT, theme::BG);
-    gfx.setCursor(6, 4);
-    gfx.print(">> ");
-    gfx.print(_title);
-    gfx.drawFastHLine(4, 15, gfx.width() - 8, theme::GREY);
+    chrome::drawHeader(gfx, _title);
 
     gfx.setTextColor(theme::GREEN, theme::BG);
     drawWrapped(gfx, _description, 6, 26, 10, 37);

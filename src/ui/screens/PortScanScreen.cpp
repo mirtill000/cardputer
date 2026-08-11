@@ -1,6 +1,7 @@
 #include "PortScanScreen.h"
 #include "../UiManager.h"
 #include "../Theme.h"
+#include "../Chrome.h"
 #include "../../core/Config.h"
 #include "../../scan/PortScanManager.h"
 
@@ -61,26 +62,26 @@ void PortScanScreen::onKey(UiKey key, char /*ch*/) {
 
 void PortScanScreen::draw(M5Canvas& gfx) {
     gfx.fillScreen(theme::BG);
-    gfx.setTextSize(1);
-    gfx.setTextColor(theme::GREEN_BRIGHT, theme::BG);
-    gfx.setCursor(4, 4);
-    gfx.print(">> PORT SCAN ");
-    gfx.print(_target.toString());
-    gfx.drawFastHLine(4, 15, gfx.width() - 8, theme::GREY);
+    chrome::drawHeader(gfx, "PORT MAPPING");
 
     bool running = g_portScanManager.isRunning();
     bool relevant = isForThisHost();
 
+    gfx.setTextColor(theme::GREEN, theme::BG);
+    gfx.setCursor(6, 18);
+    gfx.print("target: ");
+    gfx.print(_target.toString());
+
     if (!relevant && !running) {
         gfx.setTextColor(theme::GREEN, theme::BG);
-        gfx.setCursor(6, 24);
+        gfx.setCursor(6, 30);
         gfx.print("range: ");
         gfx.print(g_config.portRangeStart);
         gfx.print("-");
         gfx.print(g_config.portRangeEnd);
 
         gfx.setTextColor(theme::MAGENTA, theme::BG);
-        gfx.setCursor(6, 40);
+        gfx.setCursor(6, 46);
         gfx.print("ENTER: start scan");
 
         gfx.setTextColor(theme::GREY, theme::BG);
@@ -92,13 +93,15 @@ void PortScanScreen::draw(M5Canvas& gfx) {
     size_t count = g_portScanManager.resultCount();
 
     gfx.setTextColor(running ? theme::CYAN : theme::GREEN, theme::BG);
-    gfx.setCursor(4, 18);
+    gfx.setCursor(4, 28);
     gfx.print(running ? "scanning " : "done ");
     gfx.print(g_portScanManager.progressPct());
-    gfx.print("%  open:");
+    gfx.print("% open:");
     gfx.print((unsigned)count);
 
-    drawResults(gfx, 28);
+    drawResults(gfx, 38);
+
+    drawTopPortsFooter(gfx, count);
 
     gfx.setTextColor(theme::GREY, theme::BG);
     gfx.setCursor(4, gfx.height() - 9);
@@ -107,7 +110,7 @@ void PortScanScreen::draw(M5Canvas& gfx) {
 
 void PortScanScreen::drawResults(M5Canvas& gfx, int16_t top) {
     constexpr int16_t kRowH = 10;
-    constexpr int16_t kMaxRows = 9;  // top(28) + 9*10 = 118, clears the footer hint row at height-9
+    constexpr int16_t kMaxRows = 7;  // leaves room for the "top ports" summary line above the footer
 
     size_t count = g_portScanManager.resultCount();
     size_t first = 0;
@@ -121,11 +124,11 @@ void PortScanScreen::drawResults(M5Canvas& gfx, int16_t top) {
 
         int16_t y = top + (int16_t)row * kRowH;
         bool sel = (i == _selected);
-        uint16_t rowBg = sel ? theme::GREEN_DIM : theme::BG;
+        uint16_t rowBg = sel ? theme::PANEL_BG : theme::BG;
         if (sel) gfx.fillRect(0, y, gfx.width(), kRowH, rowBg);
 
         bool risky = (r.port == 21 || r.port == 23 || r.port == 139 || r.port == 445 || r.port == 3389);
-        uint16_t color = sel ? theme::GREEN_BRIGHT : (risky ? theme::AMBER : theme::GREEN);
+        uint16_t color = sel ? theme::CYAN : (risky ? theme::AMBER : theme::GREEN);
         gfx.setTextColor(color, rowBg);
         gfx.setCursor(2, y + 1);
 
@@ -141,4 +144,25 @@ void PortScanScreen::drawResults(M5Canvas& gfx, int16_t top) {
         if (banner.length() > 20) banner = banner.substring(0, 20);
         gfx.print(banner);
     }
+}
+
+void PortScanScreen::drawTopPortsFooter(M5Canvas& gfx, size_t count) {
+    // "TOP OPEN PORTS: 22, 80, 443, ..." — only real, discovered data,
+    // truncated (never fabricated) if it would overflow the line.
+    String line = "OPEN PORTS: ";
+    PortResult r;
+    for (size_t i = 0; i < count; i++) {
+        if (!g_portScanManager.getResult(i, r)) continue;
+        String next = (i == 0) ? String(r.port) : ("," + String(r.port));
+        if (line.length() + next.length() > 38) {
+            line += "...";
+            break;
+        }
+        line += next;
+    }
+    if (count == 0) line += "-";
+
+    gfx.setTextColor(theme::GREY, theme::BG);
+    gfx.setCursor(4, gfx.height() - 19);
+    gfx.print(line);
 }
