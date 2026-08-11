@@ -31,5 +31,6 @@ private:
     String _log[kLogLines];
     uint8_t _logCount = 0;
     size_t _allowlistSelected = 0;
+    size_t _sightingsSelected = 0;
     String _newSsid;
 };

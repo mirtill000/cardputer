@@ -805,6 +805,64 @@ la 10 — non sono state richieste dall'utente e non sono state fatte).
   appena sincronizzata (uptime resta il fallback, come prima, se non c'è
   ancora sincronizzazione).
 
+### Fase 12: splash da mockup, audio, rinomina, scroll, screen timeout, detection
+
+Sette migliorie richieste in blocco dall'utente, indipendenti tra loro:
+
+- **Splash screen ridisegnata sul mockup allegato**: header decorativo
+  centrato `-( CARDPUTER ADV )-` (non più il `chrome::drawHeader`
+  condiviso — una splash non ha bisogno di icone wifi/batteria, e il
+  mockup non ha una linea divisoria lì), skyline arricchita (17 edifici
+  invece di 14, alcuni con una piccola antenna, colore graduato
+  ciano→magenta in base all'altezza — verificato con uno script Python
+  che i due colori estremi dell'interpolazione coincidano esattamente
+  con `theme::CYAN`/`theme::MAGENTA`), e una nuova griglia prospettica
+  stile synthwave sotto lo skyline (`chrome::drawPerspectiveGrid` —
+  linee orizzontali che si diradano scendendo + linee convergenti su un
+  punto di fuga centrale, pura geometria con `drawLine`/`drawFastHLine`,
+  nessuna proiezione 3D reale). Tolta la status bar (uptime/READY/IP) da
+  questa schermata per fare spazio alla griglia — quell'informazione
+  resta comunque visibile un attimo dopo, su `MAIN MENU`.
+- **Melodia di avvio**: nuovo modulo `ui/Sound.h/.cpp`
+  (`M5Cardputer.Speaker.tone()`), un breve arpeggio ascendente di 4 note
+  (sotto il secondo). Suona esattamente nel momento in cui il boot log
+  "in typing" lascia il posto alla vista brandizzata — "dopo il
+  loading" preso alla lettera. Gated da `AppConfig::uiSoundEnabled`,
+  campo dichiarato dalla Fase 1 ma mai letto da nessuno finora — ora
+  `SETTINGS` ha una riga `SOUND` reale per attivarlo/disattivarlo.
+- **Rinominata "WIFI SETUP" in "WIFI SCAN"**: solo l'etichetta nel menu
+  e l'header della schermata — nessuna rinomina di classi/file
+  (`WifiSetupScreen` resta tale internamente, per non innescare un
+  refactor a cascata su un cambio che è puramente di presentazione).
+- **Scroll su/giù nella lista reti di `WAR DRIVING`**: la tabella degli
+  AP visti (stato Idle) prima mostrava solo le prime 8 righe senza modo
+  di vedere oltre; ora Su/Giù scorrono la lista con lo stesso pattern
+  già usato altrove (`NETWORK SCAN`, `SCAN HISTORY` — finestra scorrevole
+  ancorata alla riga selezionata).
+- **Timeout schermo di 30 secondi, lavoro in background invariato**:
+  `UiManager` traccia l'ultimo evento tastiera; dopo 30s di inattività
+  abbassa la retroilluminazione (`M5Cardputer.Display.setBrightness()`,
+  12/255) invece di spegnere/oscurare il canvas — lo schermo resta
+  leggibile da vicino, solo più fioco, e nessuna schermata deve sapere
+  che sta succedendo. I manager in background (`ScanManager`,
+  `PortScanManager`, `CredAuditManager`, `WardrivingManager`) sono già
+  task FreeRTOS indipendenti dal task UI: continuano esattamente come
+  prima, il timeout non li tocca in alcun modo. Qualunque tasto
+  ripristina la luminosità piena.
+- **Rilevamento reti WiFi migliorato**: `WifiManager::beginScan()` ora
+  chiama `WiFi.scanNetworks()` con `show_hidden=true` (prima le reti che
+  non trasmettono l'SSID erano invisibili — silenziosamente scartate sia
+  dal picker di `WIFI SCAN` sia da `WardrivingManager`) e
+  `max_ms_per_chan=400` invece del default 300 (permanenza più lunga per
+  canale, scansione un po' più lenta ma più affidabile su AP con beacon
+  deboli/lenti). `WardrivingManager` ora logga anche le reti nascoste
+  (etichettate `<hidden>`, identificate dal BSSID) invece di scartarle —
+  non entrano mai in considerazione per la scoperta attiva anche se il
+  loro nome placeholder combaciasse per caso con una voce
+  dell'allowlist, dato che nessun utente può aver autorizzato
+  consapevolmente "la rete senza nome all'indirizzo X" scrivendone il
+  nome.
+
 ## Compilare e flashare
 
 ```
@@ -914,6 +972,15 @@ originale.
       rispetto alla richiesta originale) + orario reale via NTP pubblico,
       usato per timestampare la cronologia scan e sostituire l'uptime
       nelle status bar una volta sincronizzato.
+- [x] **Fase 12 — Splash da mockup, audio, rinomina, scroll, screen
+      timeout, detection**: sette migliorie indipendenti — splash
+      ridisegnata (skyline graduata + griglia prospettica), melodia di
+      avvio + beep su nuova rete aperta in war driving (`ui/Sound`,
+      finalmente collegato ad `AppConfig::uiSoundEnabled`), "WIFI SETUP"
+      → "WIFI SCAN", scroll sulla lista AP di `WAR DRIVING`, timeout
+      schermo 30s (dimming, non blocca nulla in background), rilevamento
+      WiFi più completo (SSID nascosti, dwell più lungo) — vedi sopra
+      per il dettaglio di ciascuna.
 
 ## Test plan — Fase 1
 
@@ -1331,11 +1398,43 @@ laboratorio isolato) — non in giro per strada con reti di sconosciuti.
    `WAR DRIVING`) siano leggibili senza sovrapporsi alla status bar in
    fondo.
 6. **NTP**: dopo la connessione WiFi, attendere qualche secondo e
-   controllare `WIFI SETUP` o la status bar di `MAIN MENU` — l'ora deve
+   controllare `WIFI SCAN` o la status bar di `MAIN MENU` — l'ora deve
    sostituire l'uptime una volta sincronizzata (formato `HH:MM:SS`,
    UTC — non l'ora locale). Fare un `NETWORK SCAN` dopo la
    sincronizzazione e verificare in `SCAN HISTORY` che compaia un orario
    reale invece di "latest" sulla riga più recente.
+
+## Test plan — Fase 12 (splash, audio, rinomina, scroll, timeout, detection)
+
+1. **Splash**: al boot, dopo il log "in typing", verificare l'header
+   `-( CARDPUTER ADV )-` centrato, lo skyline con più edifici e un
+   gradiente ciano→magenta visibile (edifici bassi più ciano, alti più
+   magenta, un paio con una piccola antenna), e sotto una griglia
+   prospettica magenta che si allarga verso il basso convergendo su un
+   punto centrale in alto — verificare che nulla si sovrapponga
+   (sottotitolo/skyline, griglia/versione, versione/prompt).
+2. **Audio boot**: nello stesso istante in cui appare la vista
+   brandizzata, deve sentirsi un breve arpeggio di 4 note ascendenti.
+   Con `SETTINGS` → `SOUND` impostato su `OFF`, il prossimo riavvio non
+   deve produrre alcun suono.
+3. **`WIFI SCAN`**: il menu principale e l'header della schermata
+   devono mostrare "WIFI SCAN", non più "WIFI SETUP".
+4. **Scroll war driving**: avviare `WAR DRIVING`, aspettare che vengano
+   trovati più di 8 AP (o restare in una zona con molte reti), tornare a
+   Idle e verificare che Su/Giù scorrano la tabella oltre le prime 8
+   righe, con la riga selezionata sempre visibile ed evidenziata.
+5. **Timeout schermo**: lasciare il device fermo per 30+ secondi su
+   qualunque schermata — la retroilluminazione deve abbassarsi
+   visibilmente (non spegnersi del tutto). Premere un tasto qualsiasi:
+   deve tornare subito a piena luminosità. Durante il dimming, avviare
+   prima un `NETWORK SCAN` o `WAR DRIVING`: deve continuare a
+   progredire normalmente (contatori/log che aggiornano) anche a schermo
+   fioco.
+6. **Reti nascoste**: se hai un access point che puoi configurare per
+   non trasmettere l'SSID, verificare che compaia in `WAR DRIVING` come
+   `<hidden>` (prima di questa fase non sarebbe comparso affatto) e che
+   NON venga mai considerato per la scoperta attiva anche se
+   "<hidden>" fosse per assurdo nella tua allowlist.
 
 ## Limiti noti e tagli di scope deliberati
 
@@ -1397,9 +1496,11 @@ posto:
   la tua password contiene un carattere che non riesci a digitare, è un
   limite della mappatura tastiera di M5Cardputer, non di questo codice
   (che si limita a inoltrare quello che la libreria gli consegna).
-- **Sound design non implementato**: la spec lo marcava "opzionale";
-  non è stato aggiunto in nessuna fase. `M5Cardputer.Speaker` è
-  disponibile per chi voglia aggiungerlo.
+- **Sound design minimo, non un tema audio completo** (Fase 12): solo
+  due suoni esistono — la melodia di boot e il beep su nuova rete
+  aperta in war driving — non un feedback sonoro per ogni azione
+  dell'interfaccia. `M5Cardputer.Speaker` resta disponibile per chi
+  voglia estenderlo.
 - **LoRa/GPS**: non presenti di serie sul Cardputer ADV (confermato
   nella ricerca hardware iniziale di questo progetto), quindi non
   affrontati.

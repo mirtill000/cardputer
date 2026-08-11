@@ -9,6 +9,17 @@ UiManager g_ui;
 namespace {
 constexpr TickType_t kFrameDelay = pdMS_TO_TICKS(33);  // ~30fps cap on the render loop
 constexpr UBaseType_t kScanQueueLen = 24;
+
+// Screen timeout: dim the backlight after this long with no key event,
+// restore full brightness on the next one. Deliberately dims rather
+// than blanking the canvas or touching _stack - the active screen keeps
+// drawing exactly as it would otherwise (so nothing has to change about
+// how any Screen subclass works), only the physical backlight level
+// changes. 12/255 is dim but not zero: a scan/war-driving session left
+// running unattended is still glanceable, not fully dark.
+constexpr uint32_t kIdleTimeoutMs = 30000;
+constexpr uint8_t kDimBrightness = 12;
+constexpr uint8_t kFullBrightness = 255;
 }  // namespace
 
 void UiManager::begin(Screen* initialScreen) {
@@ -35,6 +46,7 @@ void UiManager::begin(Screen* initialScreen) {
     _scanQueue = xQueueCreate(kScanQueueLen, sizeof(ScanNotification));
 
     _input.begin();
+    _lastInputMs = millis();
 
     // Push+activate the first screen here, synchronously, still on
     // whichever task called begin() (normally the Arduino setup() /
@@ -101,6 +113,16 @@ void UiManager::run() {
             top->update(millis());
             top->draw(_canvas);
         }
+
+        // Idle timeout dims the backlight - see kIdleTimeoutMs above.
+        // Toggled only on the edge (not every frame) since
+        // setBrightness() talks to the display over SPI and there's no
+        // reason to repeat that 30x/sec while nothing has changed.
+        bool idle = (millis() - _lastInputMs) > kIdleTimeoutMs;
+        if (idle != _dimmed) {
+            M5Cardputer.Display.setBrightness(idle ? kDimBrightness : kFullBrightness);
+            _dimmed = idle;
+        }
         // Explicit destination, not the 2-arg pushSprite(x,y): that
         // overload pushes to a "parent" LovyanGFX* the sprite has to
         // have been told about, and _canvas (a bare member, default-
@@ -115,5 +137,6 @@ void UiManager::run() {
 }
 
 void UiManager::handleKeyEvent(const UiKeyEvent& ev) {
+    _lastInputMs = millis();
     if (!_stack.empty()) _stack.back()->onKey(ev.key, ev.ch);
 }

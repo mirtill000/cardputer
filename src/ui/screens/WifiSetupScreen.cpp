@@ -195,7 +195,7 @@ void WifiSetupScreen::update(uint32_t nowMs) {
 
 void WifiSetupScreen::draw(M5Canvas& gfx) {
     gfx.fillScreen(theme::BG);
-    chrome::drawHeader(gfx, "WIFI SETUP");
+    chrome::drawHeader(gfx, "WIFI SCAN");
 
     switch (_state) {
         case State::Idle: {

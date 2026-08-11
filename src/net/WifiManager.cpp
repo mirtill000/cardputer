@@ -186,7 +186,22 @@ void WifiManager::beginScan() {
     // async=true: returns immediately with kScanRunning: the UI task
     // polls scanStatus() instead of blocking the render loop on a scan
     // that can take a couple of seconds.
-    WiFi.scanNetworks(/*async=*/true);
+    //
+    // show_hidden=true: networks that don't broadcast their SSID used
+    // to be silently invisible to this scan entirely (WiFi.SSID(i) came
+    // back "", and both callers of getScanResult() filtered blank SSIDs
+    // out) - real war-driving tools log these too, keyed by BSSID since
+    // that's all there is to identify them by. See WardrivingManager for
+    // where a blank SSID now gets displayed as "<hidden>" instead of
+    // being dropped.
+    //
+    // max_ms_per_chan=400 (default is 300): dwells longer per channel,
+    // giving weak/slow-beaconing APs more of a chance to be caught in a
+    // single sweep - trades a somewhat longer scan (a extra couple of
+    // seconds across the full 2.4GHz channel set) for fewer missed
+    // networks, which matters more for a tool whose job is finding
+    // networks than it does for the sub-second scans of most phone UIs.
+    WiFi.scanNetworks(/*async=*/true, /*show_hidden=*/true, /*passive=*/false, /*max_ms_per_chan=*/400);
 }
 
 int16_t WifiManager::scanStatus() const {

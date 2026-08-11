@@ -64,7 +64,7 @@ void setup() {
         "runs - this is a real credential-attack tool (built-in defaults plus "
         "your own wordlists), not just a known-defaults check.");
 
-    g_menuItems[0] = {"WIFI SETUP", &WifiSetupScreen::instance()};
+    g_menuItems[0] = {"WIFI SCAN", &WifiSetupScreen::instance()};
     g_menuItems[1] = {"NETWORK SCAN", &HostListScreen::instance()};
     g_menuItems[2] = {"PORT SCANNER", &g_portScanScreen};
     g_menuItems[3] = {"CREDENTIAL AUDIT", &g_credAuditScreen};
@@ -84,7 +84,7 @@ void setup() {
     g_credAuditManager.begin(g_ui.scanQueue());
     g_wardrivingManager.begin(g_ui.scanQueue());
 
-    // Non-blocking: if a network was saved from a previous WIFI SETUP
+    // Non-blocking: if a network was saved from a previous WIFI SCAN
     // run, this kicks the connection off immediately at boot instead of
     // waiting for the user to open NETWORK SCAN first. No-op if nothing
     // is saved yet (first boot, or after FORGET).

@@ -3,9 +3,7 @@
 #include "../UiManager.h"
 #include "../Theme.h"
 #include "../Chrome.h"
-#include "../../net/WifiManager.h"
-#include "../../net/TimeSync.h"
-#include <cstdio>
+#include "../Sound.h"
 #include <cstring>
 
 namespace {
@@ -22,11 +20,20 @@ constexpr uint32_t kLineIntervalMs = 220;
 constexpr uint32_t kTitleDelayMs = (uint32_t)kLineCount * kLineIntervalMs + 300;
 constexpr uint32_t kPromptDelayMs = kTitleDelayMs + 600;
 
-// Splash layout, once the boot log phase hands off to the branded view —
-// mirrors MainMenuScreen's skyline band and bottom status bar so the two
-// screens read as one dashboard rather than two different UIs stitched
-// together.
-constexpr int16_t kSkylineBaseline = 86;
+// Splash layout, once the boot log phase hands off to the branded view.
+// Redesigned to track the reference NETRUNNER mockup more closely:
+// bracketed header, skyline, a synthwave perspective grid floor, version
+// line, blinking prompt - no wifi/battery status or uptime/IP row here
+// anymore (that's what MAIN MENU's status bar is for, one screen later;
+// dropping it here freed the vertical room the grid floor needed).
+constexpr int16_t kHeaderY = 4;
+constexpr int16_t kTitleY = 18;
+constexpr int16_t kSubtitleY = 38;
+constexpr int16_t kSkylineBaseline = 80;
+constexpr int16_t kGridTop = 80;
+constexpr int16_t kGridBottom = 112;
+constexpr int16_t kVersionY = 116;
+constexpr int16_t kPromptY = 125;
 }  // namespace
 
 void BootScreen::onEnter() {
@@ -50,7 +57,16 @@ void BootScreen::update(uint32_t nowMs) {
     if (wantLines > kLineCount) wantLines = kLineCount;
     _linesShown = (uint8_t)wantLines;
 
-    if (!_titleShown && elapsed >= kTitleDelayMs) _titleShown = true;
+    if (!_titleShown && elapsed >= kTitleDelayMs) {
+        _titleShown = true;
+        // Plays exactly when the boot log hands off to the branded
+        // view - "after loading" as literally as this UI has a moment
+        // for. Brief (~0.5s) blocking call on the render task is
+        // acceptable here: nothing on screen animates yet at this exact
+        // instant (the blink prompt isn't shown until kPromptDelayMs,
+        // later still), so a one-time hitch here isn't visible as one.
+        sound::playBootJingle();
+    }
     if (_titleShown && elapsed >= kPromptDelayMs) _promptShown = true;
 }
 
@@ -70,73 +86,53 @@ void BootScreen::draw(M5Canvas& gfx) {
         return;
     }
 
-    chrome::drawHeader(gfx, "CARDPUTER ADV");
+    // Decorative bracketed header - deliberately not chrome::drawHeader:
+    // this is a splash, not a working screen, so there's no wifi/battery
+    // status worth showing yet, and the mockup's header has no divider
+    // line under it either.
+    {
+        const char* text = "-( CARDPUTER ADV )-";
+        int16_t w = (int16_t)strlen(text) * theme::GLYPH_W;
+        gfx.setTextColor(theme::CYAN, theme::BG);
+        gfx.setCursor((gfx.width() - w) / 2, kHeaderY);
+        gfx.print(text);
+    }
 
     gfx.setTextSize(2);
     gfx.setTextColor(theme::MAGENTA, theme::BG);
     const char* title = "NETRUNNER";
     int16_t w = (int16_t)strlen(title) * theme::GLYPH_W * 2;
-    gfx.setCursor((gfx.width() - w) / 2, 20);
+    gfx.setCursor((gfx.width() - w) / 2, kTitleY);
     gfx.print(title);
 
     gfx.setTextSize(1);
     gfx.setTextColor(theme::CYAN, theme::BG);
     const char* sub = "ADVANCED NETWORK TOOLKIT";
     int16_t w2 = (int16_t)strlen(sub) * theme::GLYPH_W;
-    gfx.setCursor((gfx.width() - w2) / 2, 40);
+    gfx.setCursor((gfx.width() - w2) / 2, kSubtitleY);
     gfx.print(sub);
+
+    chrome::drawSkyline(gfx, kSkylineBaseline);
+    chrome::drawPerspectiveGrid(gfx, kGridTop, kGridBottom, theme::MAGENTA);
 
     gfx.setTextColor(theme::GREY, theme::BG);
     const char* ver = "v1.0.0-ADV";
     int16_t w3 = (int16_t)strlen(ver) * theme::GLYPH_W;
-    gfx.setCursor((gfx.width() - w3) / 2, 50);
+    gfx.setCursor((gfx.width() - w3) / 2, kVersionY);
     gfx.print(ver);
-
-    chrome::drawSkyline(gfx, kSkylineBaseline);
 
     if (_promptShown) {
         const char* p = "[ PRESS ENTER ]";
         int16_t w4 = (int16_t)strlen(p) * theme::GLYPH_W;
         int16_t x = (gfx.width() - w4) / 2;
-        int16_t y = 98;
         // Always erase the cell first: draw() runs every frame, so a
         // toggling blink has to actively repaint the "off" state too, or
         // the last-drawn text just stays lit forever.
-        gfx.fillRect(x, y, w4, theme::GLYPH_H, theme::BG);
+        gfx.fillRect(x, kPromptY, w4, theme::GLYPH_H, theme::BG);
         if ((millis() / 500) % 2 == 0) {
             gfx.setTextColor(theme::MAGENTA, theme::BG);
-            gfx.setCursor(x, y);
+            gfx.setCursor(x, kPromptY);
             gfx.print(p);
         }
     }
-
-    // Bottom status bar — same layout as MainMenuScreen's, so the splash
-    // reads as the first frame of one continuous dashboard rather than a
-    // separate screen with its own conventions. Wall-clock (UTC) once
-    // NTP has synced, uptime otherwise - see net/TimeSync.h.
-    String leftStr = TimeSync::nowTimeString();
-    if (leftStr.isEmpty()) {
-        uint32_t upSec = millis() / 1000;
-        char upBuf[16];  // "HH:MM:SS" is 9 bytes, but hours isn't clamped - room for a much longer uptime
-        snprintf(upBuf, sizeof(upBuf), "%02u:%02u:%02u", (unsigned)(upSec / 3600), (unsigned)((upSec / 60) % 60),
-                 (unsigned)(upSec % 60));
-        leftStr = upBuf;
-    }
-
-    int16_t statusY = gfx.height() - 9;
-    gfx.setTextColor(theme::CYAN, theme::BG);
-    gfx.setCursor(4, statusY);
-    gfx.print(leftStr);
-
-    const char* boot = "SYSTEM READY";
-    int16_t bootX = (gfx.width() - (int16_t)strlen(boot) * theme::GLYPH_W) / 2;
-    gfx.setTextColor(theme::GREEN, theme::BG);
-    gfx.setCursor(bootX, statusY);
-    gfx.print(boot);
-
-    String ipStr = g_wifi.isConnected() ? g_wifi.localIP().toString() : String("no ip");
-    int16_t ipX = gfx.width() - (int16_t)ipStr.length() * theme::GLYPH_W - 4;
-    gfx.setTextColor(theme::CYAN, theme::BG);
-    gfx.setCursor(ipX, statusY);
-    gfx.print(ipStr);
 }

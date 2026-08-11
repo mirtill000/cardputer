@@ -48,6 +48,10 @@ void WardrivingScreen::onKey(UiKey key, char ch) {
                 g_wardrivingManager.start();
                 _logCount = 0;
                 _state = State::Running;
+            } else if (key == UiKey::Up) {
+                if (_sightingsSelected > 0) _sightingsSelected--;
+            } else if (key == UiKey::Down) {
+                if (_sightingsSelected + 1 < g_wardrivingManager.sightingCount()) _sightingsSelected++;
             } else if (key == UiKey::Char && (ch == 'a' || ch == 'A')) {
                 _allowlistSelected = 0;
                 _state = State::AllowlistView;
@@ -261,15 +265,23 @@ void WardrivingScreen::drawSightings(M5Canvas& gfx, int16_t top) {
 
     constexpr int16_t kRowH = 10;
     constexpr size_t kMaxRows = 8;
-    size_t shown = (count < kMaxRows) ? count : kMaxRows;
+
+    size_t first = 0;
+    if (_sightingsSelected >= kMaxRows) first = _sightingsSelected - kMaxRows + 1;
 
     WardrivingManager::ApSighting ap;
-    for (size_t row = 0; row < shown; row++) {
-        if (!g_wardrivingManager.getSighting(row, ap)) continue;
+    for (size_t row = 0; row < kMaxRows; row++) {
+        size_t i = first + row;
+        if (i >= count) break;
+        if (!g_wardrivingManager.getSighting(i, ap)) continue;
 
         int16_t y = top + 2 + (int16_t)row * kRowH;
-        uint16_t color = ap.discovered ? theme::MAGENTA : (ap.open ? theme::AMBER : theme::GREEN);
-        gfx.setTextColor(color, theme::BG);
+        bool sel = (i == _sightingsSelected);
+        uint16_t rowBg = sel ? theme::PANEL_BG : theme::BG;
+        if (sel) gfx.fillRect(0, y, gfx.width(), kRowH, rowBg);
+
+        uint16_t color = sel ? theme::CYAN : (ap.discovered ? theme::MAGENTA : (ap.open ? theme::AMBER : theme::GREEN));
+        gfx.setTextColor(color, rowBg);
         gfx.setCursor(6, y);
 
         String ssid = ap.ssid;

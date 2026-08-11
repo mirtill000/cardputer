@@ -50,6 +50,9 @@ void SettingsScreen::adjust(int direction) {
         case 5:  // auto-export toggle
             g_config.autoExportOnScanFinish = !g_config.autoExportOnScanFinish;
             break;
+        case 6:  // sound toggle - gates sound::playBootJingle()/playAlert()
+            g_config.uiSoundEnabled = g_config.uiSoundEnabled ? 0 : 1;
+            break;
         default:
             break;
     }
@@ -90,12 +93,13 @@ void SettingsScreen::draw(M5Canvas& gfx) {
     chrome::drawHeader(gfx, "SETTINGS");
 
     const char* labels[kFieldCount] = {
-        "TIMEOUT (ms)", "THREADS", "PROBE DELAY (ms)", "PORT START", "PORT END", "AUTO-EXPORT",
+        "TIMEOUT (ms)", "THREADS", "PROBE DELAY (ms)", "PORT START", "PORT END", "AUTO-EXPORT", "SOUND",
     };
     String values[kFieldCount] = {
         String(g_config.scanTimeoutMs),   String(g_config.maxConcurrentProbes),
         String(g_config.interProbeDelayMs), String(g_config.portRangeStart),
         String(g_config.portRangeEnd),    g_config.autoExportOnScanFinish ? String("ON") : String("OFF"),
+        g_config.uiSoundEnabled ? String("ON") : String("OFF"),
     };
 
     constexpr int16_t kRowH = 14;

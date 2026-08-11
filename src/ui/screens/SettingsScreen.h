@@ -18,6 +18,6 @@ public:
 private:
     void adjust(int direction);
 
-    static constexpr uint8_t kFieldCount = 6;
+    static constexpr uint8_t kFieldCount = 7;
     uint8_t _selected = 0;
 };

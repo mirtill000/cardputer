@@ -57,6 +57,16 @@ private:
     InputManager _input;
     std::vector<Screen*> _stack;
     QueueHandle_t _scanQueue = nullptr;
+
+    // Screen timeout: after kIdleTimeoutMs with no key event, the
+    // display dims (not blanks - see the .cpp) rather than doing
+    // anything to _stack/the active screen. Every background manager
+    // (ScanManager, PortScanManager, CredAuditManager, WardrivingManager)
+    // is its own independent FreeRTOS task with no dependency on the UI
+    // task or on screen state, so none of them notice or care that the
+    // display went dim - this is purely a backlight/battery concern.
+    uint32_t _lastInputMs = 0;
+    bool _dimmed = false;
 };
 
 extern UiManager g_ui;

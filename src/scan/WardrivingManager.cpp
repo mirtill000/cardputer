@@ -7,6 +7,7 @@
 #include "../net/WifiManager.h"
 #include "../storage/ResultStore.h"
 #include "../storage/SdCard.h"
+#include "../ui/Sound.h"
 #include <Preferences.h>
 #include <cstdio>
 
@@ -118,9 +119,20 @@ void WardrivingManager::runScanCycle() {
 
     for (int16_t i = 0; i < count; i++) {
         WifiManager::ScanResult r;
-        if (!g_wifi.getScanResult(i, r) || r.ssid.isEmpty() || r.bssid.isEmpty()) continue;
+        // bssid is the only thing that MUST be present - it's how a
+        // sighting is identified/deduped. ssid is allowed to be empty
+        // now (see WifiManager::beginScan's show_hidden=true): a
+        // network that doesn't broadcast its name used to be silently
+        // invisible here entirely, which real war-driving tools don't
+        // do - they log it too, keyed by BSSID, just without a name to
+        // show. isAllowlisted() below is deliberately never checked
+        // against a placeholder name for these - there's no way a user
+        // could have knowingly authorized "the specific unnamed network
+        // at BSSID X" by typing a name into the allowlist.
+        if (!g_wifi.getScanResult(i, r) || r.bssid.isEmpty()) continue;
+        bool isHidden = r.ssid.isEmpty();
 
-        bool allowlisted = isAllowlisted(r.ssid);
+        bool allowlisted = isHidden ? false : isAllowlisted(r.ssid);
         bool isNew = false;
         ApSighting rec;
 
@@ -138,7 +150,7 @@ void WardrivingManager::runScanCycle() {
                 existing->allowlisted = allowlisted;
                 rec = *existing;
             } else if (_sightings.size() < kMaxSightings) {
-                rec.ssid = r.ssid;
+                rec.ssid = isHidden ? String("<hidden>") : r.ssid;
                 rec.bssid = r.bssid;
                 rec.rssi = r.rssi;
                 rec.channel = r.channel;
@@ -159,7 +171,10 @@ void WardrivingManager::runScanCycle() {
 
         if (isNew) {
             logSighting(rec);
-            if (rec.open) _openCount++;
+            if (rec.open) {
+                _openCount++;
+                sound::playAlert();
+            }
             if (rec.open && rec.allowlisted && !rec.discovered && !haveToDiscover) {
                 toDiscover = rec;
                 haveToDiscover = true;

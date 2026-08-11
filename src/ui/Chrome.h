@@ -14,10 +14,20 @@ namespace chrome {
 void drawHeader(M5Canvas& gfx, const char* title);
 
 // Decorative "neon skyline" silhouette — a row of outline rects with
-// their bottom edge on baselineY, alternating cyan/magenta, plus a
-// horizontal rule at baselineY. Shared by MainMenuScreen (below its
-// header) and BootScreen (mid-splash) so the two screens draw the same
-// skyline art from one data table instead of two copies drifting apart.
+// their bottom edge on baselineY, color-graded cyan (short buildings) to
+// magenta (tall ones) with a couple of thin antenna spikes on the
+// tallest towers, plus a horizontal rule at baselineY. Only BootScreen
+// uses this now (MainMenuScreen's own copy was removed at the user's
+// request — see git history) but it's kept here rather than folded
+// into BootScreen.cpp since it's still "the shared decorative chrome"
+// conceptually, alongside drawPerspectiveGrid below.
 void drawSkyline(M5Canvas& gfx, int16_t baselineY);
+
+// Synthwave-style perspective grid floor: horizontal lines spaced with
+// a squared falloff (dense near the horizon at `top`, sparse near
+// `bottom`) and a fan of lines converging on a single vanishing point
+// at the horizon's center — a cheap approximation of a 3D perspective
+// grid using only drawLine()/drawFastHLine(), no real projection math.
+void drawPerspectiveGrid(M5Canvas& gfx, int16_t top, int16_t bottom, uint16_t color);
 
 }  // namespace chrome
