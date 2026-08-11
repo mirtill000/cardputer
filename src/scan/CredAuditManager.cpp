@@ -84,7 +84,7 @@ void CredAuditManager::run() {
     bool found = g_scanManager.getHostByIp(_target, h);
 
     bool vulnerable = false;
-    String note = "no checkable service (run a port scan first - needs an open http, telnet or ftp port)";
+    String note = "no checkable service (run a port scan first - needs an open http, telnet, ftp, pop3, imap or smtp port)";
     String hitUser, hitPass, hitService;
     uint16_t hitPort = 0;
 
@@ -96,6 +96,9 @@ void CredAuditManager::run() {
             if (p.service == "http") service = "http";
             else if (p.service == "telnet") service = "telnet";
             else if (p.service == "ftp") service = "ftp";
+            else if (p.service == "pop3") service = "pop3";
+            else if (p.service == "imap") service = "imap";
+            else if (p.service == "smtp") service = "smtp";
             if (!service) continue;
 
             triedAny = true;
@@ -132,6 +135,12 @@ bool CredAuditManager::attemptService(const char* serviceName, uint16_t port, St
             ok = tryHttpBasicAuth(_target, port, user, pass);
         } else if (strcmp(serviceName, "telnet") == 0) {
             ok = tryTelnetLogin(_target, user, pass);
+        } else if (strcmp(serviceName, "pop3") == 0) {
+            ok = tryPop3Login(_target, user, pass);
+        } else if (strcmp(serviceName, "imap") == 0) {
+            ok = tryImapLogin(_target, user, pass);
+        } else if (strcmp(serviceName, "smtp") == 0) {
+            ok = trySmtpLogin(_target, user, pass);
         } else {
             ok = tryFtpLogin(_target, user, pass);
         }
@@ -245,6 +254,88 @@ bool CredAuditManager::tryFtpLogin(const IPAddress& ip, const String& user, cons
     client.stop();
 
     return resp.startsWith("230");  // RFC 959: 230 = user logged in, proceed
+}
+
+bool CredAuditManager::tryPop3Login(const IPAddress& ip, const String& user, const String& pass) {
+    WiFiClient client;
+    if (!client.connect(ip, 110, g_config.scanTimeoutMs)) return false;
+
+    readLine(client, g_config.scanTimeoutMs);  // "+OK ..." greeting
+
+    client.print("USER ");
+    client.print(user);
+    client.print("\r\n");
+    String resp = readLine(client, g_config.scanTimeoutMs);
+    if (!resp.startsWith("+OK")) {
+        client.stop();  // user rejected outright, same short-circuit as FTP
+        return false;
+    }
+
+    client.print("PASS ");
+    client.print(pass);
+    client.print("\r\n");
+    resp = readLine(client, g_config.scanTimeoutMs);
+    client.stop();
+
+    return resp.startsWith("+OK");  // RFC 1939: +OK = authenticated, -ERR = rejected
+}
+
+bool CredAuditManager::tryImapLogin(const IPAddress& ip, const String& user, const String& pass) {
+    WiFiClient client;
+    if (!client.connect(ip, 143, g_config.scanTimeoutMs)) return false;
+
+    readLine(client, g_config.scanTimeoutMs);  // "* OK ..." greeting
+
+    // Tagged command/response, RFC 3501 — "a1" is an arbitrary tag this
+    // client picks and the server echoes back on its final status line;
+    // no need to escape user/pass here since the wordlist entries are
+    // plain untrusted-but-not-adversarial strings this same device also
+    // controls, not attacker-supplied IMAP protocol input.
+    client.print("a1 LOGIN \"");
+    client.print(user);
+    client.print("\" \"");
+    client.print(pass);
+    client.print("\"\r\n");
+
+    String resp = readLine(client, g_config.scanTimeoutMs);
+    client.stop();
+
+    return resp.startsWith("a1 OK");  // "a1 NO"/"a1 BAD" = rejected
+}
+
+bool CredAuditManager::trySmtpLogin(const IPAddress& ip, const String& user, const String& pass) {
+    WiFiClient client;
+    if (!client.connect(ip, 25, g_config.scanTimeoutMs)) return false;
+
+    readLine(client, g_config.scanTimeoutMs);  // "220 ..." greeting
+
+    client.print("EHLO scan\r\n");
+    // EHLO's response is multi-line ("250-..." then a final "250 ...");
+    // drain the whole thing on a time window rather than counting lines,
+    // same "grab whatever arrives" approach as Telnet's readChunk.
+    readChunk(client, 300);
+
+    client.print("AUTH LOGIN\r\n");
+    String resp = readLine(client, g_config.scanTimeoutMs);
+    if (!resp.startsWith("334")) {
+        client.stop();  // server doesn't support AUTH LOGIN at all
+        return false;
+    }
+
+    client.print(b64::encode(user));
+    client.print("\r\n");
+    resp = readLine(client, g_config.scanTimeoutMs);
+    if (!resp.startsWith("334")) {
+        client.stop();
+        return false;
+    }
+
+    client.print(b64::encode(pass));
+    client.print("\r\n");
+    resp = readLine(client, g_config.scanTimeoutMs);
+    client.stop();
+
+    return resp.startsWith("235");  // RFC 4954: 235 = authenticated, 535 = rejected
 }
 
 void CredAuditManager::logAttempt(const char* service, const String& user, const String& pass, bool success) {

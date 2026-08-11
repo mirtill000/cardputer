@@ -53,6 +53,20 @@ private:
     bool tryHttpBasicAuth(const IPAddress& ip, uint16_t port, const String& user, const String& pass);
     bool tryTelnetLogin(const IPAddress& ip, const String& user, const String& pass);
     bool tryFtpLogin(const IPAddress& ip, const String& user, const String& pass);
+    // Added alongside the "offensive tools" batch — three more textual,
+    // RFC-response-code protocols in the same spirit as tryFtpLogin
+    // (deterministic status codes, not heuristic prompt-scraping like
+    // Telnet). SSH deliberately NOT added here or anywhere in this
+    // class: a real SSH login needs a full client-side handshake (key
+    // exchange, host-key handling, symmetric cipher negotiation) — a
+    // hand-rolled implementation of that, never tested against real
+    // hardware, is a correctness AND security risk this project isn't
+    // taking on. If SSH credential guessing is wanted later, the right
+    // path is a verified third-party ESP32 SSH client library as a real
+    // lib_deps dependency, not primitives built from scratch here.
+    bool tryPop3Login(const IPAddress& ip, const String& user, const String& pass);
+    bool tryImapLogin(const IPAddress& ip, const String& user, const String& pass);
+    bool trySmtpLogin(const IPAddress& ip, const String& user, const String& pass);
 
     QueueHandle_t _outQueue = nullptr;
     IPAddress _target;

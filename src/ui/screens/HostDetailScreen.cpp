@@ -2,6 +2,9 @@
 #include "PortScanScreen.h"
 #include "CredAuditScreen.h"
 #include "CredDisclaimerScreen.h"
+#include "HttpBruteScreen.h"
+#include "MitmScreen.h"
+#include "OffensiveDisclaimerScreen.h"
 #include "../UiManager.h"
 #include "../Theme.h"
 #include "../Chrome.h"
@@ -38,6 +41,31 @@ void HostDetailScreen::onKey(UiKey key, char ch) {
         } else {
             CredDisclaimerScreen::instance().setPendingTarget(h.ip);
             g_ui.pushScreen(&CredDisclaimerScreen::instance());
+        }
+        return;
+    }
+    if (key == UiKey::Char && (ch == 'h' || ch == 'H')) {
+        HostInfo h;
+        if (!g_scanManager.getHost(_hostIndex, h)) return;
+        for (const auto& p : h.ports) {
+            if (p.service == "http") {
+                HttpBruteScreen::instance().setTarget(h.ip, p.port);
+                g_ui.pushScreen(&HttpBruteScreen::instance());
+                break;
+            }
+        }
+        return;
+    }
+    if (key == UiKey::Char && (ch == 'm' || ch == 'M')) {
+        HostInfo h;
+        if (!g_scanManager.getHost(_hostIndex, h)) return;
+
+        MitmScreen::instance().setTarget(h.ip);
+        if (g_config.offensiveEnabled) {
+            g_ui.pushScreen(&MitmScreen::instance());
+        } else {
+            OffensiveDisclaimerScreen::instance().setPendingTargetScreen(&MitmScreen::instance());
+            g_ui.pushScreen(&OffensiveDisclaimerScreen::instance());
         }
     }
 }
@@ -154,6 +182,17 @@ void HostDetailScreen::draw(M5Canvas& gfx) {
     }
 
     drawRadar(gfx, h);
+
+    bool hasHttp = false;
+    for (const auto& p : h.ports) {
+        if (p.service == "http") {
+            hasHttp = true;
+            break;
+        }
+    }
+    gfx.setTextColor(theme::AMBER, theme::BG);
+    gfx.setCursor(6, 116);
+    gfx.print(hasHttp ? "H:http-brute  M:mitm-audit" : "M:mitm-audit");
 
     gfx.setTextColor(theme::GREY, theme::BG);
     gfx.setCursor(4, gfx.height() - 9);

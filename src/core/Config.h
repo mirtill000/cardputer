@@ -28,6 +28,17 @@ struct AppConfig {
     bool credAuditAcknowledged = false;    // user has seen & accepted the disclaimer once
     bool credAuditEnabled = false;         // must be explicitly toggled on per session
 
+    // "offensive" tools (ARP spoof, deauth, evil twin) — same session-only
+    // pattern as credAuditEnabled, but a single shared gate for all three:
+    // they're all active, third-party-affecting techniques (unlike
+    // credential audit, which only ever touches services already
+    // discovered on a host) so the bar to unlock any of them is the same
+    // strengthened disclaimer (typed confirmation, not just "Y") — see
+    // OffensiveDisclaimerScreen. Never persisted, same reasoning as
+    // credAuditEnabled: every boot starts back at "not enabled".
+    bool offensiveAcknowledged = false;
+    bool offensiveEnabled = false;
+
     // ui
     uint8_t uiSoundEnabled = 1;
 

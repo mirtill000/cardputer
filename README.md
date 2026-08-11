@@ -9,15 +9,22 @@ fosforescente monospace su nero, accenti magenta/ciano. L'effetto
 > ⚠️ **Stato del progetto**: sviluppo incrementale in corso. Vedi
 > [Roadmap](#roadmap--stato-attuale) per cosa è implementato oggi.
 
-> ⚠️ **Uso legale**: questo firmware include un modulo di **attacco a
-> credenziali** (brute-force con wordlist su HTTP/Telnet/FTP, non più
-> solo una verifica di default noti — vedi Fase 4), dietro un gate
-> opt-in con disclaimer esplicito. Va usato **solo** su reti e
-> dispositivi di tua proprietà o per cui hai autorizzazione esplicita e
-> documentabile alla verifica di sicurezza. Attaccare dispositivi senza
-> permesso è illegale in quasi ogni giurisdizione. Il resto del
-> firmware (discovery, port scan) resta un tool di audit passivo/attivo
-> ma non distruttivo.
+> ⚠️ **Uso legale**: questo firmware include moduli di **attacco a
+> credenziali** (brute-force con wordlist su HTTP/Telnet/FTP/POP3/IMAP/
+> SMTP, non più solo una verifica di default noti — vedi Fase 4 e Fase
+> 16) e, dalla Fase 16, strumenti che **agiscono attivamente su
+> dispositivi di terze parti**: ARP spoofing/MITM, deauthenticazione
+> WiFi, un access point che imita una rete reale. Tutti dietro un gate
+> opt-in con disclaimer esplicito — quelli della Fase 16 dietro un gate
+> rafforzato (va scritta per intero la parola AUTHORIZED). Va usato
+> **solo** su reti e dispositivi di tua proprietà o per cui hai
+> autorizzazione esplicita e documentabile alla verifica di sicurezza.
+> Attaccare dispositivi senza permesso è illegale in quasi ogni
+> giurisdizione, e intercettare il traffico di altri utenti su una rete
+> — anche una di cui sei amministratore — può implicare leggi sulle
+> intercettazioni separate dalla sola autorizzazione del proprietario
+> della rete. Il resto del firmware (discovery, port scan) resta un
+> tool di audit passivo/attivo ma non distruttivo.
 
 ## Hardware target
 
@@ -1030,6 +1037,125 @@ in cui finisce l'ultima nota. Portato a 1700ms per lasciare un piccolo
 respiro di silenzio dopo la musica prima che il prompt inizi a
 lampeggiare.
 
+### Fase 16: strumenti offensive per reti locali
+
+> ⚠️ **Cambio di categoria, non solo di scope**: tutto quello che questo
+> firmware aveva fatto fino alla Fase 15 — anche l'audit credenziali
+> "vero" della Fase 4 — agiva solo su servizi/host già scoperti dallo
+> stesso device che li scopre. Gli otto strumenti di questa fase sono
+> diversi nella sostanza: **agiscono su dispositivi di terze parti**
+> (avvelenamento ARP, deauth, un access point che imita una rete reale),
+> non solo su "quello che questo device stesso trova". Restano dietro lo
+> stesso principio guida di tutto il progetto — solo su reti/dispositivi
+> di tua proprietà o per cui hai autorizzazione esplicita — ma dietro un
+> gate ancora più severo (`OffensiveDisclaimerScreen`: bisogna scrivere
+> per intero la parola AUTHORIZED, non basta premere un tasto), condiviso
+> dai tre strumenti realmente attivi (MITM/ARP spoof, deauth, evil twin).
+> Vedi "Limiti noti" per il riepilogo dei tagli di scope deliberati che
+> tengono ciascuno di questi il più contenuto possibile.
+
+- **ARP spoofing / MITM controllato** (`scan/ArpSpoofManager`,
+  schermata `MITM AUDIT` da `HOST DETAIL` con `M`): avvelena la cache
+  ARP di **un solo host esplicito** (mai l'intera subnet), spacciandosi
+  per il gateway, per un tempo limitato (max 10 minuti) con ripristino
+  automatico garantito all'uscita. **Deliberatamente monodirezionale e
+  senza alcun relay/forwarding**: non avvelena mai la cache del gateway
+  sul target, e non inoltra da nessuna parte il traffico che intercetta
+  — relayare correttamente pacchetti IP arbitrari (riscrivere la
+  destinazione L2 di ogni frame catturato e reiniettarlo senza mai
+  duplicarlo, perderlo o corromperlo) è un problema di sistema enorme e
+  facile da sbagliare, e sbagliarlo non vuol dire "non compila": vuol
+  dire rompere silenziosamente la connettività reale del target per
+  tutta la sessione, trasformando un audit in un DoS non voluto. Senza
+  relay: su una rete **cifrata (WPA2/3)** questo strumento prova se
+  l'avvelenamento ha successo (la rete ha Dynamic ARP Inspection o
+  equivalente?) ma non può leggere il contenuto del traffico; su una
+  rete **aperta** lo sniffing passivo (vedi sotto) vede già tutto in
+  chiaro senza bisogno di alcuno spoofing.
+- **Session/cookie sniffing passivo durante il MITM**: parte della
+  stessa classe, attivabile/disattivabile all'avvio della sessione.
+  Cattura in modalità promiscua i frame 802.11 rilevanti e cerca al
+  loro interno (con una ricerca a sottostringa sull'intero frame
+  catturato, non un parsing preciso del payload TCP — vedi sotto per il
+  perché) pattern come `Authorization: Basic`, `Cookie:`, `USER `/
+  `PASS ` FTP/Telnet. I frame cifrati (bit Protected della 802.11
+  header) vengono riconosciuti e **mai** passati a questa ricerca — il
+  contenuto sarebbe comunque solo rumore illeggibile.
+- **DNS spoofing locale**: piccola lista hostname→IP forgiata (fino a 5
+  voci, gestibile dalla schermata MITM con `D`) — mentre una query DNS
+  del target passa per lo sniffing, se il nome corrisponde viene
+  costruita e inviata una risposta DNS forgiata invece di lasciarla
+  proseguire verso il vero server.
+- **Evil twin attivo** (`scan/EvilTwinManager`, schermata `EVIL TWIN`
+  raggiungibile con `E` da una sighting di `WAR DRIVING`): access point
+  con lo stesso SSID di una rete bersaglio (modalità AP+STA
+  concorrente, quindi la connessione WiFi propria del device sopravvive
+  — con il limite hardware che il canale finisce comunque per essere
+  quello della propria connessione STA, se ce n'è una attiva, non
+  necessariamente quello richiesto: un solo radio non può stare su due
+  canali insieme). Logga solo indirizzo MAC + timestamp di ogni
+  dispositivo che si associa, **sempre aperto** (nessuna password, a
+  prescindere dalla cifratura reale della rete clonata — non potendo
+  conoscere una passphrase WPA2 vera, il test interessante è comunque
+  lo stesso: un client si riconnette a una rete con lo stesso nome ma
+  sicurezza più debole, senza che l'utente se ne accorga?). **Nessun
+  captive portal, nessuna richiesta o elaborazione di credenziali.**
+- **Deauth mirato + cattura handshake WPA** (`scan/DeauthManager`,
+  schermata `DEAUTH + CAPTURE` da una sighting con `X`): la tecnica più
+  dirompente di tutto il firmware — a differenza di ogni altra cosa qui
+  dentro, un frame di deauth interrompe la connessione di un client
+  reale nell'istante stesso in cui arriva, senza che quel client possa
+  in alcun modo evitarlo. Per questo la finestra di manovra è tagliata
+  al minimo indispensabile: **un solo client MAC esplicito** (mai
+  broadcast/"tutti i client"), **una raffica fissa piccola** (4 frame,
+  mai un loop o una modalità ripeti-ogni-N-secondi — rilanciare richiede
+  di riavviare la sessione a mano), poi una finestra di cattura limitata
+  (10s) che scrive ogni frame 802.11 rilevante in un file `.pcap`
+  standard su SD (formato pcap classico, `LINKTYPE_IEEE802_11`) **senza
+  mai tentare di interpretare o craccare l'handshake su questo
+  device** — l'analisi (Wireshark/aircrack-ng/hashcat) resta
+  deliberatamente offline, su un PC.
+- **Mini path brute-forcer HTTP stile dirb** (`scan/HttpPathBruteforcer`,
+  schermata `HTTP PATH BRUTE` da `HOST DETAIL` con `H`, solo se una
+  porta HTTP è già stata scoperta): dizionario fisso di path comuni
+  (`/admin`, `/.git/config`, `/.env`, `/backup`, `/phpmyadmin`, ecc.),
+  una GET alla volta, rate-limited come ogni altro probe di questo
+  firmware. Pura enumerazione — nessun invio di dati, nessun tentativo
+  di sfruttare quello che trova, solo "questo path esiste?".
+- **Credential guessing esteso a POP3/IMAP/SMTP**
+  (`CredAuditManager::tryPop3Login`/`tryImapLogin`/`trySmtpLogin`):
+  stesso motore/wordlist della Fase 4, tre protocolli testuali in più
+  con codici di risposta deterministici (RFC 1939/3501/4954), stesso
+  stile di `tryFtpLogin` più che di `tryTelnetLogin` euristico. **SSH
+  deliberatamente non aggiunto** — un vero login SSH richiede un
+  handshake client completo (key exchange, gestione della host key,
+  negoziazione della cifratura simmetrica): implementarlo da zero senza
+  possibilità di testarlo su hardware reale è un rischio di correttezza
+  E di sicurezza che questo progetto non si prende. La via giusta, se
+  servisse in futuro, è una libreria client SSH di terze parti
+  verificata come vera dipendenza (`lib_deps`), non primitive scritte
+  da zero qui.
+- **RISK — di gran lunga il codice meno verificato di tutto il
+  progetto, oltre il livello già visto con BLE**: `ArpSpoofManager` e
+  `DeauthManager` fanno parsing manuale di frame 802.11 grezzi (frame
+  control, campi indirizzo dipendenti da ToDS/FromDS, QoS control
+  opzionale, LLC/SNAP, IPv4, TCP/UDP) byte per byte, senza alcuna
+  possibilità di testarlo contro traffico reale catturato prima di una
+  build vera. Ogni passaggio di parsing è scritto per fallire in modo
+  sicuro (controlli sui limiti, salta silenziosamente qualunque cosa
+  non corrisponda alla forma attesa) invece di assumere il successo —
+  così un bug di parsing degrada a "questo frame viene ignorato", mai a
+  dati corrotti agiti o ritrasmessi. Usano solo API WiFi esp-idf
+  pubbliche e documentate (`esp_wifi_set_promiscuous`/
+  `esp_wifi_set_promiscuous_rx_cb`, `wifi_promiscuous_pkt_t`,
+  `esp_wifi_ap_get_sta_list`) tranne `esp_wifi_80211_tx` (iniezione di
+  frame management per il deauth), dichiarata in `esp_wifi.h` su alcune
+  versioni del core e nell'header "privato" `esp_private/wifi.h` su
+  altre — gestito con una guardia `__has_include` invece di assumere
+  quale dei due sia quello giusto per la build reale di questo
+  progetto. Vedi i commenti in cima a `ArpSpoofManager.h`/
+  `DeauthManager.h` per il dettaglio completo.
+
 ## Compilare e flashare
 
 ```
@@ -1164,6 +1290,17 @@ originale.
       maggiore sostituito da un riff synthwave di 13 note in la minore
       (~1,5s) — vedi sopra per il dettaglio musicale e per il ritocco al
       timing del prompt lampeggiante che ne è conseguito.
+- [x] **Fase 16 — Strumenti offensive per reti locali**: otto
+      funzionalità scelte dall'utente da una lista di dieci proposte di
+      questo assistente — ARP spoofing/MITM monodirezionale senza
+      relay, sniffing/cookie-sniffing passivo e DNS spoofing durante il
+      MITM, evil twin attivo, deauth mirato + cattura handshake WPA su
+      pcap, path brute-forcer HTTP, credential guessing esteso a
+      POP3/IMAP/SMTP (SSH deliberatamente escluso) — vedi sopra per il
+      dettaglio di ciascuna e per il gate di autorizzazione rafforzato
+      condiviso dai tre strumenti attivi. `ArpSpoofManager`/
+      `DeauthManager` sono il codice meno verificato di tutto il
+      progetto, mai passato da una build reale.
 
 ## Test plan — Fase 1
 
@@ -1695,6 +1832,52 @@ laboratorio isolato) — non in giro per strada con reti di sconosciuti.
    meno, dato che il ritardo è calcolato sul tempo trascorso, non
    sull'aver effettivamente chiamato `Speaker.tone()`).
 
+## Test plan — Fase 16 (strumenti offensive)
+
+> Da eseguire SOLO sulla tua rete/i tuoi dispositivi di test — ogni
+> punto qui sotto interrompe o intercetta traffico di un dispositivo
+> reale.
+
+1. **Build**: `pio run` deve compilare pulito. `ArpSpoofManager.cpp` e
+   `DeauthManager.cpp` sono il codice più a rischio del progetto (vedi
+   sopra) — se falliscono, il sospetto principale è `esp_wifi_80211_tx`
+   (firma/header) o un tipo mancante da `esp_wifi_types.h`.
+2. **Gate rafforzato**: da `HOST DETAIL` premi `M`, o da `WAR DRIVING`
+   premi `E`/`X` — la prima volta per sessione deve comparire
+   `OffensiveDisclaimerScreen` e richiedere di scrivere per intero
+   AUTHORIZED (premere solo `ENTER` non deve bastare). Dopo averla
+   accettata una volta, tutte e tre le schermate si aprono direttamente
+   per il resto della sessione.
+3. **ARP MITM**: su un host già scoperto con `NETWORK SCAN`, apri `MITM
+   AUDIT` (`M`), avvia una sessione — l'header deve diventare rosso
+   "MITM ACTIVE" per tutta la durata. Da un altro dispositivo (o con
+   Wireshark sul target, se disponibile) verifica che la cache ARP del
+   target cambi. Alla fine sessione (timeout o `ENTER`/`DEL`), verifica
+   che la cache ARP del target torni al MAC reale del gateway.
+4. **Sniffing/cookie/DNS spoof**: su una rete APERTA di test con un
+   client che fa una richiesta HTTP con Basic Auth o un cookie in
+   chiaro, verifica che compaia nel log del MITM. Con una voce nella
+   lista DNS spoof (`D`) che punta a un hostname che il client
+   interroga, verifica che il client riceva l'IP forgiato invece di
+   quello reale.
+5. **Evil twin**: da una sighting in `WAR DRIVING`, premi `E`, avvia —
+   verifica che l'SSID clonato compaia nella scansione WiFi di un
+   telefono/laptop di test come rete APERTA. Connettiti con quel
+   dispositivo e verifica che compaia nel log associazioni del
+   Cardputer (solo MAC, nessuna credenziale richiesta).
+6. **Deauth + capture**: da una sighting con un client di test connesso
+   (MAC noto), premi `X`, digita il MAC del client, avvia — il client
+   deve disconnettersi entro pochi secondi. Verifica che
+   `/handshakes/*.pcap` compaia su SD e si apra in Wireshark senza
+   errori; se il client si riconnette durante la finestra di cattura,
+   verifica che l'handshake WPA sia effettivamente presente nel file.
+7. **HTTP path brute**: su un host con un server web di test che ha
+   `/admin` o `/.git/config` raggiungibili, da `HOST DETAIL` premi `H` —
+   verifica che compaiano nel log con lo status code corretto (non 404).
+8. **Credential guessing POP3/IMAP/SMTP**: su un server di test con
+   POP3/IMAP/SMTP e una credenziale nota nella wordlist, verifica che
+   `CREDENTIAL AUDIT` la trovi esattamente come già fa per FTP.
+
 ## Limiti noti e tagli di scope deliberati
 
 Riepilogo di quanto già menzionato nelle sezioni sopra, in un unico
@@ -1781,6 +1964,32 @@ posto:
 - **LoRa/GPS**: non presenti di serie sul Cardputer ADV (confermato
   nella ricerca hardware iniziale di questo progetto), quindi non
   affrontati.
+- **ARP MITM: nessun relay/forwarding del traffico intercettato**
+  (Fase 16): scelta deliberata, non un limite tecnico rimandato — vedi
+  la sezione "Fase 16" sopra per il ragionamento completo. Sulla pratica
+  significa: su rete cifrata, prova solo se l'avvelenamento ARP ha
+  successo, non legge contenuti; su rete aperta, lo sniffing passivo
+  vede tutto comunque, senza bisogno del MITM.
+- **Deauth: una raffica fissa e un solo client per sessione, mai un
+  loop** (Fase 16): scelta deliberata per tenere lo strumento nel
+  registro "audit WPA con handshake capture" (pratica standard del
+  settore) invece che "strumento di disturbo generico" — non esiste,
+  da nessuna parte nell'interfaccia, un modo di deauthare più di un
+  client alla volta o di ripetere automaticamente.
+- **Evil twin sempre aperto, mai una password reale** (Fase 16): non
+  potendo conoscere la passphrase WPA2 vera della rete clonata, l'AP
+  fasullo è sempre senza password — vedi sopra per perché questo è
+  comunque il test interessante, non solo un compromesso di comodo.
+- **Credential guessing: SSH deliberatamente assente** (Fase 16): un
+  client SSH vero richiede un handshake crittografico completo — vedi
+  sopra per il ragionamento, stesso principio già applicato in Fase 4.
+- **`ArpSpoofManager`/`DeauthManager`: parsing 802.11/IP grezzo mai
+  verificato contro traffico reale** (Fase 16): il codice più a rischio
+  di tutto il progetto, oltre BLE — ogni passaggio fallisce in modo
+  sicuro (bounds-check, skip silenzioso) invece di assumere il
+  successo, ma la build reale resta l'unico modo per sapere se gli
+  offset sono davvero giusti. Vedi il commento in cima a
+  `ArpSpoofManager.h`.
 - **Nessuna build reale eseguita**: vale per ogni fase di questo
   progetto — il sandbox di sviluppo non ha accesso al registry
   PlatformIO. Tutto il codice è stato scritto con attenzione e, dove

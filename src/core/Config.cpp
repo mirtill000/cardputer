@@ -26,6 +26,8 @@ void AppConfig::load() {
     credAuditAcknowledged = prefs.getBool("credAck", credAuditAcknowledged);
     // credAuditEnabled is intentionally NOT persisted: every boot starts
     // with the audit module off, even if it was acknowledged/used before.
+    offensiveAcknowledged = prefs.getBool("offAck", offensiveAcknowledged);
+    // offensiveEnabled likewise never persisted - see its declaration.
     uiSoundEnabled = prefs.getUChar("sound", uiSoundEnabled);
 
     prefs.end();
@@ -44,6 +46,7 @@ void AppConfig::save() const {
     prefs.putUShort("probeDelay", interProbeDelayMs);
     prefs.putBool("autoExport", autoExportOnScanFinish);
     prefs.putBool("credAck", credAuditAcknowledged);
+    prefs.putBool("offAck", offensiveAcknowledged);
     prefs.putUChar("sound", uiSoundEnabled);
 
     prefs.end();

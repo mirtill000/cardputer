@@ -1,9 +1,13 @@
 #include "WardrivingScreen.h"
 #include "SignalFinderScreen.h"
+#include "EvilTwinScreen.h"
+#include "DeauthScreen.h"
+#include "OffensiveDisclaimerScreen.h"
 #include "../UiManager.h"
 #include "../Theme.h"
 #include "../Chrome.h"
 #include "../TextWrap.h"
+#include "../../core/Config.h"
 #include "../../scan/WardrivingManager.h"
 
 namespace {
@@ -61,6 +65,28 @@ void WardrivingScreen::onKey(UiKey key, char ch) {
                 if (g_wardrivingManager.getSighting(_sightingsSelected, ap)) {
                     SignalFinderScreen::instance().setTarget(ap.ssid, ap.bssid);
                     g_ui.pushScreen(&SignalFinderScreen::instance());
+                }
+            } else if (key == UiKey::Char && (ch == 'e' || ch == 'E')) {
+                WardrivingManager::ApSighting ap;
+                if (g_wardrivingManager.getSighting(_sightingsSelected, ap) && !ap.ssid.equals("<hidden>")) {
+                    EvilTwinScreen::instance().setSuggestedSsid(ap.ssid, ap.channel);
+                    if (g_config.offensiveEnabled) {
+                        g_ui.pushScreen(&EvilTwinScreen::instance());
+                    } else {
+                        OffensiveDisclaimerScreen::instance().setPendingTargetScreen(&EvilTwinScreen::instance());
+                        g_ui.pushScreen(&OffensiveDisclaimerScreen::instance());
+                    }
+                }
+            } else if (key == UiKey::Char && (ch == 'x' || ch == 'X')) {
+                WardrivingManager::ApSighting ap;
+                if (g_wardrivingManager.getSighting(_sightingsSelected, ap)) {
+                    DeauthScreen::instance().setTarget(ap.ssid, ap.bssid, ap.channel);
+                    if (g_config.offensiveEnabled) {
+                        g_ui.pushScreen(&DeauthScreen::instance());
+                    } else {
+                        OffensiveDisclaimerScreen::instance().setPendingTargetScreen(&DeauthScreen::instance());
+                        g_ui.pushScreen(&OffensiveDisclaimerScreen::instance());
+                    }
                 }
             } else if (key == UiKey::Back) {
                 g_ui.popScreen();
@@ -164,7 +190,7 @@ void WardrivingScreen::draw(M5Canvas& gfx) {
 
             gfx.setTextColor(theme::GREY, theme::BG);
             gfx.setCursor(4, gfx.height() - 9);
-            gfx.print("TAB:locate A:allowlist DEL:back");
+            gfx.print("TAB:loc A:al E:twin X:deauth DEL:bk");
             break;
         }
 
