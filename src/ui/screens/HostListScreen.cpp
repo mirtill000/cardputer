@@ -9,7 +9,8 @@
 #include "../../net/WifiManager.h"
 #include "../../scan/ScanManager.h"
 #include "../../storage/ResultStore.h"
-#include <LittleFS.h>
+#include "../../storage/ScanHistory.h"
+#include "../../storage/SdCard.h"
 #include <cstdio>
 
 HostListScreen& HostListScreen::instance() {
@@ -41,22 +42,37 @@ void HostListScreen::onScanEvent(const ScanNotification& ev) {
             _selected = 0;
             _statusLine = "";
             _scanStartMs = millis();
+            _newHostIps.clear();
             break;
         case ScanEventType::HostChanged:
             if (ev.hostIndex >= 0) _aliveIndices.push_back((size_t)ev.hostIndex);
             break;
-        case ScanEventType::ScanFinished:
+        case ScanEventType::ScanFinished: {
             _scanFinishMs = millis();
+
+            fs::FS& fs = sdcard::exportFs();
+            ScanHistory::saveSnapshot(fs);
+            ScanHistory::diffNewHosts(fs, _newHostIps);
+
             if (g_config.autoExportOnScanFinish) {
-                bool okJson = ResultStore::exportJson(LittleFS, "/export.json");
-                bool okCsv = ResultStore::exportCsv(LittleFS, "/export.csv");
-                _statusLine = (okJson && okCsv) ? "auto-exported /export.json + .csv"
-                                                 : "auto-export FAILED (see serial log)";
+                bool okJson = ResultStore::exportJson(fs, "/export.json");
+                bool okCsv = ResultStore::exportCsv(fs, "/export.csv");
+                _statusLine = (okJson && okCsv)
+                                  ? (String("auto-exported (") + sdcard::exportFsLabel() + ") /export.json + .csv")
+                                  : "auto-export FAILED (see serial log)";
             }
             break;
+        }
         default:
             break;
     }
+}
+
+bool HostListScreen::isNewHost(const IPAddress& ip) const {
+    for (const auto& newIp : _newHostIps) {
+        if (newIp == ip) return true;
+    }
+    return false;
 }
 
 void HostListScreen::onKey(UiKey key, char ch) {
@@ -104,9 +120,10 @@ void HostListScreen::onKey(UiKey key, char ch) {
             break;
         case UiKey::Char:
             if (ch == 'e' || ch == 'E') {
-                bool okJson = ResultStore::exportJson(LittleFS, "/export.json");
-                bool okCsv = ResultStore::exportCsv(LittleFS, "/export.csv");
-                _statusLine = (okJson && okCsv) ? "exported /export.json + .csv"
+                fs::FS& fs = sdcard::exportFs();
+                bool okJson = ResultStore::exportJson(fs, "/export.json");
+                bool okCsv = ResultStore::exportCsv(fs, "/export.csv");
+                _statusLine = (okJson && okCsv) ? (String("exported (") + sdcard::exportFsLabel() + ") /export.json + .csv")
                                                  : "export FAILED (see serial log)";
             }
             break;
@@ -175,6 +192,12 @@ void HostListScreen::draw(M5Canvas& gfx) {
     gfx.setCursor(4, 18);
     gfx.print("HOSTS FOUND: ");
     gfx.print((unsigned)_aliveIndices.size());
+    if (!running && !_newHostIps.empty()) {
+        gfx.setTextColor(theme::MAGENTA, theme::BG);
+        gfx.print(" (+");
+        gfx.print((unsigned)_newHostIps.size());
+        gfx.print(" new)");
+    }
 
     String rightStat = running ? (String(g_scanManager.progressPct()) + "%") : ("SCAN TIME " + String(timeBuf));
     int16_t rightX = gfx.width() - (int16_t)rightStat.length() * theme::GLYPH_W - 4;
@@ -237,7 +260,8 @@ void HostListScreen::drawTable(M5Canvas& gfx, int16_t top) {
         uint16_t rowBg = sel ? theme::PANEL_BG : theme::BG;
         if (sel) gfx.fillRect(3, y, gfx.width() - 6, kRowH, rowBg);
 
-        uint16_t color = sel ? theme::CYAN : theme::riskColor(h.risk);
+        bool isNew = isNewHost(h.ip);
+        uint16_t color = sel ? theme::CYAN : (isNew ? theme::MAGENTA : theme::riskColor(h.risk));
         gfx.setTextColor(color, rowBg);
 
         gfx.setCursor(kColIp, y + 1);

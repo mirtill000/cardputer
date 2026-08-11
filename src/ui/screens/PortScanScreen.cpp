@@ -115,6 +115,20 @@ void PortScanScreen::draw(M5Canvas& gfx) {
     gfx.print("% open:");
     gfx.print((unsigned)count);
 
+    if (!running) {
+        PortResult rr;
+        unsigned newCount = 0;
+        for (size_t i = 0; i < count; i++) {
+            if (g_portScanManager.getResult(i, rr) && rr.isNewPort) newCount++;
+        }
+        if (newCount > 0) {
+            gfx.setTextColor(theme::MAGENTA, theme::BG);
+            gfx.print(" (+");
+            gfx.print(newCount);
+            gfx.print(" new)");
+        }
+    }
+
     drawResults(gfx, 38);
 
     drawTopPortsFooter(gfx, count);
@@ -161,11 +175,19 @@ void PortScanScreen::drawResults(M5Canvas& gfx, int16_t top) {
         if (sel) gfx.fillRect(0, y, gfx.width(), kRowH, rowBg);
 
         bool risky = (r.port == 21 || r.port == 23 || r.port == 139 || r.port == 445 || r.port == 3389);
-        uint16_t color = sel ? theme::CYAN : (risky ? theme::AMBER : theme::GREEN);
+        // Priority when several signals apply to the same row: a known-
+        // vulnerable banner (VulnSignatures) outranks "newly open" (see
+        // storage/ScanHistory.h), which outranks the generic legacy-
+        // port amber warning - each is a stronger, more specific claim
+        // than the one before it.
+        uint16_t color = sel ? theme::CYAN
+                              : (r.vulnNote.length() ? theme::RED
+                                                      : (r.isNewPort ? theme::MAGENTA : (risky ? theme::AMBER : theme::GREEN)));
         gfx.setTextColor(color, rowBg);
         gfx.setCursor(2, y + 1);
 
         String portStr = String(r.port);
+        if (r.isUdp) portStr += "/u";
         gfx.print(portStr);
         for (int p = portStr.length(); p < 6; p++) gfx.print(' ');
 

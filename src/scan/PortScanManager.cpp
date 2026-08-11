@@ -1,7 +1,11 @@
 #include "PortScanManager.h"
 #include "BannerGrabber.h"
 #include "ScanManager.h"
+#include "UdpProbe.h"
+#include "VulnSignatures.h"
 #include "../core/Config.h"
+#include "../storage/ScanHistory.h"
+#include "../storage/SdCard.h"
 #include <WiFiClient.h>
 
 PortScanManager g_portScanManager;
@@ -94,6 +98,7 @@ void PortScanManager::probePort(uint16_t port) {
         r.open = true;
         BannerGrabber::grab(client, port, g_config.scanTimeoutMs, r);
         client.stop();
+        VulnSignatures::check(r.banner, r.vulnNote);
 
         int16_t newIndex = -1;
         if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
@@ -128,6 +133,18 @@ void PortScanManager::onWorkerFinished() {
             resultsCopy = _openPorts;
             xSemaphoreGive(_mutex);
         }
+
+        // A handful of fixed UDP probes (DNS/NTP/SNMP), run once per
+        // target after the TCP sweep rather than per-worker - these are
+        // only 3 fixed ports total, not worth spreading across the
+        // worker pool the way the TCP port range is.
+        UdpProbe::probeCommonServices(_target, g_config.scanTimeoutMs, resultsCopy);
+
+        // Marks isNewPort on anything that wasn't open the last time
+        // this host was port-scanned, and updates that baseline for
+        // next time - see storage/ScanHistory.h.
+        ScanHistory::diffAndSavePorts(sdcard::exportFs(), _target, resultsCopy);
+
         g_scanManager.setHostPorts(_target, resultsCopy);
 
         notify(ScanEventType::ScanFinished, -1, 100);

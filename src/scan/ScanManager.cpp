@@ -2,6 +2,7 @@
 #include "ArpResolver.h"
 #include "DeviceClassifier.h"
 #include "HostnameResolver.h"
+#include "MdnsReverseResolver.h"
 #include "OuiDatabase.h"
 #include "PingSweep.h"
 #include "../core/Config.h"
@@ -114,16 +115,25 @@ void ScanManager::setHostPorts(const IPAddress& ip, const std::vector<PortResult
 
         h.ports = ports;
         bool riskyPortOpen = false;
+        String vulnNote;
         for (const auto& p : ports) {
             if (p.port == 21 || p.port == 23 || p.port == 139 || p.port == 445 || p.port == 3389) {
                 riskyPortOpen = true;
-                break;
             }
+            if (vulnNote.isEmpty() && p.vulnNote.length()) vulnNote = p.vulnNote;
         }
         // Only ever escalate here, never downgrade: a Critical finding
         // from the credential audit (phase 4) must not be silently
         // reset back to Warning by a later re-scan of the ports.
         if (riskyPortOpen && h.risk == RiskLevel::Ok) h.risk = RiskLevel::Warning;
+        // A known-vulnerable banner (VulnSignatures) is a much stronger
+        // signal than "a legacy port is merely open" - it's the same
+        // strength of finding as a confirmed default credential, so it
+        // gets the same Critical treatment.
+        if (vulnNote.length()) {
+            h.risk = RiskLevel::Critical;
+            h.vulnNote = vulnNote;
+        }
         break;
     }
 
@@ -176,9 +186,19 @@ void ScanManager::probeHost(size_t index) {
     String vendor;
     bool vendorFound = macFound && g_ouiDb.lookup(mac, vendor);
 
-    // Opportunistic, best-effort: only worth the extra ~200ms wait for
-    // hosts we already know are up.
-    String hostname = alive ? HostnameResolver::resolve(ip, 200) : String();
+    // Opportunistic, best-effort: only worth the extra wait for hosts we
+    // already know are up. Try NBNS first (Windows/Samba boxes), then
+    // fall back to mDNS reverse PTR (phones/Macs/Chromecasts/most IoT)
+    // only if NBNS came up empty - covers a much wider slice of a
+    // typical LAN than either alone, at the cost of up to ~350ms extra
+    // per host that answers neither (the worst case, already rare: most
+    // hosts either answer quickly or this was never going to find a
+    // name for them anyway).
+    String hostname;
+    if (alive) {
+        hostname = HostnameResolver::resolve(ip, 200);
+        if (hostname.isEmpty()) hostname = MdnsReverseResolver::resolve(ip, 150);
+    }
 
     if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
         if (index < _hosts.size()) {

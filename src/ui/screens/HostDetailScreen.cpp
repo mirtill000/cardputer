@@ -144,6 +144,15 @@ void HostDetailScreen::draw(M5Canvas& gfx) {
         gfx.print("CRED AUDIT: clean (C)");
     }
 
+    if (h.vulnNote.length()) {
+        gfx.setTextColor(theme::RED, theme::BG);
+        gfx.setCursor(6, 106);
+        gfx.print("VULN: ");
+        String note = h.vulnNote;
+        if (note.length() > 34) note = note.substring(0, 34) + "...";
+        gfx.print(note);
+    }
+
     drawRadar(gfx, h);
 
     gfx.setTextColor(theme::GREY, theme::BG);

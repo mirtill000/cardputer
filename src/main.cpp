@@ -16,6 +16,8 @@
 #include "scan/PortScanManager.h"
 #include "scan/CredAuditManager.h"
 #include "net/WifiManager.h"
+#include "storage/SdCard.h"
+#include "ui/screens/ScanHistoryScreen.h"
 
 namespace {
 BootScreen g_bootScreen;
@@ -26,7 +28,7 @@ BootScreen g_bootScreen;
 PlaceholderScreen g_portScanScreen;
 PlaceholderScreen g_credAuditScreen;
 
-MenuItem g_menuItems[5];
+MenuItem g_menuItems[6];
 }  // namespace
 
 void setup() {
@@ -43,6 +45,8 @@ void setup() {
     if (!LittleFS.begin(true)) {
         log_e("main: LittleFS mount failed");
     }
+    LittleFS.mkdir("/history");
+    sdcard::begin();  // no-op-ish if no card is inserted - see SdCard.cpp
     g_ouiDb.begin();
     g_portServiceDb.begin();
 
@@ -61,8 +65,9 @@ void setup() {
     g_menuItems[1] = {"NETWORK SCAN", &HostListScreen::instance()};
     g_menuItems[2] = {"PORT SCANNER", &g_portScanScreen};
     g_menuItems[3] = {"CREDENTIAL AUDIT", &g_credAuditScreen};
-    g_menuItems[4] = {"SETTINGS", &SettingsScreen::instance()};
-    MainMenuScreen::instance().configure(g_menuItems, 5);
+    g_menuItems[4] = {"SCAN HISTORY", &ScanHistoryScreen::instance()};
+    g_menuItems[5] = {"SETTINGS", &SettingsScreen::instance()};
+    MainMenuScreen::instance().configure(g_menuItems, 6);
 
     // MainMenuScreen must already be configured by this point: once the
     // render task starts, BootScreen can transition straight to it on
