@@ -6,12 +6,6 @@
 #include <cstdio>
 #include <cstring>
 
-namespace {
-constexpr int16_t kSkylineTop = 18;
-constexpr int16_t kSkylineH = 24;
-constexpr int16_t kSkylineBaseline = kSkylineTop + kSkylineH;
-}  // namespace
-
 MainMenuScreen& MainMenuScreen::instance() {
     static MainMenuScreen s;
     return s;
@@ -47,11 +41,8 @@ void MainMenuScreen::draw(M5Canvas& gfx) {
     gfx.fillScreen(theme::BG);
     chrome::drawHeader(gfx, "NETRUNNER");
 
-    // Decorative skyline band between the header and the menu list.
-    chrome::drawSkyline(gfx, kSkylineBaseline);
-
-    constexpr int16_t kRowH = 14;
-    constexpr int16_t kTop = kSkylineBaseline + 4;
+    constexpr int16_t kRowH = 16;
+    constexpr int16_t kTop = 22;
 
     for (uint8_t i = 0; i < _count; i++) {
         int16_t y = kTop + i * kRowH;
