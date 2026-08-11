@@ -2,19 +2,16 @@
 
 #include "Screen.h"
 
-// Splash screen: full-screen Matrix rain background, a scripted boot log
-// that "types" itself in, then a glitch-in title and a blinking prompt.
-// Purely cosmetic at this stage (see README roadmap) — later phases can
-// wire the log lines to real subsystem init results if desired.
+// Splash screen: a scripted boot log that "types" itself in, then a
+// title and a blinking prompt. Plain black background for now — no
+// Matrix rain (removed for simplicity while getting a stable baseline
+// working; see README).
 class BootScreen : public Screen {
 public:
     void onEnter() override;
     void onKey(UiKey key, char ch) override;
     void update(uint32_t nowMs) override;
     void draw(M5Canvas& gfx) override;
-
-    bool wantsRain() const override { return true; }
-    uint8_t rainDensity() const override { return 16; }
 
 private:
     uint32_t _enterMs = 0;

@@ -1,8 +1,10 @@
 # Cardputer NetAudit
 
 Firmware per **M5Stack Cardputer / Cardputer ADV** (ESP32-S3) per network
-discovery & auditing (stile Fing) con UI cyberpunk/Matrix: digital rain,
-testo verde fosforescente monospace su nero, accenti magenta/ciano.
+discovery & auditing (stile Fing) con UI cyberpunk/Matrix: testo verde
+fosforescente monospace su nero, accenti magenta/ciano. L'effetto
+"digital rain" di sfondo è stato rimosso per ora — vedi
+["UI: digital rain rimosso"](#ui-digital-rain-rimosso-per-ora).
 
 > ⚠️ **Stato del progetto**: sviluppo incrementale in corso. Vedi
 > [Roadmap](#roadmap--stato-attuale) per cosa è implementato oggi.
@@ -65,7 +67,7 @@ l'ID hardware della ADV, il fallback è forzare manualmente i pin via
 ```
 src/
   core/     tipi condivisi, config NVS, code/notifiche inter-task
-  ui/       rendering, effetto Matrix rain, input tastiera, schermate
+  ui/       rendering, input tastiera, schermate
   net/      wifi/subnet
   scan/     ARP/ping sweep, OUI lookup, classificatore, port scan, banner grab, cred audit
   storage/  export LittleFS/SD, config persistente
@@ -83,7 +85,7 @@ dedicati, così nessuno dei tre compete per CPU con gli altri):
 | Task    | Core | Priorità | Ruolo |
 |---------|------|----------|-------|
 | `input` | 1    | 3 (alta) | poll tastiera ~50 Hz, traduce in `UiKeyEvent` astratti |
-| `ui`    | 1    | 2        | render loop ~30 fps, anima il Matrix rain, disegna la schermata attiva |
+| `ui`    | 1    | 2        | render loop ~30 fps, disegna la schermata attiva |
 | `scan`  | 0    | 1 (bassa)| ARP/ping/port-scan in background (aggiunto in fase 2) |
 
 **Perché non passiamo `HostInfo` (con `String`/`std::vector` interni)
@@ -109,16 +111,29 @@ riservata da stack WiFi/BT/ROM. Il canvas di compositing full-screen
 (240×135×2 byte RGB565 ≈ 65 KB) è l'unico framebuffer che teniamo in
 RAM, allocato esplicitamente in SRAM interna (`canvas.setPsram(false)`
 prima di `createSprite()`, per rendere la scelta esplicita invece di
-affidarsi al fallback automatico di LovyanGFX). L'effetto rain non
-ridisegna mai l'intero schermo per animare: ogni tick tocca 2–3 celle
-di glyph per colonna attiva (nuova testa, dissolvenza della vecchia
-testa, cancellazione della coda), non l'intero viewport — vedi i
-commenti in `src/ui/MatrixRain.cpp`.
+affidarsi al fallback automatico di LovyanGFX).
 
 Il partition table (`partitions.csv`) non riserva spazio per OTA
 (nessun aggiornamento over-the-air è previsto: il workflow atteso è
 reflash via USB-C), lasciando invece ~3.9 MB a LittleFS per il DB OUI,
 il dizionario delle credenziali di default e l'export dei risultati.
+
+### UI: digital rain rimosso (per ora)
+
+Le prime versioni di questo firmware includevano un effetto "digital
+rain" di sfondo (colonne di caratteri che scorrono, stile Matrix) su
+boot screen e menu principale, con ridisegno incrementale per non
+pesare sulla RAM/SPI (vedi la cronologia git, `src/ui/MatrixRain.*`,
+per l'implementazione se serve reintrodurlo). È stato rimosso su
+richiesta esplicita per tenere la UI più semplice mentre si stabilizza
+il resto del firmware — non è mai stato verificato su hardware reale
+prima di essere tolto, quindi non è chiaro se fosse correlato ai
+problemi di avvio riscontrati; toglierlo comunque riduce la superficie
+di codice non ancora testata su hardware. Le schermate ora hanno
+semplicemente sfondo nero pieno. Reintrodurlo (o qualunque altro
+effetto di sfondo) è possibile in futuro senza toccare l'architettura:
+`Screen::draw()` riceve comunque l'intero `M5Canvas` e può disegnarci
+sopra quello che vuole prima del proprio contenuto.
 
 ### Fase 2: come funzionano discovery, ARP, OUI e hostname
 
@@ -329,9 +344,11 @@ originale.
 ## Roadmap / stato attuale
 
 - [x] **Fase 1 — Scaffold + UI skeleton**: struttura repo, boot screen
-      con Matrix rain e boot log "in typing", menu principale navigabile
-      da tastiera fisica (`;`/`.`/`,`/`/` come frecce, `Enter` conferma,
-      `Del` torna indietro), schermate placeholder per i moduli futuri.
+      con boot log "in typing", menu principale navigabile da tastiera
+      fisica (`;`/`.`/`,`/`/` come frecce, `Enter` conferma, `Del` torna
+      indietro), schermate placeholder per i moduli futuri. Effetto
+      Matrix rain rimosso successivamente — vedi "UI: digital rain
+      rimosso" sopra.
 - [x] **Fase 2 — Network discovery**: subnet auto-rilevata dal DHCP
       lease, ping sweep (TCP connect-scan) + lettura ARP cache, lookup
       vendor OUI offline (DB reale IEEE, 35k record), risoluzione
@@ -365,15 +382,16 @@ Da verificare su hardware reale (non testabile in questo sandbox):
 
 1. **Boot**: al power-on/flash, appare il log di boot "typing" riga per
    riga, poi il titolo `CARDPUTER` con sottotitolo, poi il prompt
-   lampeggiante `[ PRESS ENTER ]`. Il rain di sfondo deve essere visibile
-   e fluido (nessun tearing/flicker) durante tutta la sequenza.
-2. **Navigazione menu**: da boot, `Enter` porta al menu principale con 4
-   voci. `;`/`.` spostano la selezione su/giù con wraparound (dall'ultima
-   torna alla prima e viceversa). `Enter` su una voce apre lo screen
-   placeholder corrispondente; `Del` torna al menu.
+   lampeggiante `[ PRESS ENTER ]`, su sfondo nero pieno (niente più
+   digital rain — vedi sopra).
+2. **Navigazione menu**: da boot, `Enter` porta al menu principale con
+   5 voci (WIFI SETUP, NETWORK SCAN, PORT SCANNER, CREDENTIAL AUDIT,
+   SETTINGS). `;`/`.` spostano la selezione su/giù con wraparound
+   (dall'ultima torna alla prima e viceversa). `Enter` su una voce apre
+   lo screen corrispondente; `Del` torna al menu.
 3. **Reattività input**: la pressione dei tasti deve sembrare istantanea
-   anche mentre il rain anima sullo sfondo — se non lo è, il task `ui` sta
-   probabilmente bloccando il task `input` (controllare priorità/stack).
+   — se non lo è, il task `ui` sta probabilmente bloccando il task
+   `input` (controllare priorità/stack).
 4. **Memoria**: via `pio device monitor` con `CORE_DEBUG_LEVEL=2`,
    verificare che non ci siano log di allocazione fallita
    (`UiManager: failed to allocate render canvas`) né crash/reboot per

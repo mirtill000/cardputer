@@ -26,7 +26,6 @@ void AppConfig::load() {
     // credAuditEnabled is intentionally NOT persisted: every boot starts
     // with the audit module off, even if it was acknowledged/used before.
     uiSoundEnabled = prefs.getUChar("sound", uiSoundEnabled);
-    rainDensity = prefs.getUChar("rainDensity", rainDensity);
 
     prefs.end();
 }
@@ -44,7 +43,6 @@ void AppConfig::save() const {
     prefs.putUShort("probeDelay", interProbeDelayMs);
     prefs.putBool("credAck", credAuditAcknowledged);
     prefs.putUChar("sound", uiSoundEnabled);
-    prefs.putUChar("rainDensity", rainDensity);
 
     prefs.end();
 }

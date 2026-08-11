@@ -3,7 +3,6 @@
 #include <M5GFX.h>
 #include <vector>
 #include "InputManager.h"
-#include "MatrixRain.h"
 #include "../core/EventQueue.h"
 
 class Screen;
@@ -55,7 +54,6 @@ private:
     void activate(Screen* s);
 
     M5Canvas _canvas;
-    MatrixRain _rain;
     InputManager _input;
     std::vector<Screen*> _stack;
     QueueHandle_t _scanQueue = nullptr;

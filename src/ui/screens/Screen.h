@@ -25,11 +25,4 @@ public:
     virtual void update(uint32_t nowMs) { (void)nowMs; }
 
     virtual void draw(M5Canvas& gfx) = 0;
-
-    // Whether UiManager should keep the MatrixRain background animation
-    // ticking/drawing behind this screen. Data-dense screens (host list,
-    // port table) turn it off so falling glyphs don't fight with the
-    // table for readability.
-    virtual bool wantsRain() const { return false; }
-    virtual uint8_t rainDensity() const { return 6; }
 };

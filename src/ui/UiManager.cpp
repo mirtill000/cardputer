@@ -8,7 +8,6 @@ UiManager g_ui;
 
 namespace {
 constexpr TickType_t kFrameDelay = pdMS_TO_TICKS(33);  // ~30fps cap on the render loop
-constexpr uint32_t kRainTickMs = 70;                   // ~14Hz animation, independent of render fps
 constexpr UBaseType_t kScanQueueLen = 24;
 }  // namespace
 
@@ -33,8 +32,6 @@ void UiManager::begin(Screen* initialScreen) {
     _canvas.setTextWrap(false);
     _canvas.fillScreen(theme::BG);
 
-    _rain.begin(&_canvas, 0, 0, display.width(), display.height(), g_config.rainDensity);
-
     _scanQueue = xQueueCreate(kScanQueueLen, sizeof(ScanNotification));
 
     _input.begin();
@@ -57,11 +54,7 @@ void UiManager::begin(Screen* initialScreen) {
 
 void UiManager::activate(Screen* s) {
     _input.setTextEntryMode(false);  // safety net — see setTextEntryMode() in the header
-    _canvas.fillScreen(theme::BG);  // wipe whatever the previous screen/rain left behind
-    if (s->wantsRain()) {
-        _rain.setDensity(s->rainDensity());
-        _rain.scatter();
-    }
+    _canvas.fillScreen(theme::BG);   // wipe whatever the previous screen left behind
     s->onEnter();
 }
 
@@ -94,11 +87,8 @@ void UiManager::taskEntry(void* arg) {
 void UiManager::run() {
     UiKeyEvent kev;
     ScanNotification sev;
-    uint32_t lastRainTick = 0;
 
     for (;;) {
-        uint32_t now = millis();
-
         while (xQueueReceive(_input.queue(), &kev, 0) == pdTRUE) {
             handleKeyEvent(kev);
         }
@@ -107,14 +97,8 @@ void UiManager::run() {
         }
 
         Screen* top = _stack.empty() ? nullptr : _stack.back();
-
-        if (top && top->wantsRain() && (now - lastRainTick) >= kRainTickMs) {
-            _rain.update();
-            lastRainTick = now;
-        }
-
         if (top) {
-            top->update(now);
+            top->update(millis());
             top->draw(_canvas);
         }
         _canvas.pushSprite(0, 0);

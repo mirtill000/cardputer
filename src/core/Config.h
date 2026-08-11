@@ -31,7 +31,6 @@ struct AppConfig {
 
     // ui
     uint8_t uiSoundEnabled = 1;
-    uint8_t rainDensity = 6;               // active matrix-rain columns out of 40 max (240px / 6px glyph width)
 
     void load();
     void save() const;

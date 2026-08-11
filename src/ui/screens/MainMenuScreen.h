@@ -21,9 +21,6 @@ public:
     void onKey(UiKey key, char ch) override;
     void draw(M5Canvas& gfx) override;
 
-    bool wantsRain() const override { return true; }
-    uint8_t rainDensity() const override { return 4; }  // sparse/dim so menu text stays legible
-
 private:
     const MenuItem* _items = nullptr;
     uint8_t _count = 0;
