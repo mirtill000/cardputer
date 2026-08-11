@@ -667,8 +667,26 @@ la 10 — non sono state richieste dall'utente e non sono state fatte).
   big") — fallimento visibile e sicuro, non un device brickato — e la
   correzione è allargare `ota_0`/`ota_1` e restringere `spiffs` di pari
   passo nel file partizioni.
-
-## Compilare e flashare
+- **Bug reale di link trovato durante la prima build della Fase 10**:
+  `src/scan/Base64.cpp` (dalla Fase 4, encoder minimale per
+  `Authorization: Basic`) definiva `namespace base64 { String
+  encode(...); }` — nome identico a quello del `base64::encode`
+  incorporato nel core Arduino-ESP32 stesso
+  (`cores/esp32/base64.cpp`). I due non si erano mai scontrati prima
+  perché quel file del core è linkato "pigro" (un `.o` dentro un
+  archivio `.a` viene incluso solo se qualcos'altro lo referenzia
+  davvero) — finché nessun modulo di questo firmware usava
+  `HTTPClient`, quel simbolo del core restava inutilizzato e quindi mai
+  linkato. `net/OtaUpdater.cpp` (Fase 10, #10) è stato il primo a
+  includere `<HTTPClient.h>`, che internamente referenzia il
+  `base64::encode` del core — da lì in poi l'archivio lo tira dentro,
+  e il linker trova due definizioni dello stesso simbolo ("multiple
+  definition of `base64::encode`"). Non rilevabile da una revisione
+  del codice sola (i due file non si vedono a vicenda, il conflitto
+  esiste solo a livello di symbol table del binario finale) — trovato
+  dal primo tentativo di link reale dell'utente dopo l'aggiunta
+  dell'OTA. Corretto rinominando il namespace del nostro encoder da
+  `base64` a `b64` (nessun cambio di comportamento, solo di nome).
 
 ```
 pio run -e cardputer-adv            # build

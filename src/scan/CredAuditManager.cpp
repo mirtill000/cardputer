@@ -168,7 +168,7 @@ bool CredAuditManager::tryHttpBasicAuth(const IPAddress& ip, uint16_t port, cons
     WiFiClient client;
     if (!client.connect(ip, port, g_config.scanTimeoutMs)) return false;
 
-    String authB64 = base64::encode(user + ":" + pass);
+    String authB64 = b64::encode(user + ":" + pass);
     client.print("GET / HTTP/1.0\r\nHost: scan\r\nAuthorization: Basic ");
     client.print(authB64);
     client.print("\r\nConnection: close\r\n\r\n");

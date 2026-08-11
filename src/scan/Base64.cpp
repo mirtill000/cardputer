@@ -1,6 +1,6 @@
 #include "Base64.h"
 
-String base64::encode(const uint8_t* data, size_t len) {
+String b64::encode(const uint8_t* data, size_t len) {
     static const char* tbl = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
     String out;
