@@ -87,6 +87,8 @@ bool ResultStore::exportJson(fs::FS& fs, const char* path) {
         f.print(h.credVulnerable ? "true" : "false");
         f.print(",\"credNote\":");
         writeJsonEscaped(f, h.credNote);
+        f.print(",\"vulnNote\":");
+        writeJsonEscaped(f, h.vulnNote);
         f.print(",\"ports\":[");
         for (size_t p = 0; p < h.ports.size(); p++) {
             if (p) f.print(',');
@@ -94,10 +96,16 @@ bool ResultStore::exportJson(fs::FS& fs, const char* path) {
             f.print('{');
             f.print("\"port\":");
             f.print(pr.port);
+            f.print(",\"proto\":");
+            writeJsonEscaped(f, pr.isUdp ? String("udp") : String("tcp"));
             f.print(",\"service\":");
             writeJsonEscaped(f, pr.service);
             f.print(",\"banner\":");
             writeJsonEscaped(f, pr.banner);
+            f.print(",\"vulnNote\":");
+            writeJsonEscaped(f, pr.vulnNote);
+            f.print(",\"new\":");
+            f.print(pr.isNewPort ? "true" : "false");
             f.print('}');
         }
         f.print("]}");
@@ -112,7 +120,7 @@ bool ResultStore::exportCsv(fs::FS& fs, const char* path) {
     File f = fs.open(path, "w");
     if (!f) return false;
 
-    f.println("ip,mac,hostname,vendor,class,risk,cred_audited,cred_vulnerable,cred_note,open_ports");
+    f.println("ip,mac,hostname,vendor,class,risk,cred_audited,cred_vulnerable,cred_note,vuln_note,open_ports");
 
     size_t n = g_scanManager.hostCount();
     HostInfo h;
@@ -148,6 +156,8 @@ bool ResultStore::exportCsv(fs::FS& fs, const char* path) {
         row += (h.credVulnerable ? "1" : "0");
         row += ',';
         csvAppendEscaped(h.credNote, row);
+        row += ',';
+        csvAppendEscaped(h.vulnNote, row);
         row += ',';
         csvAppendEscaped(openPorts, row);
 

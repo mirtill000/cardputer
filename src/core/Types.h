@@ -29,8 +29,11 @@ enum class RiskLevel : uint8_t { Ok = 0, Warning = 1, Critical = 2 };
 struct PortResult {
     uint16_t port = 0;
     bool open = false;
+    bool isUdp = false;   // false = TCP (the default scan mode), true = one of the fixed UDP probes
     String service;  // short protocol guess, e.g. "http", "ssh"
     String banner;    // first line grabbed from the service, truncated
+    String vulnNote;  // non-empty if the banner matched a known-vulnerable signature (see VulnSignatures)
+    bool isNewPort = false;  // true if this port wasn't open the last time this host was port-scanned
 };
 
 struct HostInfo {
@@ -47,6 +50,7 @@ struct HostInfo {
     bool credAudited = false;
     bool credVulnerable = false;
     String credNote;
+    String vulnNote;  // set from the first port whose banner matched a known-vulnerable signature
 
     bool macEqual(const uint8_t other[6]) const {
         return memcmp(mac, other, 6) == 0;
