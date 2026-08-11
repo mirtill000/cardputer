@@ -881,19 +881,25 @@ questo assistente ("Implementa 1, 2, 4, 5, 7, 8 e 10"):
   in cima a `BleScanManager.h`. Usa la libreria BLE "classica" di
   arduino-esp32 (`BLEDevice.h`/`BLEScan.h`/`BLEAdvertisedDevice.h`,
   già inclusa nel core, nessun `lib_deps` aggiuntivo — la LDF di
-  PlatformIO la risolve come "ESP32 BLE Arduino @ 2.0.0"). **Prima build
-  reale di questo modulo: ha trovato due bug veri**, entrambi corretti —
-  `String` non era ancora un tipo noto in `BleScanManager.h` (mancava
-  `#include <Arduino.h>`: nessun altro header incluso lo tira dentro
-  transitivamente, a differenza di `WardrivingManager.h` che lo ottiene
-  gratis da `<WiFi.h>`), e `BLEScan::start()` in questa versione del
-  core **ritorna `BLEScanResults` per valore, non per puntatore** come
-  invece verificato contro i sorgenti del tag `3.1.0` di arduino-esp32
-  (stessa major della `framework-arduinoespressif32 @ 3.20017` pinnata
-  in `platformio.ini`, ma evidentemente non la stessa build esatta) —
+  PlatformIO la risolve come "ESP32 BLE Arduino @ 2.0.0"). **Due build
+  reali consecutive su questo modulo hanno trovato tre bug veri**,
+  tutti corretti: `String` non era ancora un tipo noto in
+  `BleScanManager.h` (mancava `#include <Arduino.h>`: nessun altro
+  header incluso lo tira dentro transitivamente, a differenza di
+  `WardrivingManager.h` che lo ottiene gratis da `<WiFi.h>`);
+  `BLEScan::start()` in questa versione del core **ritorna
+  `BLEScanResults` per valore, non per puntatore** come invece
+  verificato contro i sorgenti del tag `3.1.0` di arduino-esp32 (stessa
+  major della `framework-arduinoespressif32 @ 3.20017` pinnata in
+  `platformio.ini`, ma evidentemente non la stessa build esatta) —
   `BleScanManager.cpp` ora usa la forma per valore
-  (`results.getCount()`/`results.getDevice(i)`), confermata dal log di
-  build reale dell'utente.
+  (`results.getCount()`/`results.getDevice(i)`); e
+  `BLEAddress::toString()`/`BLEAdvertisedDevice::getName()` **ritornano
+  `std::string`, non Arduino `String`** come i sorgenti verificati in
+  anticipo indicavano — corretto avvolgendo entrambi in
+  `String(x.c_str())`, forma che funziona indifferentemente da quale
+  dei due tipi la libreria restituisca davvero (entrambi hanno
+  `c_str()`).
 - **Rilevamento evil-twin / AP sospetti** (`WardrivingManager`): durante
   la scansione passiva, se lo stesso SSID compare con un livello di
   cifratura diverso su due BSSID distinti, entrambe le voci vengono
@@ -1087,9 +1093,9 @@ originale.
       migliorie scelte dall'utente da una lista di dieci proposte da
       questo assistente — vedi sopra per il dettaglio di ciascuna. Lo
       scan BLE (`BleScanManager`) è stato il primo modulo di questa fase
-      passato da una build reale, che ha trovato due bug veri (vedi
-      sopra), corretti ma non ancora riconfermati da una build pulita
-      successiva.
+      passato da una build reale, che su due tentativi consecutivi ha
+      trovato tre bug veri (vedi sopra), tutti corretti ma non ancora
+      riconfermati da una build pulita.
 
 ## Test plan — Fase 1
 
@@ -1548,11 +1554,11 @@ laboratorio isolato) — non in giro per strada con reti di sconosciuti.
 ## Test plan — Fase 13 (BLE, evil-twin, audio audit, STATS, backup, baseline, signal finder)
 
 1. **Build**: prima di tutto, verificare che `pio run` compili pulito.
-   La prima build reale di `BleScanManager.cpp` ha già trovato due bug
-   (vedi sopra, entrambi corretti); se `pio run` fallisce ancora dentro
-   questo file, il sospetto successivo è di nuovo la firma di
-   `BLEScan::start()`/`BLEScanResults` — vedi il commento in cima a
-   `BleScanManager.h`.
+   Due build reali consecutive di `BleScanManager.cpp` hanno già trovato
+   tre bug (vedi sopra, tutti corretti); se `pio run` fallisce ancora
+   dentro questo file, il sospetto successivo è di nuovo una firma
+   dell'API BLE diversa da quella assunta nel codice — vedi il commento
+   in cima a `BleScanManager.h`.
 2. **Scan BLE**: aprire `WAR DRIVING` → `B` per `BLE SCAN`, premere
    `Enter` per avviare. Con un telefono/auricolare BLE nelle vicinanze
    (schermo acceso, Bluetooth attivo), verificare che compaia in lista
@@ -1662,21 +1668,24 @@ posto:
   riuscito ed evil-twin sospetto — non un feedback sonoro per ogni
   azione dell'interfaccia. `M5Cardputer.Speaker` resta disponibile per
   chi voglia estenderlo.
-- **Scan BLE: due bug reali già trovati e corretti da una build su
-  hardware reale, build pulita successiva non ancora confermata**
+- **Scan BLE: tre bug reali già trovati e corretti su due build
+  consecutive su hardware reale, build pulita non ancora confermata**
   (Fase 13): `BleScanManager.cpp` è la prima volta che questo firmware
-  usa la libreria BLE "classica" di arduino-esp32. La prima build reale
-  ha fallito su due punti — `String` non risolvibile in
-  `BleScanManager.h` (mancava `#include <Arduino.h>`, che altri header
-  del progetto ottengono gratis da `<WiFi.h>` o simili) e
-  `BLEScan::start()` che in questa build ritorna `BLEScanResults` per
-  valore invece che per puntatore, contraddicendo quanto verificato in
-  anticipo contro i sorgenti del tag `3.1.0` di arduino-esp32 — a
-  conferma che affidarsi ai soli sorgenti pubblici, senza una build
-  reale, non basta per questa libreria in particolare. Entrambi
-  corretti; se `pio run` fallisce ancora dentro questo file,
-  `BleScanManager.cpp` resta il primo sospetto — vedi il commento in
-  cima a `BleScanManager.h`. Puramente passivo: non fa mai
+  usa la libreria BLE "classica" di arduino-esp32, e resta il file con
+  il tasso più alto di scarti tra "verificato contro i sorgenti" e
+  "vero sull'hardware dell'utente" di tutto il progetto. Trovati finora:
+  `String` non risolvibile in `BleScanManager.h` (mancava
+  `#include <Arduino.h>`, che altri header del progetto ottengono
+  gratis da `<WiFi.h>` o simili); `BLEScan::start()` che in questa build
+  ritorna `BLEScanResults` per valore invece che per puntatore; e
+  `BLEAddress::toString()`/`BLEAdvertisedDevice::getName()` che
+  ritornano `std::string` invece di Arduino `String` — tutti e tre
+  contraddicono quanto verificato in anticipo contro i sorgenti del tag
+  `3.1.0` di arduino-esp32, a conferma che per questa libreria
+  specifica affidarsi ai soli sorgenti pubblici, senza una build reale,
+  non basta. Tutti corretti; se `pio run` fallisce ancora dentro questo
+  file, `BleScanManager.cpp` resta il primo sospetto — vedi il commento
+  in cima a `BleScanManager.h`. Puramente passivo: non fa mai
   pairing/connessione a un dispositivo BLE, a differenza del join WiFi
   allow-listato di war driving.
 - **Evil-twin: euristica su SSID+cifratura, non una prova crittografica**

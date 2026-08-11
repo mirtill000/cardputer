@@ -21,12 +21,19 @@
 // time anything in this codebase has used the classic Arduino-ESP32 BLE
 // library (BLEDevice.h/BLEScan.h/BLEAdvertisedDevice.h, bundled with
 // the arduino-esp32 core - no extra lib_deps needed). Its API shape has
-// changed across core versions - BLEScan::start() returns BLEScanResults
-// BY VALUE on the core version this project actually builds against
-// (LDF reports "ESP32 BLE Arduino @ 2.0.0"), not by pointer as some
-// other core releases have it. BleScanManager.cpp uses the by-value form
-// - if a future core bump breaks the build again, that's the line to
-// check first.
+// changed across core versions, and two real build failures have come
+// out of this file already:
+//   - BLEScan::start() returns BLEScanResults BY VALUE on the core
+//     version this project actually builds against (LDF reports
+//     "ESP32 BLE Arduino @ 2.0.0"), not by pointer as some other core
+//     releases have it. BleScanManager.cpp uses the by-value form.
+//   - BLEAddress::toString() and BLEAdvertisedDevice::getName() return
+//     std::string on this build, not Arduino String. BleScanManager.cpp
+//     wraps both in String(x.c_str()), which works either way (Arduino
+//     String also has c_str()) - don't drop that wrapping even if a
+//     future core makes it look redundant.
+// If a future core bump breaks the build again, BleScanManager.cpp is
+// the line to check first.
 class BleScanManager {
 public:
     struct BleSighting {

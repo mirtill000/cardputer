@@ -81,9 +81,18 @@ void BleScanManager::runScanCycle() {
     for (int i = 0; i < count; i++) {
         BLEAdvertisedDevice dev = results.getDevice((uint32_t)i);
 
+        // .c_str() wrapping is deliberate, not decorative: on this core
+        // build, getAddress().toString()/getName() return std::string,
+        // not Arduino String as verified against the arduino-esp32
+        // 3.1.0 header sources before writing this code (confirmed by a
+        // real build failure - "no match for operator=" from std::string
+        // to String). String(const char*) accepts std::string::c_str()
+        // directly, and also works unchanged if a future core build
+        // reverts to returning Arduino String (which has its own
+        // c_str()) - so this line is resilient to either signature.
         BleSighting rec;
-        rec.address = dev.getAddress().toString();
-        rec.name = dev.haveName() ? dev.getName() : "";
+        rec.address = String(dev.getAddress().toString().c_str());
+        rec.name = dev.haveName() ? String(dev.getName().c_str()) : String("");
         rec.rssi = dev.getRSSI();
         if (rec.address.isEmpty()) continue;
 
