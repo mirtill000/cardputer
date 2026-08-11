@@ -329,17 +329,24 @@ pio device monitor                  # log seriale (115200 baud)
 Usa l'env `cardputer` invece di `cardputer-adv` per il Cardputer
 originale.
 
-> **Nota sulla verifica in questo ambiente**: questa sessione di sviluppo
-> gira in un sandbox la cui policy di rete blocca l'accesso al registry
-> di PlatformIO (`api.registry.platformio.org`), quindi non è stato
-> possibile scaricare il toolchain `espressif32` per eseguire una build
-> reale né per flashare/testare su hardware. Il codice è stato scritto e
-> rivisto manualmente con attenzione (bilanciamento parentesi, coerenza
-> dei tipi, API M5Unified/M5GFX/M5Cardputer verificate contro gli esempi
-> ufficiali), ma **va validato con `pio run` e su hardware reale prima di
-> fidarsene**. Se trovi un errore di build, è quasi certamente un
-> dettaglio di firma di funzione nelle librerie M5Stack che è cambiato
-> tra versioni — il `README` e i commenti indicano dove guardare.
+> **Nota sulla verifica in questo ambiente**: lo sviluppo è avvenuto in
+> un sandbox la cui policy di rete blocca l'accesso al registry di
+> PlatformIO, quindi il codice non è mai stato compilato né testato qui
+> — solo scritto e rivisto manualmente con attenzione. La build e il
+> flash reali sono stati fatti dall'utente su Mac, che ha riscontrato e
+> permesso di correggere tre bug reali non individuabili da revisione
+> del codice sola: due errori di build (`esp_netif_get_netif_impl()`
+> inesistente nella versione IDF del toolchain; SubType `littlefs` non
+> valido per `gen_esp32part.py`) e un crash al boot (`pushSprite()`
+> chiamato senza un display "genitore" impostato, panic
+> `LoadProhibited` al primo frame). **Al momento (confermato
+> dall'utente su Cardputer ADV reale): il dispositivo compila, flasha e
+> fa boot correttamente, con boot screen e navigazione del menu
+> principale funzionanti.** Le fasi successive (WiFi setup, network
+> scan, port scanner, credential audit, export) hanno ciascuna un test
+> plan dedicato più sotto ma non sono ancora state verificate su
+> hardware — se trovi un problema in una di queste, è il prossimo passo
+> naturale da testare e riportare.
 
 ## Roadmap / stato attuale
 
@@ -348,7 +355,8 @@ originale.
       fisica (`;`/`.`/`,`/`/` come frecce, `Enter` conferma, `Del` torna
       indietro), schermate placeholder per i moduli futuri. Effetto
       Matrix rain rimosso successivamente — vedi "UI: digital rain
-      rimosso" sopra.
+      rimosso" sopra. **Boot + navigazione menu confermati funzionanti
+      su Cardputer ADV reale.**
 - [x] **Fase 2 — Network discovery**: subnet auto-rilevata dal DHCP
       lease, ping sweep (TCP connect-scan) + lettura ARP cache, lookup
       vendor OUI offline (DB reale IEEE, 35k record), risoluzione
@@ -378,7 +386,9 @@ originale.
 
 ## Test plan — Fase 1
 
-Da verificare su hardware reale (non testabile in questo sandbox):
+Boot base e navigazione menu confermati su hardware reale (Cardputer
+ADV). Checklist di dettaglio, utile per una verifica più fine o dopo
+modifiche future:
 
 1. **Boot**: al power-on/flash, appare il log di boot "typing" riga per
    riga, poi il titolo `CARDPUTER` con sottotitolo, poi il prompt
