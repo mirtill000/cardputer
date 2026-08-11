@@ -661,15 +661,15 @@ la 10 — non sono state richieste dall'utente e non sono state fatte).
   del download+flash, con schermata "DO NOT power off" fissa) — non è
   una svista: un aggiornamento OTA ha comunque bisogno di una schermata
   da cui l'utente non può navigare via, quindi bloccare è la UX
-  corretta, non un bug. **Rischio dimensione slot, confermato risolto**:
-  la build reale del firmware occupa 1.251.041 byte su 1.638.400
-  disponibili per slot (76.4%) — c'è margine. Se in futuro crescesse
-  oltre i 1.625 MB, `pio run -t upload` fallirebbe rumorosamente ("app
-  image is too big") — fallimento visibile e sicuro, non un device
-  brickato — e la correzione è allargare `ota_0`/`ota_1` e restringere
-  `spiffs` di pari passo nel file partizioni. Il vero problema trovato
-  al primo flash reale non era questo, ma un bug di offset in
-  `otadata` — vedi il bullet dedicato più sotto.
+  corretta, non un bug. **Rischio dimensione slot**: alla build reale di
+  questa fase, il firmware occupava 1.251.041 byte su 1.638.400
+  disponibili per slot (76.4%) — margine che si è poi rivelato
+  insufficiente: la Fase 13 (BLE scanning soprattutto) ha fatto
+  sforare quel tetto, `pio run -t upload` ha fallito esattamente come
+  previsto qui sotto, ed è stato corretto allargando gli slot — vedi il
+  bullet dedicato nella sezione "Fase 13" più avanti. Il vero problema
+  trovato al primo flash reale di *questa* fase non era la dimensione,
+  ma un bug di offset in `otadata` — vedi il bullet dedicato più sotto.
 - **Bug reale di link trovato durante la prima build della Fase 10**:
   `src/scan/Base64.cpp` (dalla Fase 4, encoder minimale per
   `Authorization: Basic`) definiva `namespace base64 { String
@@ -969,6 +969,23 @@ questo assistente ("Implementa 1, 2, 4, 5, 7, 8 e 10"):
   scan, usarla insieme a `WAR DRIVING`/`WIFI SCAN` fa competere le due
   per l'unica radio disponibile — stessa limitazione già accettata
   altrove, vedi sotto.
+- **Bug reale trovato al primo `pio run -t upload` di questa fase — slot
+  OTA troppo piccoli**: dopo aver corretto i tre bug di compilazione di
+  `BleScanManager.cpp` sopra, il link è andato a buon fine ma
+  `checkprogsize` ha fallito: l'immagine compilata occupava 1.857.937
+  byte contro un tetto di 1.638.400 per slot (113,4%, 219.537 byte oltre
+  il limite) — un fallimento sicuro e visibile ("app image is too big"),
+  non un device brickato, ma comunque bloccante. Il margine dell'88,6%
+  osservato alla Fase 10 (vedi sopra) non è bastato: BLE da solo tira
+  dentro l'intera libreria "classica" arduino-esp32 (`liba1d/BLE`, ~25
+  file `.cpp`), di gran lunga la libreria più pesante linkata finora,
+  sommata alle altre sei migliorie di questa fase. Corretto allargando
+  `ota_0`/`ota_1` da 1,6 MB a 2,25 MB ciascuno (e restringendo `spiffs`
+  da 4,69 MB a 3,375 MB di pari passo — i soli asset statici su
+  LittleFS, DB OUI/porte + wordlist, pesano circa 1,5 MB, quindi c'è
+  ancora ampio margine lì) — vedi i commenti aggiornati in
+  `partitions.csv` per la tabella offset completa. Non ancora
+  riconfermato da una build/flash completa dopo la correzione.
 
 ## Compilare e flashare
 

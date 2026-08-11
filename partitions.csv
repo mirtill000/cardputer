@@ -1,19 +1,33 @@
 # Custom partition table — ESP32-S3FN8 (8 MB flash, no PSRAM), OTA-capable.
 #
-# Two 1.6 MB app slots (ota_0/ota_1) instead of one 4 MB "factory" slot,
-# so OtaUpdater (src/net/OtaUpdater.h) has an inactive slot to flash a
-# new image into and fall back from if it's bad — swapped for LittleFS
-# space, which still comes out ahead of the original no-OTA table's 3.9
-# MB (see git history): 4.69 MB now, since two 1.6 MB app slots (3.2 MB)
-# take less room than one 4 MB slot did.
+# Two 2.25 MB app slots (ota_0/ota_1) instead of one 4 MB "factory"
+# slot, so OtaUpdater (src/net/OtaUpdater.h) has an inactive slot to
+# flash a new image into and fall back from if it's bad — swapped for
+# LittleFS space, which still comes out ahead of the original no-OTA
+# table's 3.9 MB (see git history): 4.5 MB now, since two 2.25 MB app
+# slots (4.5 MB) take a bit more room than the original two-1.6 MB
+# layout below did, at spiffs's expense (see the Fase 13 bug below).
 #
-# RISK — the one thing this assistant could not verify without a real
-# build (see README's testing note): whether the actual compiled
-# firmware image fits inside 0x190000 (1,638,400 bytes) per slot. If it
-# doesn't, `pio run -t upload` fails loudly at the esptool.py "app image
-# is too big" step — a safe, visible failure, not a bricked device — and
-# the fix is to grow ota_0/ota_1 and shrink spiffs to match (both must
-# change together to keep the table summing to exactly 0x800000).
+# RISK, CONFIRMED AND FIXED ONCE ALREADY (Fase 13) — the one thing this
+# assistant cannot verify without a real build (see README's testing
+# note): whether the actual compiled firmware image fits inside the
+# per-slot size. The original 0x190000 (1,638,400 bytes) slots, sized
+# before OTA/BLE/STATS/ConfigBackup/SignalFinder existed, turned out
+# too small once Fase 13 added BLE scanning (which alone pulls in the
+# whole classic Arduino-ESP32 BLE stack — by far the heaviest library
+# this firmware links against) plus six other new modules: the compiled
+# image came out to 1,857,937 bytes, 219,537 bytes over the old slot
+# size. `pio run -t upload` failed loudly at the "checkprogsize" step —
+# a safe, visible failure, not a bricked device — exactly as this
+# comment always said it would. Fixed by growing ota_0/ota_1 to
+# 0x240000 (2,359,296 bytes each) and shrinking spiffs to match (both
+# must change together to keep the table summing to exactly 0x800000).
+# That leaves ~490 KB of headroom above the Fase 13 image size — should
+# absorb several more phases of growth, but is not a permanent
+# guarantee; if this fails again, the fix is the same trade one more
+# time (LittleFS static assets — OUI/port DBs, wordlists — total only
+# ~1.5 MB, so spiffs has plenty of room left to give up before it would
+# ever become the tight constraint).
 #
 # SubType "spiffs" below, not "littlefs": ESP-IDF's partition tool
 # (gen_esp32part.py) validates SubType against a fixed keyword list
@@ -56,7 +70,7 @@
 # Name,      Type, SubType,  Offset,   Size,     Flags
 nvs,         data, nvs,      0x9000,   0x5000,
 otadata,     data, ota,      0xe000,   0x2000,
-ota_0,       app,  ota_0,    0x10000,  0x190000,
-ota_1,       app,  ota_1,    0x1A0000, 0x190000,
-spiffs,      data, spiffs,   0x330000, 0x4C0000,
+ota_0,       app,  ota_0,    0x10000,  0x240000,
+ota_1,       app,  ota_1,    0x250000, 0x240000,
+spiffs,      data, spiffs,   0x490000, 0x360000,
 coredump,    data, coredump, 0x7F0000, 0x10000,
