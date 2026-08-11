@@ -1,6 +1,5 @@
 #include "WardrivingScreen.h"
 #include "SignalFinderScreen.h"
-#include "BleScanScreen.h"
 #include "../UiManager.h"
 #include "../Theme.h"
 #include "../Chrome.h"
@@ -57,8 +56,6 @@ void WardrivingScreen::onKey(UiKey key, char ch) {
             } else if (key == UiKey::Char && (ch == 'a' || ch == 'A')) {
                 _allowlistSelected = 0;
                 _state = State::AllowlistView;
-            } else if (key == UiKey::Char && (ch == 'b' || ch == 'B')) {
-                g_ui.pushScreen(&BleScanScreen::instance());
             } else if (key == UiKey::Tab) {
                 WardrivingManager::ApSighting ap;
                 if (g_wardrivingManager.getSighting(_sightingsSelected, ap)) {
@@ -77,8 +74,6 @@ void WardrivingScreen::onKey(UiKey key, char ch) {
             } else if (key == UiKey::Char && (ch == 'a' || ch == 'A')) {
                 _allowlistSelected = 0;
                 _state = State::AllowlistView;
-            } else if (key == UiKey::Char && (ch == 'b' || ch == 'B')) {
-                g_ui.pushScreen(&BleScanScreen::instance());
             } else if (key == UiKey::Back) {
                 g_ui.popScreen();  // keeps running in the background - see WardrivingManager
             }
@@ -169,7 +164,7 @@ void WardrivingScreen::draw(M5Canvas& gfx) {
 
             gfx.setTextColor(theme::GREY, theme::BG);
             gfx.setCursor(4, gfx.height() - 9);
-            gfx.print("TAB:locate A:allowlist B:ble DEL:back");
+            gfx.print("TAB:locate A:allowlist DEL:back");
             break;
         }
 
@@ -204,7 +199,7 @@ void WardrivingScreen::draw(M5Canvas& gfx) {
 
             gfx.setTextColor(theme::GREY, theme::BG);
             gfx.setCursor(4, gfx.height() - 9);
-            gfx.print("ENTER:stop A:list B:ble DEL:back(bg)");
+            gfx.print("ENTER:stop A:allowlist DEL:back(bg)");
             break;
         }
 

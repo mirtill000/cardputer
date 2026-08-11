@@ -16,7 +16,6 @@
 #include "scan/PortScanManager.h"
 #include "scan/CredAuditManager.h"
 #include "scan/WardrivingManager.h"
-#include "scan/BleScanManager.h"
 #include "net/WifiManager.h"
 #include "net/TimeSync.h"
 #include "storage/SdCard.h"
@@ -84,7 +83,6 @@ void setup() {
     g_portScanManager.begin(g_ui.scanQueue());
     g_credAuditManager.begin(g_ui.scanQueue());
     g_wardrivingManager.begin(g_ui.scanQueue());
-    g_bleScanManager.begin(g_ui.scanQueue());
 
     // Non-blocking: if a network was saved from a previous WIFI SCAN
     // run, this kicks the connection off immediately at boot instead of

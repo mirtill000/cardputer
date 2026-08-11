@@ -868,38 +868,22 @@ Sette migliorie richieste in blocco dall'utente, indipendenti tra loro:
 Sette migliorie scelte dall'utente da una lista di dieci proposte di
 questo assistente ("Implementa 1, 2, 4, 5, 7, 8 e 10"):
 
-- **Scan BLE passivo** (`scan/BleScanManager.h/.cpp`, schermata `BLE
-  SCAN` raggiungibile con `B` da `WAR DRIVING`): stesso pattern task
-  FreeRTOS permanente + `start()`/`stop()` di `WardrivingManager`, ma
-  senza alcuna sua logica di connessione — questo modulo non fa
-  **mai** pairing/connessione a un dispositivo BLE, solo ascolto
-  passivo degli advertisement (indirizzo, nome se trasmesso, RSSI),
-  loggati su `/blescan/blescan.csv`. Nessuna allowlist qui: a
-  differenza del join WiFi su una rete aperta, il pairing BLE è
-  un'azione qualitativamente più invasiva che questo assistente non
-  automatizza in alcuna forma, autorizzata o meno — vedi il commento
-  in cima a `BleScanManager.h`. Usa la libreria BLE "classica" di
-  arduino-esp32 (`BLEDevice.h`/`BLEScan.h`/`BLEAdvertisedDevice.h`,
-  già inclusa nel core, nessun `lib_deps` aggiuntivo — la LDF di
-  PlatformIO la risolve come "ESP32 BLE Arduino @ 2.0.0"). **Due build
-  reali consecutive su questo modulo hanno trovato tre bug veri**,
-  tutti corretti: `String` non era ancora un tipo noto in
-  `BleScanManager.h` (mancava `#include <Arduino.h>`: nessun altro
-  header incluso lo tira dentro transitivamente, a differenza di
-  `WardrivingManager.h` che lo ottiene gratis da `<WiFi.h>`);
-  `BLEScan::start()` in questa versione del core **ritorna
-  `BLEScanResults` per valore, non per puntatore** come invece
-  verificato contro i sorgenti del tag `3.1.0` di arduino-esp32 (stessa
-  major della `framework-arduinoespressif32 @ 3.20017` pinnata in
-  `platformio.ini`, ma evidentemente non la stessa build esatta) —
-  `BleScanManager.cpp` ora usa la forma per valore
-  (`results.getCount()`/`results.getDevice(i)`); e
-  `BLEAddress::toString()`/`BLEAdvertisedDevice::getName()` **ritornano
-  `std::string`, non Arduino `String`** come i sorgenti verificati in
-  anticipo indicavano — corretto avvolgendo entrambi in
-  `String(x.c_str())`, forma che funziona indifferentemente da quale
-  dei due tipi la libreria restituisca davvero (entrambi hanno
-  `c_str()`).
+- **Scan BLE passivo — implementato, poi rimosso in Fase 14** (vedi la
+  sezione "Fase 14" più avanti per il perché). Per la cronaca: era un
+  modulo `scan/BleScanManager.h/.cpp` gemello passivo di
+  `WardrivingManager` (mai pairing/connessione, solo ascolto degli
+  advertisement), che ha prodotto la sequenza di debug reale più densa
+  di tutto il progetto — due build consecutive su hardware reale hanno
+  trovato tre bug API veri nella libreria BLE "classica" di
+  arduino-esp32, tutti diversi da quanto verificabile in anticipo dai
+  soli sorgenti pubblici (`BLEScan::start()` che ritornava
+  `BLEScanResults` per valore invece che per puntatore;
+  `BLEAddress::toString()`/`BLEAdvertisedDevice::getName()` che
+  ritornavano `std::string` invece di Arduino `String`; un `#include
+  <Arduino.h>` mancante) — e poi, una volta risolti tutti e tre, un
+  quarto problema non di compilazione ma di dimensione: la libreria BLE
+  da sola ha fatto sforare gli slot OTA da 1,6 MB (vedi il bullet
+  dedicato più sotto). Storia completa nel git log di questa fase.
 - **Rilevamento evil-twin / AP sospetti** (`WardrivingManager`): durante
   la scansione passiva, se lo stesso SSID compare con un livello di
   cifratura diverso su due BSSID distinti, entrambe le voci vengono
@@ -986,6 +970,35 @@ questo assistente ("Implementa 1, 2, 4, 5, 7, 8 e 10"):
   ancora ampio margine lì) — vedi i commenti aggiornati in
   `partitions.csv` per la tabella offset completa. Non ancora
   riconfermato da una build/flash completa dopo la correzione.
+
+### Fase 14: rimozione dello scan BLE (risparmio spazio flash)
+
+Richiesta esplicita dell'utente: **"Elimina la funzionalità Scan BLE
+passivo per risparmiare un po' di spazio"**, dopo che la Fase 13 aveva
+già dovuto allargare gli slot OTA proprio a causa del peso di quella
+libreria (vedi il bullet sopra). Rimossi `scan/BleScanManager.h/.cpp`,
+`ui/screens/BleScanScreen.h/.cpp`, il tasto `B` (e la relativa riga nel
+footer) da `WAR DRIVING`, la voce `Ble` da `ScanSource` in
+`core/EventQueue.h`, e il wiring in `main.cpp`
+(`#include`/`g_bleScanManager.begin(...)`) — nessun residuo di codice
+o riferimento rimasto, verificato con una ricerca a tappeto della
+stringa "BLE"/"Ble" nell'intero albero `src/`. Tutte le altre sei
+migliorie della Fase 13 (evil-twin, audio audit, STATS, backup
+config, baseline dispositivi, signal finder) restano intatte — erano
+indipendenti dal modulo BLE, non ne condividevano codice.
+
+**`partitions.csv` lasciata invariata per ora, deliberatamente**: gli
+slot OTA restano a 2,25 MB/`spiffs` a 3,375 MB. Rimuovere BLE (di gran
+lunga la libreria più pesante mai linkata in questo firmware, vedi
+sopra) libera sicuramente spazio nel binario, ma di quanto esattamente
+non è verificabile senza una build reale — e restringere di nuovo gli
+slot a un valore indovinato rischierebbe una terza iterazione di
+"guess-and-fail" sulla dimensione, esattamente il tipo di rischio che
+la Fase 13 ha appena dimostrato essere concreto (non ipotetico) su
+questo progetto. Se dopo la prossima build la dimensione del binario
+risulta comodamente sotto l'1,6 MB originale, gli slot possono essere
+ristretti di nuovo per restituire spazio a `spiffs` — ma quella è una
+decisione da prendere con il numero reale in mano, non ora.
 
 ## Compilare e flashare
 
@@ -1111,8 +1124,12 @@ originale.
       questo assistente — vedi sopra per il dettaglio di ciascuna. Lo
       scan BLE (`BleScanManager`) è stato il primo modulo di questa fase
       passato da una build reale, che su due tentativi consecutivi ha
-      trovato tre bug veri (vedi sopra), tutti corretti ma non ancora
-      riconfermati da una build pulita.
+      trovato tre bug veri (vedi sopra) e infine fatto sforare gli slot
+      OTA — poi **rimosso interamente in Fase 14** su richiesta
+      dell'utente.
+- [x] **Fase 14 — Rimozione scan BLE**: modulo tolto per risparmiare
+      spazio flash, su richiesta esplicita dell'utente — vedi sopra.
+      Le altre sei migliorie della Fase 13 restano tutte attive.
 
 ## Test plan — Fase 1
 
@@ -1568,43 +1585,33 @@ laboratorio isolato) — non in giro per strada con reti di sconosciuti.
    NON venga mai considerato per la scoperta attiva anche se
    "<hidden>" fosse per assurdo nella tua allowlist.
 
-## Test plan — Fase 13 (BLE, evil-twin, audio audit, STATS, backup, baseline, signal finder)
+## Test plan — Fase 13 (evil-twin, audio audit, STATS, backup, baseline, signal finder)
 
-1. **Build**: prima di tutto, verificare che `pio run` compili pulito.
-   Due build reali consecutive di `BleScanManager.cpp` hanno già trovato
-   tre bug (vedi sopra, tutti corretti); se `pio run` fallisce ancora
-   dentro questo file, il sospetto successivo è di nuovo una firma
-   dell'API BLE diversa da quella assunta nel codice — vedi il commento
-   in cima a `BleScanManager.h`.
-2. **Scan BLE**: aprire `WAR DRIVING` → `B` per `BLE SCAN`, premere
-   `Enter` per avviare. Con un telefono/auricolare BLE nelle vicinanze
-   (schermo acceso, Bluetooth attivo), verificare che compaia in lista
-   entro una manciata di cicli (~10s ciascuno), con RSSI plausibile e
-   nome se il dispositivo lo trasmette. Verificare che
-   `/blescan/blescan.csv` su SD contenga una riga per ogni nuovo
-   dispositivo. Premere `Del`: il modulo deve continuare in background
-   (rientrando nella schermata i contatori devono essere avanzati).
-3. **Evil-twin**: con due AP (anche uno dei due un hotspot telefonico)
+> Lo scan BLE, originariamente parte di questa fase, è stato rimosso in
+> Fase 14 — vedi il test plan dedicato subito sotto invece di cercare
+> `BLE SCAN` nel menu.
+
+1. **Evil-twin**: con due AP (anche uno dei due un hotspot telefonico)
    configurati con lo **stesso SSID** ma cifratura diversa (es. uno
    aperto, uno WPA2), avviare `WAR DRIVING` e verificare che entrambe le
    voci diventino rosse con `!EVIL`, il contatore `evil:N` compaia in
    rosso, e si senta l'allarme a due toni.
-4. **Audio audit**: con `CREDENTIAL AUDIT` abilitato (disclaimer `Y`) su
+2. **Audio audit**: con `CREDENTIAL AUDIT` abilitato (disclaimer `Y`) su
    un host con una credenziale di default nota, verificare che al
    momento del login riuscito si senta l'allarme a due toni (diverso dal
    singolo beep di war driving). Con `SOUND` su `OFF` in `SETTINGS`,
    nessun suono.
-5. **STATS**: da `SCAN HISTORY`, premere `S`. Con almeno 2-3 scan salvati
+3. **STATS**: da `SCAN HISTORY`, premere `S`. Con almeno 2-3 scan salvati
    in cronologia, verificare il grafico a barre (altezza proporzionale
    al numero di host), le barre rosse sugli scan con un host Critical,
    il contorno magenta sulla barra più recente, e il testo di andamento
    sopra.
-6. **Backup/restore**: in `SETTINGS` con una SD inserita, premere `B` —
+4. **Backup/restore**: in `SETTINGS` con una SD inserita, premere `B` —
    deve apparire "backed up to SD" e comparire `/config_backup.json`
    sulla SD. Cambiare qualche impostazione, poi premere `R` — deve
    tornare ai valori del backup. Senza SD inserita, sia `B` che `R`
    devono mostrare un messaggio d'errore chiaro invece di crashare.
-7. **Baseline dispositivi noti**: fare un `NETWORK SCAN` completo su una
+5. **Baseline dispositivi noti**: fare un `NETWORK SCAN` completo su una
    rete, aspettare il salvataggio automatico in cronologia, poi
    spegnere/riaccendere un dispositivo noto (o allontanarlo) e rifare lo
    scan — quel dispositivo, se assente, semplicemente non compare (atteso);
@@ -1612,12 +1619,29 @@ laboratorio isolato) — non in giro per strada con reti di sconosciuti.
    prima su questa rete, deve apparire in rosso nella tabella con `!N`
    nello stat-strip. Ripetere lo scan sulla stessa rete senza nuovi
    dispositivi: nessuna riga rossa.
-8. **Signal finder**: da `WAR DRIVING` (stato Idle, con almeno una
+6. **Signal finder**: da `WAR DRIVING` (stato Idle, con almeno una
    sighting), selezionare una riga e premere `Tab`. Verificare che la
    barra RSSI si aggiorni continuamente e che avvicinandosi/
    allontanandosi fisicamente dall'AP il testo `GETTING CLOSER`/
    `GETTING FARTHER` e il colore della barra (verde/ambra/rosso)
    cambino di conseguenza.
+
+## Test plan — Fase 14 (rimozione scan BLE)
+
+1. **Build e dimensione**: `pio run` deve compilare senza errori né
+   riferimenti residui a BLE. Annotare la dimensione finale del binario
+   (riga "Flash:" nell'output) — se risulta comodamente sotto 1.638.400
+   byte, gli slot OTA possono tornare a 1,6 MB (vedi sopra); se no, la
+   configurazione attuale (2,25 MB/slot) resta necessaria così com'è.
+2. **`WAR DRIVING` senza BLE**: aprire `WAR DRIVING`, sia in stato Idle
+   che Running — il footer non deve più mostrare `B:ble`, e il tasto `B`
+   non deve fare nulla (nessuna schermata `BLE SCAN` da aprire, perché
+   non esiste più).
+3. **Nessuna regressione sulle altre migliorie della Fase 13**: evil-
+   twin, audio audit, STATS, backup/restore, baseline dispositivi e
+   signal finder devono continuare a funzionare esattamente come nel
+   test plan sopra — erano moduli indipendenti dal BLE, non dovrebbero
+   essere stati toccati dalla rimozione.
 
 ## Limiti noti e tagli di scope deliberati
 
@@ -1685,26 +1709,10 @@ posto:
   riuscito ed evil-twin sospetto — non un feedback sonoro per ogni
   azione dell'interfaccia. `M5Cardputer.Speaker` resta disponibile per
   chi voglia estenderlo.
-- **Scan BLE: tre bug reali già trovati e corretti su due build
-  consecutive su hardware reale, build pulita non ancora confermata**
-  (Fase 13): `BleScanManager.cpp` è la prima volta che questo firmware
-  usa la libreria BLE "classica" di arduino-esp32, e resta il file con
-  il tasso più alto di scarti tra "verificato contro i sorgenti" e
-  "vero sull'hardware dell'utente" di tutto il progetto. Trovati finora:
-  `String` non risolvibile in `BleScanManager.h` (mancava
-  `#include <Arduino.h>`, che altri header del progetto ottengono
-  gratis da `<WiFi.h>` o simili); `BLEScan::start()` che in questa build
-  ritorna `BLEScanResults` per valore invece che per puntatore; e
-  `BLEAddress::toString()`/`BLEAdvertisedDevice::getName()` che
-  ritornano `std::string` invece di Arduino `String` — tutti e tre
-  contraddicono quanto verificato in anticipo contro i sorgenti del tag
-  `3.1.0` di arduino-esp32, a conferma che per questa libreria
-  specifica affidarsi ai soli sorgenti pubblici, senza una build reale,
-  non basta. Tutti corretti; se `pio run` fallisce ancora dentro questo
-  file, `BleScanManager.cpp` resta il primo sospetto — vedi il commento
-  in cima a `BleScanManager.h`. Puramente passivo: non fa mai
-  pairing/connessione a un dispositivo BLE, a differenza del join WiFi
-  allow-listato di war driving.
+- **Scan BLE: rimosso in Fase 14**, su richiesta esplicita dell'utente
+  per risparmiare spazio flash — vedi la sezione "Fase 14" sopra per il
+  dettaglio (incluso lo storico dei tre bug API reali che il modulo
+  aveva fatto emergere prima di essere tolto).
 - **Evil-twin: euristica su SSID+cifratura, non una prova crittografica**
   (Fase 13): due AP con lo stesso nome ma cifratura diversa vengono
   entrambi segnalati come sospetti, senza alcuna pretesa di stabilire

@@ -42,7 +42,7 @@ enum class ScanEventType : uint8_t {
 // results would have its events misread as port results (or vice versa)
 // by whichever screen is on top. Screens must check `source` before
 // acting on hostIndex.
-enum class ScanSource : uint8_t { Discovery, PortScan, CredAudit, Wardriving, Ble };
+enum class ScanSource : uint8_t { Discovery, PortScan, CredAudit, Wardriving };
 
 struct ScanNotification {
     ScanSource source = ScanSource::Discovery;
