@@ -59,12 +59,13 @@ void bootLoopTask(void*) {
 void sound::startBootLoop() {
     if (g_bootLoopRunning) return;
     // Bumped up from M5Unified's default (~128/255, fairly quiet on
-    // this board's small speaker) on user feedback that the loop was
-    // too soft. This is a device-wide setting, not per-tone, so it also
-    // raises playAlert()/playCredAlert() - no separate reset once the
-    // loop stops, since a slightly louder alert/alarm is a reasonable
-    // side effect too, not a bug to work around.
-    M5Cardputer.Speaker.setVolume(220);
+    // this board's small speaker); 220 turned out louder than wanted on
+    // real hardware, settled on 180. This is a device-wide setting, not
+    // per-tone, so it also raises playAlert()/playCredAlert() - no
+    // separate reset once the loop stops, since a slightly louder
+    // alert/alarm is a reasonable side effect too, not a bug to work
+    // around.
+    M5Cardputer.Speaker.setVolume(180);
     g_bootLoopRunning = true;
     xTaskCreatePinnedToCore(&bootLoopTask, "bootmusic", 2048, nullptr, 1, nullptr, 0);
 }

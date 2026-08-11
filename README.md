@@ -1227,10 +1227,12 @@ po' il volume, fai la musica più cyberpunk e rallenta il tempo"):
 - **Nebbia più lenta**: l'intervallo di reseed di `drawDigitalFog` è
   passato da ~150ms a ~400ms — stessa densità di puntini, deriva
   visibilmente più lenta/leggera.
-- **Volume più alto**: `M5Cardputer.Speaker.setVolume(220)` (alzato dal
-  default di M5Unified, intorno a 128/255) chiamato una volta dentro
-  `startBootLoop()`. È un'impostazione globale del device, non per
-  singolo `tone()` — quindi alza anche il volume di `playAlert()`/
+- **Volume più alto**: `M5Cardputer.Speaker.setVolume(180)` (alzato dal
+  default di M5Unified, intorno a 128/255 — un primo tentativo a 220 è
+  risultato troppo alto su hardware reale, assestato a 180) chiamato una
+  volta dentro `startBootLoop()`. È un'impostazione globale del device,
+  non per singolo `tone()` — quindi alza anche il volume di
+  `playAlert()`/
   `playCredAlert()`, non solo del loop di boot; non c'è un reset al
   volume precedente quando il loop si ferma, dato che un allarme
   leggermente più udibile è un effetto collaterale ragionevole, non un
