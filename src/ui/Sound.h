@@ -5,10 +5,11 @@
 // read by anything until now).
 namespace sound {
 
-// Short jingle played once, after all boot-time init/loading is done
-// and before the UI render task starts (see main.cpp) - blocking for
-// its ~0.5s duration is fine there since nothing else is running yet
-// to stall. No-op if uiSoundEnabled is off.
+// Cyberpunk/synthwave riff (~1.5s) played once, exactly when the boot
+// log hands off to the branded NETRUNNER splash (see BootScreen.cpp) -
+// blocking for its duration is fine there since nothing on screen
+// animates until it's done (the blinking prompt waits for it). No-op if
+// uiSoundEnabled is off.
 void playBootJingle();
 
 // Single short beep - safe to call from any task (fire-and-forget:

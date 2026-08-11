@@ -1000,6 +1000,36 @@ risulta comodamente sotto l'1,6 MB originale, gli slot possono essere
 ristretti di nuovo per restituire spazio a `spiffs` — ma quella è una
 decisione da prendere con il numero reale in mano, non ora.
 
+### Fase 15: melodia di boot cyberpunk
+
+Richiesta esplicita dell'utente: sostituire il jingle di boot esistente
+(un arpeggio ascendente di 4 note in maggiore, circa mezzo secondo) con
+qualcosa di più marcatamente "cyberpunk". `sound::playBootJingle()`
+resta la stessa funzione/stesso punto di innesco (suona esattamente
+quando il boot log lascia il posto alla vista NETRUNNER, vedi
+`BootScreen.cpp`) — è cambiato solo il contenuto di `kBootJingle` in
+`ui/Sound.cpp`: un riff synthwave di 13 note, ~1,5s totali, in tre
+parti — un pulse ripetuto tonica/quinta (A2/E3, l'"idle da motore"
+tipico dei synth intro darksynth/Outrun), un arpeggio ascendente in *la
+minore* con settima minore (G naturale, non G# come sarebbe in
+maggiore, per un colore più cupo), e una risoluzione discendente con
+una nota di passaggio in stile frigio (F) prima di tornare e tenere la
+tonica grave. `M5Cardputer.Speaker` è monofonico (un solo `tone()` per
+volta, niente accordi reali), quindi il riff resta una linea singola
+sequenziale come il jingle precedente — stesso vincolo tecnico, solo
+più elaborato.
+
+Effetto collaterale gestito: essendo la chiamata bloccante (stessa
+scelta di design del jingle originale — non c'è nulla che animi sullo
+schermo in quell'istante preciso, il prompt lampeggiante non è ancora
+mostrato), il vecchio ritardo fisso di 600ms tra titolo e prompt
+lampeggiante (`kPromptDelayMs` in `BootScreen.cpp`) era pensato per un
+jingle di mezzo secondo e sarebbe stato quasi interamente "mangiato"
+dal nuovo riff da 1,5s, facendo comparire il prompt nell'istante esatto
+in cui finisce l'ultima nota. Portato a 1700ms per lasciare un piccolo
+respiro di silenzio dopo la musica prima che il prompt inizi a
+lampeggiare.
+
 ## Compilare e flashare
 
 ```
@@ -1130,6 +1160,10 @@ originale.
 - [x] **Fase 14 — Rimozione scan BLE**: modulo tolto per risparmiare
       spazio flash, su richiesta esplicita dell'utente — vedi sopra.
       Le altre sei migliorie della Fase 13 restano tutte attive.
+- [x] **Fase 15 — Melodia di boot cyberpunk**: il jingle di 4 note in
+      maggiore sostituito da un riff synthwave di 13 note in la minore
+      (~1,5s) — vedi sopra per il dettaglio musicale e per il ritocco al
+      timing del prompt lampeggiante che ne è conseguito.
 
 ## Test plan — Fase 1
 
@@ -1643,6 +1677,24 @@ laboratorio isolato) — non in giro per strada con reti di sconosciuti.
    test plan sopra — erano moduli indipendenti dal BLE, non dovrebbero
    essere stati toccati dalla rimozione.
 
+## Test plan — Fase 15 (melodia di boot cyberpunk)
+
+1. **Riconoscibilità**: al boot, esattamente nel momento in cui il log
+   "in typing" lascia il posto alla vista NETRUNNER, deve partire il
+   nuovo riff (~1,5s) — un pulse ripetuto grave, poi un arpeggio che
+   sale, poi una discesa che torna alla nota grave iniziale — chiaramente
+   diverso e più lungo del vecchio arpeggio di 4 note.
+2. **Timing del prompt**: il prompt `[ PRESS ENTER ]` non deve iniziare
+   a lampeggiare prima che il riff sia finito, né restare in silenzio
+   troppo a lungo dopo — dovrebbe comparire a breve distanza dall'ultima
+   nota, non subito attaccato né con un vuoto lungo.
+3. **`SOUND` su `OFF`**: da `SETTINGS`, disattivare `SOUND` e riavviare —
+   nessun suono al boot, ma il timing visivo (comparsa titolo → prompt)
+   deve restare invariato rispetto a quando il suono è attivo (la durata
+   del silenzio non dipende dal fatto che la melodia suoni davvero o
+   meno, dato che il ritardo è calcolato sul tempo trascorso, non
+   sull'aver effettivamente chiamato `Speaker.tone()`).
+
 ## Limiti noti e tagli di scope deliberati
 
 Riepilogo di quanto già menzionato nelle sezioni sopra, in un unico
@@ -1703,12 +1755,14 @@ posto:
   la tua password contiene un carattere che non riesci a digitare, è un
   limite della mappatura tastiera di M5Cardputer, non di questo codice
   (che si limita a inoltrare quello che la libreria gli consegna).
-- **Sound design minimo, non un tema audio completo** (Fase 12-13): tre
-  suoni esistono — la melodia di boot, il beep su nuova rete aperta in
-  war driving, e l'allarme a due toni condiviso da audit credenziali
-  riuscito ed evil-twin sospetto — non un feedback sonoro per ogni
-  azione dell'interfaccia. `M5Cardputer.Speaker` resta disponibile per
-  chi voglia estenderlo.
+- **Sound design minimo, non un tema audio completo** (Fase 12-13-15):
+  tre suoni esistono — il riff di boot cyberpunk (Fase 15), il beep su
+  nuova rete aperta in war driving, e l'allarme a due toni condiviso da
+  audit credenziali riuscito ed evil-twin sospetto — non un feedback
+  sonoro per ogni azione dell'interfaccia. `M5Cardputer.Speaker` resta
+  disponibile per chi voglia estenderlo, ma resta monofonico (un solo
+  `tone()` alla volta) — niente accordi reali, solo linee melodiche
+  sequenziali.
 - **Scan BLE: rimosso in Fase 14**, su richiesta esplicita dell'utente
   per risparmiare spazio flash — vedi la sezione "Fase 14" sopra per il
   dettaglio (incluso lo storico dei tre bug API reali che il modulo

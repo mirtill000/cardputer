@@ -9,14 +9,27 @@ struct Note {
     uint16_t ms;
 };
 
-// Short ascending arpeggio - four notes, deliberately brief (well under
-// a second total) since this plays once every single boot and
-// shouldn't get old.
+// Cyberpunk/synthwave boot riff, ~1.5s total: a driving root/fifth
+// pulse (the "engine idle" synthwave intro figure) into a rising A
+// minor arpeggio with a flattened seventh for a darker color than a
+// plain major run, then a descending phrygian-flavored resolve back to
+// a held low root - deliberately moodier than a bright fanfare, to
+// match the NETRUNNER splash it now plays under. Replaces the earlier
+// four-note ascending major arpeggio.
 constexpr Note kBootJingle[] = {
-    {523, 90},    // C5
-    {659, 90},    // E5
-    {784, 90},    // G5
-    {1047, 180},  // C6
+    {110, 60},   // A2 - pulse
+    {165, 60},   // E3 - pulse
+    {110, 60},   // A2 - pulse
+    {165, 60},   // E3 - pulse
+    {220, 80},   // A3
+    {262, 80},   // C4
+    {330, 80},   // E4
+    {392, 80},   // G4 (flat seventh, not the major-scale G#)
+    {440, 140},  // A4 - peak, held
+    {349, 90},   // F4 - phrygian passing tone
+    {294, 90},   // D4
+    {220, 100},  // A3
+    {110, 260},  // A2 - held root, engine cuts out
 };
 
 }  // namespace
