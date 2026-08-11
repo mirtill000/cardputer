@@ -8,9 +8,23 @@
 # all of which benefit far more from 3.9 MB of room than a second 4 MB app
 # slot nobody writes to would.
 #
+# SubType "spiffs" below, not "littlefs": ESP-IDF's partition tool
+# (gen_esp32part.py) validates SubType against a fixed keyword list
+# that predates LittleFS support and has no "littlefs" entry — using it
+# fails the build ("Value 'littlefs' is not valid"). This is cosmetic,
+# not functional: the SubType/Name fields are just labels for the
+# partition table itself, not a promise about which filesystem format
+# is written inside. "spiffs" is what arduino-esp32's LittleFS library
+# looks for by default (LittleFS.begin()'s partitionLabel parameter
+# defaults to "spiffs" for historical drop-in-replacement reasons), and
+# what PlatformIO's `uploadfs` target expects when locating where to
+# flash the filesystem image — so this naming isn't just convention,
+# it's what makes both of those work without extra parameters anywhere
+# in this codebase.
+#
 # Name,      Type, SubType,  Offset,   Size,     Flags
 nvs,         data, nvs,      0x9000,   0x5000,
 phy_init,    data, phy,      0xe000,   0x1000,
 factory,     app,  factory,  0x10000,  0x400000,
-littlefs,    data, littlefs, 0x410000, 0x3E0000,
+spiffs,      data, spiffs,   0x410000, 0x3E0000,
 coredump,    data, coredump, 0x7F0000, 0x10000,
