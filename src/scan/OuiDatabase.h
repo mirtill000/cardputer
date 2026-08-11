@@ -16,7 +16,14 @@
 // hold in SRAM on a board with no PSRAM.
 class OuiDatabase {
 public:
-    bool begin(const char* path = "/oui.bin");
+    // Default matches where PlatformIO's uploadfs actually puts
+    // data/oui/oui.bin: LittleFS preserves the subdirectory, so it's
+    // "/oui/oui.bin" at runtime, not "/oui.bin" — a real bug in this
+    // default that shipped for several phases before being caught (see
+    // git history), since a failed begin() degrades silently (every
+    // vendor lookup just returns false, no crash) rather than failing
+    // loudly.
+    bool begin(const char* path = "/oui/oui.bin");
     bool lookup(const uint8_t mac[6], String& vendorOut) const;
     uint32_t recordCount() const { return _count; }
     bool isReady() const { return _ready; }

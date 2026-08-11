@@ -1,9 +1,15 @@
 #include "BannerGrabber.h"
+#include "PortServiceDb.h"
 #include <Arduino.h>
 
 namespace {
 
-String serviceNameForPort(uint16_t port) {
+// Small fallback switch, only used if PortServiceDb isn't ready (e.g.
+// data/ports/services.bin wasn't uploaded yet) — keeps the ports
+// BannerGrabber's own logic depends on by name working in that
+// degraded case, just without the other ~12,000 entries the database
+// covers (see tools/extract_port_services.py).
+String fallbackServiceName(uint16_t port) {
     switch (port) {
         case 21: return "ftp";
         case 22: return "ssh";
@@ -21,6 +27,14 @@ String serviceNameForPort(uint16_t port) {
         case 3389: return "rdp";
         default: return "";
     }
+}
+
+String serviceNameForPort(uint16_t port) {
+    String name;
+    if (g_portServiceDb.isReady() && g_portServiceDb.lookup(port, /*udp=*/false, name) && name.length()) {
+        return name;
+    }
+    return fallbackServiceName(port);
 }
 
 bool looksLikeHttp(uint16_t port) {
@@ -59,7 +73,15 @@ void BannerGrabber::grab(WiFiClient& client, uint16_t port, uint16_t timeoutMs, 
     if (looksLikeHttp(port)) {
         client.print("HEAD / HTTP/1.0\r\nHost: scan\r\nConnection: close\r\n\r\n");
         result.banner = readAvailable(client, timeoutMs, 96);
-        if (result.service.isEmpty()) result.service = "http";
+        // Always "http", unconditionally — not just when the lookup
+        // came back empty. The port/service DB knows some of these
+        // ports (e.g. 8080) by a more specific real-world name like
+        // "http-proxy", which is a more accurate label but would break
+        // CredAuditManager's `p.service == "http"` dispatch (it needs
+        // to recognize every port this function treats as HTTP-shaped,
+        // not just the ones the database happens to call "http"
+        // literally).
+        result.service = "http";
         return;
     }
 

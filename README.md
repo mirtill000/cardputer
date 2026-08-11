@@ -451,6 +451,55 @@ puramente decorativi dove non c'è un dato reale da mostrare.
   scan) desse un errore di compilazione o un comportamento grafico
   inatteso, è il primo posto da guardare.
 
+### Fase 8: database porte/servizi completo (+ un bug corretto nell'OUI)
+
+- **Bug reale trovato e corretto**: `OuiDatabase::begin()` usava come
+  path di default `/oui.bin`, ma l'asset è in `data/oui/oui.bin` —
+  `uploadfs` di PlatformIO preserva le sottocartelle, quindi a runtime
+  il file è `/oui/oui.bin`, non `/oui.bin`. Il fallimento di
+  `LittleFS.open()` non causa un crash (viene loggato e la funzione
+  ritorna `false`), quindi il sintomo sarebbe stato **tutti i lookup
+  vendor silenziosamente falliti** ("unknown" ovunque) senza che
+  nessuno se ne accorgesse necessariamente subito. Trovato per
+  confronto con `WordlistLoader` (che invece usa correttamente
+  `/creds/users.txt`) mentre si implementava questo stesso modulo.
+  Corretto il default a `/oui/oui.bin`.
+- **~12.000 porte, non ~15**: `BannerGrabber` aveva uno switch
+  hardcoded con una quindicina di porte comuni. `PortServiceDb`
+  (stesso design a binary-search-su-flash di `OuiDatabase`, ~300 KB)
+  copre l'intero set di assegnazioni IANA note tramite nmap, incluse
+  sia TCP sia UDP (quest'ultime non ancora usate — lo scanner fa solo
+  TCP connect-scan, vedi Fase 3 — ma il database è pronto).
+- **Perché non `nmap-services` direttamente**: quel file specifico è
+  (C) Insecure.Com LLC sotto Nmap Public Source License, la cui licenza
+  dichiara esplicitamente che un'applicazione che "legge o include file
+  di dati protetti da copyright come nmap-os-db o nmap-service-probes"
+  costituisce opera derivata ai fini della licenza — includerlo
+  as-is avrebbe trascinato l'intero firmware sotto termini GPL-2 con le
+  clausole aggiuntive di Nmap, una scelta di licenza che non spettava a
+  questo assistente prendere per conto dell'utente. `tools/
+  extract_port_services.py` estrae invece solo i **fatti** nudi
+  (porta/protocollo → nome servizio — gli stessi fatti pubblici che IANA
+  mantiene nel proprio registro), scartando tutto ciò che è
+  specificamente farina del sacco di Nmap (percentuali di frequenza
+  reale, commenti, riferimenti RFC, struttura del file) e riscrivendo
+  il risultato nel nostro formato. Il file sorgente `nmap-services` **non
+  è incluso nel repo** (richiede `apt install nmap` in locale per
+  rigenerare).
+- **Un regressione trovata e corretta durante l'integrazione**: con il
+  nuovo DB attivo, le porte HTTP alternative (8080, 8000, 8888) hanno
+  un nome più specifico e reale (`http-proxy`, `http-alt`,
+  `sun-answerbook`) invece del generico `"http"` che lo switch
+  hardcoded restituiva sempre. `CredAuditManager` però decide quali
+  porte attaccare come HTTP controllando `p.service == "http"` — con il
+  nuovo nome quella condizione non sarebbe più stata vera per quelle
+  porte, disattivando silenziosamente l'audit su di esse. Corretto
+  forzando `result.service = "http"` in modo incondizionato per le
+  porte che `BannerGrabber` già tratta come HTTP-shaped
+  (`looksLikeHttp()`), non solo quando il campo era vuoto — la
+  ricerca di questa fragilità (grep di ogni `.service ==` nel
+  codebase) fa ora parte della checklist quando si tocca questo file.
+
 ## Compilare e flashare
 
 ```
@@ -531,6 +580,14 @@ originale.
       statica e status bar (uptime/READY/IP) su `MAIN MENU`. Prima
       verifica su hardware reale di `drawCircle`/`fillCircle`/
       `drawLine`/`fillArc` — vedi sopra.
+- [x] **Fase 8 — Database porte/servizi completo**: ~12.000 porte
+      TCP/UDP con nome servizio reale (fatti estratti indipendentemente,
+      non il file nmap-services stesso — vedi sopra per la licenza),
+      stesso design a binary-search-su-flash del DB OUI. Corretto anche
+      un bug reale nel path di default di `OuiDatabase` (cercava
+      `/oui.bin` invece di `/oui/oui.bin`, fallendo silenziosamente) e
+      una regressione nell'audit credenziali sulle porte HTTP
+      alternative introdotta dal nuovo DB.
 
 ## Test plan — Fase 1
 
@@ -727,9 +784,10 @@ plan più sotto) — senza credenziali salvate, `NETWORK SCAN` mostra
    né corrompere lo stato, e il file deve contenere gli host trovati
    fino a quel momento.
 5. **Filesystem pieno**: scenario edge-case, difficile da testare
-   deliberatamente — se `LittleFS` è quasi piena (dopo il DB OUI da
-   ~1.2 MB restano ~2.6 MB), verificare che un export fallito riporti
-   "export FAILED" invece di un crash o un file troncato silenzioso.
+   deliberatamente — se `LittleFS` è quasi piena (DB OUI ~1.2 MB + DB
+   porte/servizi ~300 KB + wordlist credenziali, restano ~2.3 MB),
+   verificare che un export fallito riporti "export FAILED" invece di
+   un crash o un file troncato silenzioso.
 
 ## Test plan — Fase 6 (restyle + credential audit reale)
 
@@ -803,6 +861,29 @@ primo sospetto.
    rispetto alle altre schermate) — sono una manciata di chiamate di
    disegno a schermata, non dovrebbero pesare, ma è la prima volta che
    vengono esercitate su hardware reale.
+
+## Test plan — Fase 8 (database porte/servizi)
+
+1. **uploadfs aggiornato**: `pio run -t uploadfs` deve caricare anche
+   `data/ports/services.bin` (~300 KB) oltre al DB OUI — verificare nel
+   log seriale l'assenza di `PortServiceDb: could not open
+   /ports/services.bin`.
+2. **Nomi più ricchi**: fare un port scan su un host con servizi noti
+   (es. un router con `80/tcp`, `443/tcp`, `53/udp` se lo scanner UDP
+   fosse mai aggiunto) e verificare che compaiano nomi specifici invece
+   di `?` (sconosciuto) per porte che prima non erano nello switch
+   hardcoded — es. `8080/tcp` dovrebbe mostrare `http-proxy` invece di
+   restare senza nome.
+3. **Regressione HTTP alt-port risolta**: su un servizio web di test in
+   ascolto sulla porta `8080` con credenziali note nel dizionario,
+   avviare `CREDENTIAL AUDIT`: deve tentarci contro (verificabile dal
+   log tentativi live) — se non tenta nulla su quella porta, la
+   correzione della Fase 8 non ha funzionato come previsto.
+4. **Vendor OUI di nuovo funzionante**: su `NETWORK SCAN`/`HOST DETAIL`,
+   verificare che il campo `VENDOR:` mostri nomi reali (es. "Apple,
+   Inc.", "TP-Link Corporation") invece di "unknown" per dispositivi
+   noti — se prima di questa fase mostrava sempre "unknown", era il bug
+   del path descritto sopra.
 
 ## Limiti noti e tagli di scope deliberati
 

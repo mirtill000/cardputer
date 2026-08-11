@@ -11,6 +11,7 @@
 #include "ui/screens/WifiSetupScreen.h"
 #include "ui/screens/SettingsScreen.h"
 #include "scan/OuiDatabase.h"
+#include "scan/PortServiceDb.h"
 #include "scan/ScanManager.h"
 #include "scan/PortScanManager.h"
 #include "scan/CredAuditManager.h"
@@ -43,6 +44,7 @@ void setup() {
         log_e("main: LittleFS mount failed");
     }
     g_ouiDb.begin();
+    g_portServiceDb.begin();
 
     g_portScanScreen.configure(
         "PORT SCANNER",
