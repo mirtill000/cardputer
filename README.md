@@ -688,6 +688,92 @@ la 10 — non sono state richieste dall'utente e non sono state fatte).
   dell'OTA. Corretto rinominando il namespace del nostro encoder da
   `base64` a `b64` (nessun cambio di comportamento, solo di nome).
 
+### Fase 11: war driving, allowlist per la scoperta attiva, orario NTP
+
+- **Perché non "collegati a ogni rete aperta trovata", come richiesto
+  alla lettera**: la richiesta originale era "fai una scansione
+  costante delle reti wifi e, per ogni rete aperta, collegati e fai una
+  discovery" — implementarla così com'è scritta avrebbe significato
+  collegarsi automaticamente e scansionare porte/host su reti di
+  sconosciuti incontrate per caso girando, senza alcuna autorizzazione
+  da parte di chi le gestisce. È una categoria diversa da tutto il
+  resto di questo firmware, che finora ha sempre e solo toccato la rete
+  che l'utente stesso ha configurato come propria (via `WIFI SETUP`,
+  con credenziali mai hardcoded). Questo assistente non ha implementato
+  quella parte alla lettera. Al suo posto: **war driving passivo
+  sempre attivo** (scansiona e logga ogni AP visto — SSID, BSSID,
+  RSSI, canale, cifratura, vendor — senza mai collegarsi a nulla, come
+  Kismet/Wigle) più **una allowlist esplicita** di SSID che l'utente
+  aggiunge a mano (reti proprie o di un cliente autorizzato): solo per
+  quelle, se aperte, scatta la connessione automatica + discovery +
+  port scan + salvataggio. Stessa logica di scope già usata per
+  `CREDENTIAL AUDIT` (disclaimer esplicito, opt-in), applicata qui alla
+  singola rete invece che all'intero modulo.
+- **`scan/WardrivingManager`**: un task FreeRTOS permanente (creato una
+  volta in `begin()`, mai distrutto — internamente resta inerte finché
+  non viene avviato da `WAR DRIVING` con `ENTER`) che ogni 15s rifà una
+  `WiFi.scanNetworks()` (stesso wrapper `WifiManager::beginScan()` già
+  usato da `WIFI SETUP`), deduplica per BSSID (non per SSID: reti
+  diverse con lo stesso nome — "Free WiFi", reti mesh — sono AP fisici
+  distinti), fa il lookup vendor sull'OUI del BSSID riusando
+  `OuiDatabase` già esistente, e appende ogni AP mai visto prima come
+  riga CSV su `/wardrive/wardrive.csv` (SD se presente, altrimenti
+  LittleFS — riusa `sdcard::exportFs()` della Fase 10). Per un AP aperto
+  E in allowlist E non ancora scoperto in questa sessione: si
+  disconnette da dove si trovava, si collega alla rete aperta (mai
+  salvata tra le reti WiFi — non deve mai spodestare le reti vere
+  dell'utente dai 3 slot MRU della Fase 10), lancia
+  `ScanManager::startDiscoveryScan()` e, per i primi 5 host vivi
+  trovati, `PortScanManager::startScan()` — **sono gli stessi identici
+  moduli usati da `NETWORK SCAN`/`PORT SCANNER`**, nessuna logica di
+  scansione duplicata — poi esporta i risultati con `ResultStore` sotto
+  `/wardrive/scans/<ssid>_<bssid>.json|csv` (namespace separato dalla
+  cronologia scan dell'utente, per non mischiare le due cose) e infine
+  richiama `WifiManager::autoConnect()` per tornare alla propria rete.
+- **Allowlist NVS-backed**: `scan/WardrivingManager` gestisce un proprio
+  namespace NVS (`wardrive_al`, fino a 10 SSID, stesso pattern di
+  storage MRU-semplice già usato da `WifiManager` per le reti salvate).
+  Aggiungere un SSID (da `WAR DRIVING` → `A`) richiede di digitarlo e
+  poi confermare esplicitamente con `Y` davanti a un avviso ("solo reti
+  TUE o per cui sei autorizzato") — stessa meccanica di
+  `CredDisclaimerScreen`, applicata qui all'azione di aggiungere una
+  rete invece che all'intero modulo credenziali.
+- **`WardrivingScreen`**: nuova voce di menu ("WAR DRIVING", settima —
+  la spaziatura verticale di `MAIN MENU` è stata ristretta da 16 a 14px
+  per riga per farcela stare senza toccare la status bar in fondo).
+  Stato Idle mostra contatori (visti/aperti/scoperti) e una tabella
+  degli ultimi AP visti (rosso→magenta se già scoperti, ambra se
+  aperti); stato Running mostra un log live delle attività (nuovo AP
+  trovato, connessione a un AP in allowlist, host scoperti,
+  riconnessione) — si può uscire con `DEL` e il war driving continua in
+  background, esattamente come `CREDENTIAL GUESS` della Fase 4.
+- **Limite noto, non risolto per scope**: `WardrivingManager` e
+  `ScanManager`/`PortScanManager` condividono lo stesso singolo radio
+  WiFi e gli stessi flag `_running` di guardia — se l'utente avvia
+  manualmente `NETWORK SCAN`/`PORT SCANNER`/`CREDENTIAL AUDIT` esattamente
+  mentre il war driving sta facendo un'incursione su un AP in allowlist,
+  le due richieste si accavallano silenziosamente (una delle due vince,
+  l'altra diventa un no-op) — stesso genere di limite già accettato per
+  `PortScanManager` ("un solo scan alla volta", vedi Fase 3). Evitare di
+  usare altri moduli di scansione mentre il war driving è attivo.
+- **`net/TimeSync`**: orario reale via NTP pubblico (`pool.ntp.org` di
+  default), usando il client SNTP già incorporato in ESP-IDF
+  (`configTime()`), non un client UDP scritto a mano — a differenza del
+  resto del codice di rete di questa fase e della Fase 10, qui non c'è
+  un protocollo non familiare da interpretare, quindi non aveva senso
+  reinventarlo. Solo UTC, niente timezone/DST (ogni altro timestamp già
+  in questo firmware — cronologia scan, log war driving — è già UTC).
+  Armato una volta al boot e di nuovo dopo ogni connessione WiFi riuscita
+  (`main.cpp`/`WifiSetupScreen`), si sincronizza da solo appena c'è
+  rete. **Armonizzazione con quanto già costruito**: gli snapshot di
+  `SCAN HISTORY` (Fase 10) ora includono un campo `time` reale quando
+  disponibile (mostrato al posto di "latest" nella lista); la status bar
+  di `MAIN MENU`/boot screen mostra l'ora reale invece dell'uptime non
+  appena sincronizzata (uptime resta il fallback, come prima, se non c'è
+  ancora sincronizzazione).
+
+## Compilare e flashare
+
 ```
 pio run -e cardputer-adv            # build
 pio run -e cardputer-adv -t upload  # flash via USB-C
@@ -788,6 +874,13 @@ originale.
       vedi sopra per il dettaglio di ciascuna. SD card ora cablata di
       default (era rimandata dalla Fase 5); mDNS ora implementato come
       fallback a NBNS (era esplicitamente rimandato dalla Fase 2).
+- [x] **Fase 11 — War driving passivo + allowlist, orario NTP**: scan
+      WiFi continuo con log di ogni AP visto su SD (mai connessione,
+      salvo per SSID esplicitamente autorizzati dall'utente in una
+      allowlist dedicata — vedi sopra per il perché di questo scope
+      rispetto alla richiesta originale) + orario reale via NTP pubblico,
+      usato per timestampare la cronologia scan e sostituire l'uptime
+      nelle status bar una volta sincronizzato.
 
 ## Test plan — Fase 1
 
@@ -1174,11 +1267,65 @@ bisogno di verificarle tutte nella stessa sessione:
    errori "app image is too big" — se fallisce lì, vedi il commento in
    `partitions.csv` per come correggere le dimensioni degli slot.
 
+## Test plan — Fase 11 (war driving, allowlist, NTP)
+
+**Da testare SOLO in un ambiente dove tutte le reti coinvolte sono tue o
+esplicitamente autorizzate** (es. un tuo hotspot secondario aperto, un
+laboratorio isolato) — non in giro per strada con reti di sconosciuti.
+
+1. **War driving passivo**: da `WAR DRIVING`, `ENTER` per avviare — i
+   contatori `seen`/`open` devono crescere man mano che vengono trovati
+   AP nei dintorni, e la tabella sotto deve popolarsi (verde = cifrata,
+   ambra = aperta). Verificare che compaia `/wardrive/wardrive.csv` su
+   SD/LittleFS con una riga per AP.
+2. **Nessuna connessione senza allowlist**: con la allowlist vuota,
+   lasciare il war driving attivo vicino a una rete aperta di test — deve
+   comparire nella tabella (ambra) ma il device non deve mai risultare
+   connesso ad essa (verificabile da `WIFI SETUP` → Idle, che mostra
+   sempre e solo la propria rete salvata o "not connected").
+3. **Allowlist e conferma**: da `WAR DRIVING` → `A`, poi `N`, digitare
+   l'SSID di una rete aperta di test **tua**, `ENTER` — deve comparire
+   l'avviso rosso/ambra con il testo dell'SSID; solo `Y` la aggiunge
+   (qualunque altro tasto/`DEL` annulla senza aggiungerla).
+4. **Scoperta attiva su AP allow-listato**: con quell'SSID in allowlist
+   e aperto, riavviare il war driving — il log deve mostrare
+   "connecting to allow-listed AP", poi "discovered N host(s)", poi
+   "reconnecting to your own network"; verificare che
+   `/wardrive/scans/<ssid>_<bssid>.json` e `.csv` compaiano su SD, e che
+   al termine il device sia di nuovo connesso alla rete di sempre (non a
+   quella di test).
+5. **`MAIN MENU` a 7 voci**: verificare che tutte e 7 le voci (inclusa
+   `WAR DRIVING`) siano leggibili senza sovrapporsi alla status bar in
+   fondo.
+6. **NTP**: dopo la connessione WiFi, attendere qualche secondo e
+   controllare `WIFI SETUP` o la status bar di `MAIN MENU` — l'ora deve
+   sostituire l'uptime una volta sincronizzata (formato `HH:MM:SS`,
+   UTC — non l'ora locale). Fare un `NETWORK SCAN` dopo la
+   sincronizzazione e verificare in `SCAN HISTORY` che compaia un orario
+   reale invece di "latest" sulla riga più recente.
+
 ## Limiti noti e tagli di scope deliberati
 
 Riepilogo di quanto già menzionato nelle sezioni sopra, in un unico
 posto:
 
+- **War driving: solo passivo per default, mai per reti non
+  autorizzate** (Fase 11) — questa è una scelta di scope deliberata, non
+  un limite tecnico: la richiesta originale era "collegati a ogni rete
+  aperta trovata", implementata invece come scan-e-log passivo sempre +
+  connessione automatica solo per SSID che l'utente aggiunge di persona
+  a un'allowlist con conferma esplicita. Vedi la sezione "Fase 11"
+  sopra per il ragionamento completo.
+- **War driving e gli altri moduli di scansione condividono un solo
+  radio WiFi** (Fase 11): usarli insieme (es. `NETWORK SCAN` manuale
+  mentre il war driving sta facendo un'incursione su un AP allow-
+  listato) può far sì che uno dei due diventi silenziosamente un no-op
+  — stesso genere di limite già accettato per `PortScanManager` a un
+  solo scan alla volta.
+- **NTP senza RTC a batteria** (Fase 11): l'orario si perde a ogni spegnimento
+  e va risincronizzato al boot successivo (richiede WiFi) — un limite
+  hardware di questa scheda, non del codice. Finché non sincronizzato,
+  ogni timestamp nel firmware resta l'uptime.
 - **Nessun editor manuale di subnet**: `NETWORK SCAN` usa sempre la
   subnet DHCP-rilevata (non ha senso poterla cambiare finché non c'è
   un modo di specificare un range arbitrario in modo sicuro). Il range

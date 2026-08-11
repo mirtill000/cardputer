@@ -2,6 +2,7 @@
 #include "../UiManager.h"
 #include "../Theme.h"
 #include "../Chrome.h"
+#include "../../net/TimeSync.h"
 #include <algorithm>
 
 namespace {
@@ -182,6 +183,7 @@ void WifiSetupScreen::update(uint32_t nowMs) {
             } else if (_pendingSavedIndex >= 0) {
                 g_wifi.touchSavedNetwork((uint8_t)_pendingSavedIndex);
             }
+            TimeSync::begin();  // re-arm now that a connection exists - see main.cpp
             _lastConnectOk = true;
             _state = State::Result;
         } else if (g_wifi.connectFailed() || (nowMs - _connectStartMs > kConnectTimeoutMs)) {

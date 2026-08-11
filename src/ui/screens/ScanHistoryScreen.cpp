@@ -116,7 +116,18 @@ void ScanHistoryScreen::drawList(M5Canvas& gfx, int16_t top) {
         gfx.print((unsigned)e.hostCount);
         gfx.print(" hosts");
 
-        if (i == 0) {
+        // Time-of-day if NTP was synced when this scan finished (see
+        // net/TimeSync.h) - the date half of e.time is dropped here,
+        // there isn't room for it and the list is newest-first anyway.
+        // Falls back to "latest" on the top row when no time was
+        // recorded, so there's still some indication which row is most
+        // recent even on a device that's never synced.
+        int spacePos = e.time.indexOf(' ');
+        if (spacePos > 0) {
+            gfx.setTextColor(theme::MAGENTA, rowBg);
+            gfx.setCursor(180, y + 1);
+            gfx.print(e.time.substring(spacePos + 1));
+        } else if (i == 0) {
             gfx.setTextColor(theme::MAGENTA, rowBg);
             gfx.setCursor(180, y + 1);
             gfx.print("latest");

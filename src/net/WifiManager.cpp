@@ -198,7 +198,9 @@ bool WifiManager::getScanResult(int16_t index, ScanResult& out) const {
     if (count < 0 || index < 0 || index >= count) return false;
 
     out.ssid = WiFi.SSID(index);
+    out.bssid = WiFi.BSSIDstr(index);
     out.rssi = WiFi.RSSI(index);
+    out.channel = (uint8_t)WiFi.channel(index);
     out.encryption = WiFi.encryptionType(index);
     return true;
 }

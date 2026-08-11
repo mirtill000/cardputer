@@ -1,4 +1,5 @@
 #include "ScanHistory.h"
+#include "../net/TimeSync.h"
 #include "../scan/ScanManager.h"
 #include <ArduinoJson.h>
 #include <Preferences.h>
@@ -61,6 +62,10 @@ bool ScanHistory::saveSnapshot(fs::FS& fs) {
 
     JsonDocument doc;
     doc["seq"] = seq;
+    // Best-effort: "" if NTP hasn't synced yet (no WiFi, or too soon
+    // after connecting) - seq is still the reliable ordering key either
+    // way, this is purely for human-readable display.
+    doc["time"] = TimeSync::nowString();
     JsonArray hosts = doc["hosts"].to<JsonArray>();
 
     size_t n = g_scanManager.hostCount();
@@ -109,6 +114,7 @@ size_t ScanHistory::listEntries(fs::FS& fs, std::vector<HistoryEntry>& out) {
                 e.filename = path;
                 e.seq = doc["seq"] | seq;
                 e.hostCount = doc["hosts"].as<JsonArray>().size();
+                e.time = doc["time"] | "";
                 out.push_back(e);
             }
             f.close();

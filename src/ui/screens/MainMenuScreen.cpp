@@ -3,6 +3,7 @@
 #include "../Theme.h"
 #include "../Chrome.h"
 #include "../../net/WifiManager.h"
+#include "../../net/TimeSync.h"
 #include <cstdio>
 #include <cstring>
 
@@ -41,7 +42,11 @@ void MainMenuScreen::draw(M5Canvas& gfx) {
     gfx.fillScreen(theme::BG);
     chrome::drawHeader(gfx, "NETRUNNER");
 
-    constexpr int16_t kRowH = 16;
+    // kRowH sized for up to 7 items (WAR DRIVING made it 7 - see
+    // main.cpp) without the last row's box running into the status bar
+    // below: kTop + 7*kRowH = 22 + 98 = 120, status bar sits at
+    // height-9 = 126, leaving a 6px gap.
+    constexpr int16_t kRowH = 14;
     constexpr int16_t kTop = 22;
 
     for (uint8_t i = 0; i < _count; i++) {
@@ -58,19 +63,24 @@ void MainMenuScreen::draw(M5Canvas& gfx) {
         gfx.print(_items[i].label);
     }
 
-    // Bottom status bar: uptime (not wall-clock — no RTC/NTP wired up,
-    // see README) / READY. / current IP. Replaces the old key-hint
-    // footer on this one screen — Up/Down/Enter is already the
-    // established convention by the time a user reaches the menu.
-    uint32_t upSec = millis() / 1000;
-    char upBuf[16];  // "HH:MM:SS" is 9 bytes, but hours isn't clamped - room for a much longer uptime
-    snprintf(upBuf, sizeof(upBuf), "%02u:%02u:%02u", (unsigned)(upSec / 3600), (unsigned)((upSec / 60) % 60),
-             (unsigned)(upSec % 60));
+    // Bottom status bar: wall-clock time (UTC) once NTP has synced (see
+    // net/TimeSync.h), uptime otherwise / READY. / current IP.
+    // Replaces the old key-hint footer on this one screen — Up/Down/
+    // Enter is already the established convention by the time a user
+    // reaches the menu.
+    String leftStr = TimeSync::nowTimeString();
+    if (leftStr.isEmpty()) {
+        uint32_t upSec = millis() / 1000;
+        char upBuf[16];  // "HH:MM:SS" is 9 bytes, but hours isn't clamped - room for a much longer uptime
+        snprintf(upBuf, sizeof(upBuf), "%02u:%02u:%02u", (unsigned)(upSec / 3600), (unsigned)((upSec / 60) % 60),
+                 (unsigned)(upSec % 60));
+        leftStr = upBuf;
+    }
 
     int16_t statusY = gfx.height() - 9;
     gfx.setTextColor(theme::CYAN, theme::BG);
     gfx.setCursor(4, statusY);
-    gfx.print(upBuf);
+    gfx.print(leftStr);
 
     const char* ready = "READY.";
     int16_t readyX = (gfx.width() - (int16_t)strlen(ready) * theme::GLYPH_W) / 2;

@@ -25,6 +25,7 @@ struct HistoryEntry {
     String filename;    // full path, e.g. "/history/scan_00007.json"
     uint32_t seq = 0;
     size_t hostCount = 0;
+    String time;         // "YYYY-MM-DD HH:MM:SS" UTC if NTP was synced when saved, "" otherwise (see net/TimeSync.h)
 };
 
 struct HistoryHostSnapshot {

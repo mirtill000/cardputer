@@ -4,6 +4,7 @@
 #include "../Theme.h"
 #include "../Chrome.h"
 #include "../../net/WifiManager.h"
+#include "../../net/TimeSync.h"
 #include <cstdio>
 #include <cstring>
 
@@ -111,16 +112,21 @@ void BootScreen::draw(M5Canvas& gfx) {
 
     // Bottom status bar — same layout as MainMenuScreen's, so the splash
     // reads as the first frame of one continuous dashboard rather than a
-    // separate screen with its own conventions.
-    uint32_t upSec = millis() / 1000;
-    char upBuf[16];  // "HH:MM:SS" is 9 bytes, but hours isn't clamped - room for a much longer uptime
-    snprintf(upBuf, sizeof(upBuf), "%02u:%02u:%02u", (unsigned)(upSec / 3600), (unsigned)((upSec / 60) % 60),
-             (unsigned)(upSec % 60));
+    // separate screen with its own conventions. Wall-clock (UTC) once
+    // NTP has synced, uptime otherwise - see net/TimeSync.h.
+    String leftStr = TimeSync::nowTimeString();
+    if (leftStr.isEmpty()) {
+        uint32_t upSec = millis() / 1000;
+        char upBuf[16];  // "HH:MM:SS" is 9 bytes, but hours isn't clamped - room for a much longer uptime
+        snprintf(upBuf, sizeof(upBuf), "%02u:%02u:%02u", (unsigned)(upSec / 3600), (unsigned)((upSec / 60) % 60),
+                 (unsigned)(upSec % 60));
+        leftStr = upBuf;
+    }
 
     int16_t statusY = gfx.height() - 9;
     gfx.setTextColor(theme::CYAN, theme::BG);
     gfx.setCursor(4, statusY);
-    gfx.print(upBuf);
+    gfx.print(leftStr);
 
     const char* boot = "SYSTEM READY";
     int16_t bootX = (gfx.width() - (int16_t)strlen(boot) * theme::GLYPH_W) / 2;

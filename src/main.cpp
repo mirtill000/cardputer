@@ -15,9 +15,12 @@
 #include "scan/ScanManager.h"
 #include "scan/PortScanManager.h"
 #include "scan/CredAuditManager.h"
+#include "scan/WardrivingManager.h"
 #include "net/WifiManager.h"
+#include "net/TimeSync.h"
 #include "storage/SdCard.h"
 #include "ui/screens/ScanHistoryScreen.h"
+#include "ui/screens/WardrivingScreen.h"
 
 namespace {
 BootScreen g_bootScreen;
@@ -28,7 +31,7 @@ BootScreen g_bootScreen;
 PlaceholderScreen g_portScanScreen;
 PlaceholderScreen g_credAuditScreen;
 
-MenuItem g_menuItems[6];
+MenuItem g_menuItems[7];
 }  // namespace
 
 void setup() {
@@ -66,8 +69,9 @@ void setup() {
     g_menuItems[2] = {"PORT SCANNER", &g_portScanScreen};
     g_menuItems[3] = {"CREDENTIAL AUDIT", &g_credAuditScreen};
     g_menuItems[4] = {"SCAN HISTORY", &ScanHistoryScreen::instance()};
-    g_menuItems[5] = {"SETTINGS", &SettingsScreen::instance()};
-    MainMenuScreen::instance().configure(g_menuItems, 6);
+    g_menuItems[5] = {"WAR DRIVING", &WardrivingScreen::instance()};
+    g_menuItems[6] = {"SETTINGS", &SettingsScreen::instance()};
+    MainMenuScreen::instance().configure(g_menuItems, 7);
 
     // MainMenuScreen must already be configured by this point: once the
     // render task starts, BootScreen can transition straight to it on
@@ -78,12 +82,19 @@ void setup() {
     g_scanManager.begin(g_ui.scanQueue());
     g_portScanManager.begin(g_ui.scanQueue());
     g_credAuditManager.begin(g_ui.scanQueue());
+    g_wardrivingManager.begin(g_ui.scanQueue());
 
     // Non-blocking: if a network was saved from a previous WIFI SETUP
     // run, this kicks the connection off immediately at boot instead of
     // waiting for the user to open NETWORK SCAN first. No-op if nothing
     // is saved yet (first boot, or after FORGET).
     g_wifi.autoConnect();
+
+    // Arms the SNTP client. No-op if there's no WiFi yet - it just
+    // syncs silently in the background whenever a connection exists
+    // (see WifiSetupScreen for the other place this gets re-armed,
+    // covering the case where autoConnect() above found nothing saved).
+    TimeSync::begin();
 }
 
 void loop() {

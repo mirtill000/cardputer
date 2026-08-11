@@ -27,7 +27,9 @@ class WifiManager {
 public:
     struct ScanResult {
         String ssid;
+        String bssid;  // "aa:bb:cc:dd:ee:ff" - identifies the physical AP, not just the network name
         int32_t rssi = 0;
+        uint8_t channel = 0;
         wifi_auth_mode_t encryption = WIFI_AUTH_OPEN;
     };
 
