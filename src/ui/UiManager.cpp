@@ -101,7 +101,14 @@ void UiManager::run() {
             top->update(millis());
             top->draw(_canvas);
         }
-        _canvas.pushSprite(0, 0);
+        // Explicit destination, not the 2-arg pushSprite(x,y): that
+        // overload pushes to a "parent" LovyanGFX* the sprite has to
+        // have been told about, and _canvas (a bare member, default-
+        // constructed with no parent) never was — which is exactly
+        // what crashed on real hardware (LoadProhibited inside
+        // push_sprite(), null parent pointer). Passing the display
+        // explicitly here sidesteps needing that stored parent at all.
+        _canvas.pushSprite(&M5Cardputer.Display, 0, 0);
 
         vTaskDelay(kFrameDelay);
     }
