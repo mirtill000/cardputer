@@ -18,12 +18,13 @@ constexpr const char* kBootLines[] = {
 constexpr uint8_t kLineCount = sizeof(kBootLines) / sizeof(kBootLines[0]);
 constexpr uint32_t kLineIntervalMs = 220;
 constexpr uint32_t kTitleDelayMs = (uint32_t)kLineCount * kLineIntervalMs + 300;
-// 600ms used to be mostly silent gap after the old ~0.5s jingle; now the
-// jingle itself is ~1.5s (see Sound.cpp's kBootJingle) and already
-// blocks past this threshold, so bumped to 1700ms to leave a small
-// beat of quiet after the music ends before the prompt starts blinking,
-// instead of it appearing the instant the last note stops.
-constexpr uint32_t kPromptDelayMs = kTitleDelayMs + 1700;
+// Back to a short fixed gap: sound::startBootLoop() (see below) is
+// non-blocking now - it just spins up a background task and returns
+// immediately, unlike the old one-shot playBootJingle() this replaced,
+// which blocked the render task for its ~1.5s duration and needed this
+// gap widened to not have the prompt pop up mid-note. Nothing here
+// blocks anymore, so there's nothing to wait out.
+constexpr uint32_t kPromptDelayMs = kTitleDelayMs + 600;
 
 // Splash layout, once the boot log phase hands off to the branded view.
 // Redesigned to track the reference NETRUNNER mockup more closely:
@@ -48,6 +49,13 @@ void BootScreen::onEnter() {
     _promptShown = false;
 }
 
+void BootScreen::onExit() {
+    // Splash music is scoped to this screen only - stop it the moment
+    // we leave for MAIN MENU (see sound::stopBootLoop()'s doc comment
+    // for the brief unavoidable tail).
+    sound::stopBootLoop();
+}
+
 void BootScreen::onKey(UiKey key, char /*ch*/) {
     if (!_promptShown) return;  // ignore input until the boot sequence has finished
     if (key == UiKey::Enter || key == UiKey::Back) {
@@ -64,17 +72,11 @@ void BootScreen::update(uint32_t nowMs) {
 
     if (!_titleShown && elapsed >= kTitleDelayMs) {
         _titleShown = true;
-        // Plays exactly when the boot log hands off to the branded
+        // Starts exactly when the boot log hands off to the branded
         // view - "after loading" as literally as this UI has a moment
-        // for. Blocking call (~1.5s now, the cyberpunk riff - see
-        // Sound.cpp) on the render task is acceptable here: nothing on
-        // screen animates yet at this exact instant (the blink prompt
-        // isn't shown until kPromptDelayMs, later still) - and since
-        // millis() keeps advancing while this call blocks, the prompt
-        // still lands on schedule relative to real time once it returns,
-        // just with the visible title-to-prompt gap now filled by music
-        // instead of silence.
-        sound::playBootJingle();
+        // for - and keeps looping for as long as this screen is up;
+        // see onExit() for where it stops.
+        sound::startBootLoop();
     }
     if (_titleShown && elapsed >= kPromptDelayMs) _promptShown = true;
 }
@@ -94,6 +96,13 @@ void BootScreen::draw(M5Canvas& gfx) {
         }
         return;
     }
+
+    // Light digital fog, laid down before everything else on the
+    // branded view so title/subtitle/version text (each glyph cell
+    // fills its own background when printed) cleanly erases any dots
+    // that happen to fall under it - see chrome::drawDigitalFog's
+    // comment.
+    chrome::drawDigitalFog(gfx, 0, 0, gfx.width(), gfx.height());
 
     // Decorative bracketed header - deliberately not chrome::drawHeader:
     // this is a splash, not a working screen, so there's no wifi/battery

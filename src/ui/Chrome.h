@@ -30,4 +30,18 @@ void drawSkyline(M5Canvas& gfx, int16_t baselineY);
 // grid using only drawLine()/drawFastHLine(), no real projection math.
 void drawPerspectiveGrid(M5Canvas& gfx, int16_t top, int16_t bottom, uint16_t color);
 
+// Sparse, dim, drifting single-pixel dots over the given rect — a
+// light "digital fog"/static texture. Unlike drawSkyline/
+// drawPerspectiveGrid above, this one is deliberately reseeded over
+// time (not a fixed per-call pattern): a completely static dot field
+// wouldn't read as fog at all, just as noise baked into the
+// background. Reseeded roughly every 150ms rather than every frame, so
+// it drifts/shimmers gently instead of flickering like TV static -
+// "leggera" (light), meant to be glanced past, not stared at. Call
+// this before drawing anything else that must stay fully legible over
+// it (title text, etc.) - every glyph cell this app prints fills its
+// own background as part of printing, so text drawn afterward cleanly
+// erases any dots underneath it.
+void drawDigitalFog(M5Canvas& gfx, int16_t x, int16_t y, int16_t w, int16_t h);
+
 }  // namespace chrome

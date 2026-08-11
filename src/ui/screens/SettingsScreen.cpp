@@ -57,7 +57,7 @@ void SettingsScreen::adjust(int direction) {
         case 5:  // auto-export toggle
             g_config.autoExportOnScanFinish = !g_config.autoExportOnScanFinish;
             break;
-        case 6:  // sound toggle - gates sound::playBootJingle()/playAlert()
+        case 6:  // sound toggle - gates sound::startBootLoop()/playAlert()/playCredAlert()
             g_config.uiSoundEnabled = g_config.uiSoundEnabled ? 0 : 1;
             break;
         default:

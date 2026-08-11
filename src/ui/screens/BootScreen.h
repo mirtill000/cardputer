@@ -10,6 +10,7 @@
 class BootScreen : public Screen {
 public:
     void onEnter() override;
+    void onExit() override;
     void onKey(UiKey key, char ch) override;
     void update(uint32_t nowMs) override;
     void draw(M5Canvas& gfx) override;

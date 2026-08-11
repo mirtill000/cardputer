@@ -5,12 +5,24 @@
 // read by anything until now).
 namespace sound {
 
-// Cyberpunk/synthwave riff (~1.5s) played once, exactly when the boot
-// log hands off to the branded NETRUNNER splash (see BootScreen.cpp) -
-// blocking for its duration is fine there since nothing on screen
-// animates until it's done (the blinking prompt waits for it). No-op if
-// uiSoundEnabled is off.
-void playBootJingle();
+// Starts a looping ~4s "Nightcall"-inspired synthwave theme (driving
+// arpeggiated bassline pulse + a slower D-minor melodic hook - an
+// original composition evoking that moody 80s-outrun vibe, not a
+// transcription of the real Kavinsky track: M5Cardputer.Speaker is
+// monophonic, one tone() at a time, so it couldn't play the real
+// track's simultaneous bassline+lead+vocal layers anyway, and
+// reproducing someone else's copyrighted melody note-for-note isn't
+// something this project does — see README) on its own background
+// FreeRTOS task, repeating until stopBootLoop() is called. Runs on the
+// splash screen only (BootScreen starts it once the title is revealed,
+// stops it in onExit() — see BootScreen.cpp) — non-blocking, so it's
+// safe to call from the UI render task unlike the other functions
+// here. No-op (task never even starts) if already running; if
+// uiSoundEnabled is OFF, the loop still runs and keeps time silently
+// (tone() calls skipped) so toggling sound back on mid-track resumes
+// in the right rhythmic position instead of restarting.
+void startBootLoop();
+void stopBootLoop();
 
 // Single short beep - safe to call from any task (fire-and-forget:
 // M5Unified's Speaker driver plays it asynchronously, this call doesn't
@@ -21,10 +33,10 @@ void playAlert();
 // Two-tone descending alarm - deliberately harsher/more urgent than
 // playAlert(): a confirmed working default credential is a stronger,
 // more actionable finding than "found an open AP", the one other event
-// in this firmware with a sound. Briefly blocks (~400ms, like
-// playBootJingle()) to sequence the two tones - fine to call from any
-// background task (CredAuditManager's own, specifically), just not the
-// UI render task. No-op if uiSoundEnabled is off.
+// in this firmware with a sound. Briefly blocks (~400ms) to sequence
+// the two tones - fine to call from any background task
+// (CredAuditManager's own, specifically), just not the UI render task.
+// No-op if uiSoundEnabled is off.
 void playCredAlert();
 
 }  // namespace sound

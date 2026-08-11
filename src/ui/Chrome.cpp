@@ -76,6 +76,30 @@ void chrome::drawPerspectiveGrid(M5Canvas& gfx, int16_t top, int16_t bottom, uin
     }
 }
 
+void chrome::drawDigitalFog(M5Canvas& gfx, int16_t x, int16_t y, int16_t w, int16_t h) {
+    if (w <= 0 || h <= 0) return;
+
+    // Density scales with area rather than being a fixed dot count, so
+    // this reads equally "light" whether called over a small panel or
+    // the full 240x135 screen - roughly one dot per 55px^2, tuned by
+    // eye against the full-screen boot-splash case.
+    int32_t area = (int32_t)w * (int32_t)h;
+    int dots = (int)(area / 55);
+    if (dots > 400) dots = 400;  // hard ceiling regardless of area - stays cheap even if misused on something huge
+
+    // Reseeded on a coarse time bucket (not per-frame) - see the header
+    // comment for why a fixed pattern wouldn't read as fog, and why a
+    // full per-frame reshuffle would read as static instead of drift.
+    uint32_t seed = (uint32_t)(millis() / 150) * 2654435761u + 1u;
+    for (int i = 0; i < dots; i++) {
+        seed = seed * 1103515245u + 12345u;
+        int16_t dx = x + (int16_t)(seed % (uint32_t)w);
+        seed = seed * 1103515245u + 12345u;
+        int16_t dy = y + (int16_t)(seed % (uint32_t)h);
+        gfx.drawPixel(dx, dy, theme::GREEN_DIM);
+    }
+}
+
 void chrome::drawHeader(M5Canvas& gfx, const char* title) {
     gfx.setTextColor(theme::CYAN, theme::BG);
     gfx.setCursor(4, 4);

@@ -1037,6 +1037,12 @@ in cui finisce l'ultima nota. Portato a 1700ms per lasciare un piccolo
 respiro di silenzio dopo la musica prima che il prompt inizi a
 lampeggiare.
 
+> **Aggiornamento (Fase 17)**: `sound::playBootJingle()` descritta qui
+> sotto è stata rimossa e sostituita da un loop continuo — vedi la
+> sezione "Fase 17" più avanti. Il riff a 13 note resta comunque un
+> pezzo di storia utile: la Fase 17 lo riusa concettualmente come base
+> ritmica del nuovo loop.
+
 ### Fase 16: strumenti offensive per reti locali
 
 > ⚠️ **Cambio di categoria, non solo di scope**: tutto quello che questo
@@ -1155,6 +1161,45 @@ lampeggiare.
   quale dei due sia quello giusto per la build reale di questo
   progetto. Vedi i commenti in cima a `ArpSpoofManager.h`/
   `DeauthManager.h` per il dettaglio completo.
+
+### Fase 17: musica di boot in loop + nebbia digitale
+
+Due richieste sullo splash screen: musica continua invece di un singolo
+sting, e un effetto di nebbia/statica leggera sullo sfondo.
+
+- **Musica in loop stile "Nightcall" di Kavinsky, non una trascrizione
+  del brano vero**: `sound::playBootJingle()` della Fase 15 (~1,5s, una
+  volta sola, bloccante) è stata **rimossa interamente** — nessun
+  residuo, non aveva senso tenerla come funzione morta una volta che
+  BootScreen non la chiama più — e sostituita da
+  `sound::startBootLoop()`/`stopBootLoop()`: un loop di circa 4s (pulse
+  di basso arpeggiato D2/A2/D3, poi un hook melodico più lento in re
+  minore naturale, poi una risoluzione grave tenuta) su un proprio task
+  FreeRTOS in background, che si ripete finché non si preme ENTER per
+  entrare in `MAIN MENU` (fermato da `BootScreen::onExit()`, che ora
+  esiste apposta). **Non è una trascrizione del brano reale**: sia per
+  motivi tecnici (`M5Cardputer.Speaker` è monofonico — un solo `tone()`
+  alla volta, non può suonare basso+melodia+voce contemporaneamente
+  come fa il brano vero) sia deliberatamente (riprodurre nota per nota
+  una melodia di qualcun altro non è quello che fa questo progetto) —
+  è una composizione originale che ne evoca l'atmosfera (synthwave
+  cupo, tonalità minore, pulse di basso arpeggiato). Essendo
+  `startBootLoop()` non bloccante (avvia il task e ritorna subito), il
+  ritardo fisso prima del prompt lampeggiante (`kPromptDelayMs` in
+  `BootScreen.cpp`) è tornato al valore originale di 600ms della Fase
+  12 — il valore allargato a 1700ms nella Fase 15 esisteva solo per
+  compensare il vecchio sting bloccante, che non c'è più.
+- **Nebbia digitale puntinata** (`chrome::drawDigitalFog`, nuova
+  funzione condivisa in `ui/Chrome.h/.cpp`, chiamata solo sulla vista
+  brandizzata dello splash): punti singoli, sparsi e fiochi
+  (`theme::GREEN_DIM`) sopra l'intero schermo, ridisegnati su un
+  intervallo di ~150ms (non ad ogni frame — un reshuffle completo ad
+  ogni frame leggerebbe come statica, non come nebbia che deriva) così
+  da dare un effetto di deriva/shimmer leggero. Disegnata per prima,
+  prima di titolo/sottotitolo/versione: ogni cella di carattere che
+  questa UI stampa riempie il proprio sfondo, quindi il testo sopra
+  cancella pulitamente qualunque puntino ci finisca sotto, senza dover
+  calcolare a mano una zona "sicura" da evitare.
 
 ## Compilare e flashare
 
@@ -1301,6 +1346,12 @@ originale.
       condiviso dai tre strumenti attivi. `ArpSpoofManager`/
       `DeauthManager` sono il codice meno verificato di tutto il
       progetto, mai passato da una build reale.
+- [x] **Fase 17 — Musica di boot in loop + nebbia digitale**: il riff
+      di boot della Fase 15 sostituito da un loop continuo stile
+      "Nightcall" (composizione originale, non una trascrizione — vedi
+      sopra) che suona finché non si entra in `MAIN MENU`, più un
+      leggero effetto di nebbia/statica puntinata sullo sfondo dello
+      splash.
 
 ## Test plan — Fase 1
 
@@ -1878,6 +1929,29 @@ laboratorio isolato) — non in giro per strada con reti di sconosciuti.
    POP3/IMAP/SMTP e una credenziale nota nella wordlist, verifica che
    `CREDENTIAL AUDIT` la trovi esattamente come già fa per FTP.
 
+## Test plan — Fase 17 (musica in loop + nebbia digitale)
+
+1. **Loop continuo**: al boot, dal momento in cui appare la vista
+   NETRUNNER, deve partire la musica e continuare a ripetersi (pulse di
+   basso, poi hook melodico, poi risoluzione, poi da capo) senza
+   fermarsi da sola.
+2. **Si ferma a `MAIN MENU`**: premendo `ENTER` sul prompt, la musica
+   deve fermarsi (al massimo con una brevissima coda, non un'altra nota
+   intera) nel momento in cui compare `MAIN MENU` — non deve continuare
+   a suonare in background una volta usciti dallo splash.
+3. **`SOUND` su `OFF`**: nessun suono al boot, ma il timing visivo
+   (comparsa titolo → prompt) deve restare invariato — stessa logica
+   già verificata in Fase 15. Riattivando `SOUND` mentre il loop
+   sarebbe altrimenti in corso (es. tornando su `MAIN MENU` → `SETTINGS`
+   e poi di nuovo sullo splash a un riavvio) il loop deve ripartire dal
+   proprio inizio, non da dove si era "fermato silenziosamente".
+4. **Nebbia digitale**: sulla vista NETRUNNER, verifica che compaiano
+   puntini fiochi sparsi sullo sfondo che cambiano leggermente
+   posizione ogni circa 150ms (deriva/shimmer, non un flicker frenetico
+   né un pattern statico) — e che titolo/sottotitolo/versione/prompt
+   restino perfettamente leggibili, senza puntini visibili sopra il
+   testo.
+
 ## Limiti noti e tagli di scope deliberati
 
 Riepilogo di quanto già menzionato nelle sezioni sopra, in un unico
@@ -1938,14 +2012,24 @@ posto:
   la tua password contiene un carattere che non riesci a digitare, è un
   limite della mappatura tastiera di M5Cardputer, non di questo codice
   (che si limita a inoltrare quello che la libreria gli consegna).
-- **Sound design minimo, non un tema audio completo** (Fase 12-13-15):
-  tre suoni esistono — il riff di boot cyberpunk (Fase 15), il beep su
-  nuova rete aperta in war driving, e l'allarme a due toni condiviso da
-  audit credenziali riuscito ed evil-twin sospetto — non un feedback
-  sonoro per ogni azione dell'interfaccia. `M5Cardputer.Speaker` resta
+- **Sound design minimo, non un tema audio completo** (Fase 12-13-15-17):
+  tre suoni esistono — il loop di boot stile Nightcall (Fase 17,
+  sostituisce il riff one-shot della Fase 15), il beep su nuova rete
+  aperta in war driving, e l'allarme a due toni condiviso da audit
+  credenziali riuscito ed evil-twin sospetto — non un feedback sonoro
+  per ogni azione dell'interfaccia. `M5Cardputer.Speaker` resta
   disponibile per chi voglia estenderlo, ma resta monofonico (un solo
   `tone()` alla volta) — niente accordi reali, solo linee melodiche
   sequenziali.
+- **Musica di boot: composizione originale ispirata a Nightcall, non
+  una trascrizione** (Fase 17): scelta deliberata, non solo un limite
+  tecnico del buzzer monofonico — vedi la sezione "Fase 17" sopra.
+- **Nebbia digitale: puramente decorativa, densità legata all'area, non
+  un vero effetto di trasparenza** (Fase 17): `chrome::drawDigitalFog`
+  disegna punti singoli opachi, non una vera sovrapposizione
+  alpha-blended (RGB565 su questo hardware non la rende economica) —
+  l'illusione di "nebbia leggera" viene dalla bassa densità e dal
+  colore fioco, non da una reale trasparenza.
 - **Scan BLE: rimosso in Fase 14**, su richiesta esplicita dell'utente
   per risparmiare spazio flash — vedi la sezione "Fase 14" sopra per il
   dettaglio (incluso lo storico dei tre bug API reali che il modulo
