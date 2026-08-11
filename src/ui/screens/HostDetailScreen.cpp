@@ -8,6 +8,7 @@
 #include "../../core/Config.h"
 #include "../../core/Types.h"
 #include "../../scan/ScanManager.h"
+#include <cmath>
 
 HostDetailScreen& HostDetailScreen::instance() {
     static HostDetailScreen s;
@@ -42,6 +43,8 @@ void HostDetailScreen::onKey(UiKey key, char ch) {
 }
 
 namespace {
+constexpr float kTwoPi = 6.28318530718f;  // avoids relying on M_PI's availability
+
 void row(M5Canvas& gfx, int16_t y, const char* label, const String& value, uint16_t valueColor) {
     gfx.setTextColor(theme::GREY, theme::BG);
     gfx.setCursor(6, y);
@@ -49,6 +52,50 @@ void row(M5Canvas& gfx, int16_t y, const char* label, const String& value, uint1
     gfx.setTextColor(valueColor, theme::BG);
     gfx.setCursor(6 + 11 * theme::GLYPH_W, y);
     gfx.print(value);
+}
+
+// Purely decorative radar panel — devices don't have real spatial
+// coordinates, so neither the "blips" nor their bearing mean anything;
+// it's the same idea as the mockup's radar. Drawn last so its
+// background fill also cleans up any long field (e.g. VENDOR:) that
+// spilled into this area from the text rows above.
+void drawRadar(M5Canvas& gfx, const HostInfo& h) {
+    constexpr int16_t kPanelX = 150, kPanelY = 17, kPanelW = 90, kPanelH = 82;
+    constexpr int16_t cx = kPanelX + kPanelW / 2;
+    constexpr int16_t cy = kPanelY + kPanelH / 2;
+    constexpr int16_t kRMax = 30;
+
+    gfx.fillRect(kPanelX, kPanelY, kPanelW, kPanelH, theme::BG);
+    gfx.drawRect(kPanelX, kPanelY, kPanelW, kPanelH, theme::GREY);
+
+    for (int16_t r = 10; r <= kRMax; r += 10) {
+        gfx.drawCircle(cx, cy, r, theme::GREEN_DIM);
+    }
+    gfx.drawFastHLine(cx - kRMax, cy, kRMax * 2, theme::GREEN_DIM);
+    gfx.drawFastVLine(cx, cy - kRMax, kRMax * 2, theme::GREEN_DIM);
+
+    // Sweep line: one full rotation every ~3s.
+    float angle = (float)(millis() % 3000) / 3000.0f * kTwoPi;
+    int16_t sx = cx + (int16_t)(kRMax * cosf(angle));
+    int16_t sy = cy + (int16_t)(kRMax * sinf(angle));
+    gfx.drawLine(cx, cy, sx, sy, theme::CYAN);
+
+    // A handful of "blips" at positions derived from this host's own IP
+    // bytes, so they stay put across frames (no jitter) and differ from
+    // host to host without claiming any real meaning.
+    uint32_t seed = (uint32_t)h.ip[0] * 7919u + (uint32_t)h.ip[1] * 104729u +
+                     (uint32_t)h.ip[2] * 15485863u + (uint32_t)h.ip[3];
+    for (int i = 0; i < 4; i++) {
+        seed = seed * 1103515245u + 12345u;
+        float a = (float)(seed % 360) * kTwoPi / 360.0f;
+        seed = seed * 1103515245u + 12345u;
+        int16_t r = 8 + (int16_t)(seed % (kRMax - 8));
+        int16_t bx = cx + (int16_t)(r * cosf(a));
+        int16_t by = cy + (int16_t)(r * sinf(a));
+        gfx.fillCircle(bx, by, 2, theme::MAGENTA);
+    }
+
+    gfx.fillCircle(cx, cy, 2, theme::GREEN_BRIGHT);  // "you are here"
 }
 }  // namespace
 
@@ -96,6 +143,8 @@ void HostDetailScreen::draw(M5Canvas& gfx) {
         gfx.setTextColor(theme::GREEN, theme::BG);
         gfx.print("CRED AUDIT: clean (C)");
     }
+
+    drawRadar(gfx, h);
 
     gfx.setTextColor(theme::GREY, theme::BG);
     gfx.setCursor(4, gfx.height() - 9);

@@ -402,13 +402,54 @@ volere anche le funzionalità di attacco mostrate nel mockup
   SMB, SSDP) non ancora scritto — funzionalità reale rimandabile, non
   scartata per principio, semplicemente fuori dal perimetro di questa
   passata.
-- **Radar animato, grafici a ciambella, dropdown**: elementi grafici
-  pensati per un display a colori ad alta risoluzione con mouse/touch;
-  su 240×135 con font 6×8 e sola tastiera non sono realisticamente
-  realizzabili in una forma che valga la spesa in complessità/rischio,
-  specialmente dopo aver appena rimosso l'effetto Matrix rain per
-  stabilizzare il boot (vedi sopra) — non sembrava il momento di
-  reintrodurre complessità di rendering non necessaria.
+- **Dropdown**: non applicabile senza mouse/touch — le voci `SETTINGS`
+  restano un editor "valore ± con `,`/`/`", non un vero dropdown.
+
+Radar animato e grafici a ciambella sono stati **poi implementati** su
+richiesta esplicita dell'utente, con adattamenti — vedi Fase 7.
+
+### Fase 7: radar animato + donut chart (versione adattata al 240×135)
+
+Richiesti di nuovo dall'utente dopo aver visto il resto della UI
+funzionare su hardware reale, con il permesso esplicito di renderli
+puramente decorativi dove non c'è un dato reale da mostrare.
+
+- **Radar** (`HostDetailScreen`): pannello sovrapposto in alto a destra
+  (disegnato per ultimo, così il suo riempimento di sfondo copre anche
+  eventuali testi troppo lunghi finiti sotto — stesso trucco usato per
+  il pannello "top ports" del port scan). Linea di scansione rotante
+  (un giro completo ogni ~3s, calcolata da `millis()`), 3 cerchi
+  concentrici, un mirino, e 4 "blip" magenta la cui posizione è
+  derivata da un hash dei byte IP dell'host — stabile tra un frame e
+  l'altro (niente jitter), diversa da host a host, **ma senza alcun
+  significato spaziale reale**: i dispositivi non hanno coordinate,
+  esattamente come nel mockup originale.
+- **Donut chart** (`PortScanScreen`): a differenza di quanto concesso
+  dall'utente ("anche se non legati a dati reali"), qui i due segmenti
+  **sono dati reali**: porte aperte trovate vs. resto del range
+  configurato in `SETTINGS` (`count / (portRangeEnd-portRangeStart+1)`).
+  Non distingue filtered/closed (richiederebbe raw socket che non
+  abbiamo, vedi Fase 3) ma open-vs-non-open è informazione vera, non
+  serviva inventare nulla.
+- **Homepage**: `MAIN MENU` è diventato una vera dashboard —
+  intestazione "NETRUNNER", skyline stilizzata (dati statici, non
+  animata: essendo ridisegnata ad ogni frame, un pattern casuale
+  avrebbe fatto tremolare invece che animare), barra di stato in fondo
+  con uptime (non orario reale — niente RTC/NTP configurato, per
+  evitare la complessità/ambiguità dei fusi orari), "READY." e IP
+  corrente. L'hint tasti è stato tolto da questa sola schermata (spazio
+  verticale insufficiente per skyline + menu + status bar + hint) —
+  frecce/Enter è già la convenzione appresa da tutte le altre
+  schermate.
+- **Nuove API grafiche usate per la prima volta**: `drawCircle`,
+  `fillCircle`, `drawLine`, `fillArc` — a differenza di `fillRect`/
+  `drawRect`/`drawFastHLine` (già confermati funzionanti su hardware
+  reale nelle fasi precedenti), queste non sono ancora state
+  verificate fisicamente. Sono API LovyanGFX standard e ben
+  documentate, quindi il rischio è considerato basso, ma se dopo il
+  flash una di queste tre schermate (menu principale, host detail, port
+  scan) desse un errore di compilazione o un comportamento grafico
+  inatteso, è il primo posto da guardare.
 
 ## Compilare e flashare
 
@@ -481,9 +522,15 @@ originale.
 - [x] **Fase 6 — Restyle UI**: header condiviso con status bar wifi/
       batteria, palette spostata verso ciano/magenta, `SETTINGS` reale
       (prima placeholder), stat footer su `NETWORK SCAN`/`PORT MAPPING`.
-      Moduli exploit/RCE, brute-force SSH, rilevamento SMBv1/UPnP e
-      grafica avanzata (radar, grafici a ciambella) deliberatamente non
-      implementati — vedi sopra.
+      Moduli exploit/RCE, brute-force SSH, rilevamento SMBv1/UPnP
+      deliberatamente non implementati — vedi sopra.
+- [x] **Fase 7 — Radar + donut + dashboard**: richiesti di nuovo
+      dall'utente dopo la Fase 6; radar animato su `HOST DETAIL`
+      (puramente decorativo), donut chart su `PORT MAPPING` (dati
+      reali: aperte vs. range configurato), homepage con skyline
+      statica e status bar (uptime/READY/IP) su `MAIN MENU`. Prima
+      verifica su hardware reale di `drawCircle`/`fillCircle`/
+      `drawLine`/`fillArc` — vedi sopra.
 
 ## Test plan — Fase 1
 
@@ -722,6 +769,40 @@ esplicita per le voci 4-6 (ora un vero strumento di attacco).**
    audit senza esito su tre servizi può richiedere diversi minuti — è
    atteso, non un blocco. `DEL` durante l'esecuzione torna a `HOST
    DETAIL` senza fermare l'audit in background.
+
+## Test plan — Fase 7 (radar, donut, dashboard)
+
+Questa è la prima verifica hardware di `drawCircle`/`fillCircle`/
+`drawLine`/`fillArc` in questo progetto — se qualcosa va storto, è il
+primo sospetto.
+
+1. **Build**: verificare per prima cosa che compili — `fillArc` in
+   particolare è l'unica di queste quattro API non ancora vista
+   funzionare da nessuna parte in questo codebase.
+2. **MAIN MENU**: deve mostrare intestazione "NETRUNNER", una fila di
+   edifici stilizzati (rettangoli vuoti alternati ciano/magenta) sotto
+   l'header, il menu di 5 voci sotto ancora, e in fondo uptime a
+   sinistra ("00:00:12" e crescente), "READY." al centro, IP a destra
+   (o "no ip" se non connesso). Verificare che non ci sia
+   sovrapposizione tra skyline/menu/status bar.
+3. **Radar**: su `HOST DETAIL` di un host qualsiasi, verificare in alto
+   a destra un pannello con cerchi concentrici, un mirino, una linea
+   che ruota (un giro ogni ~3 secondi — cronometra a occhio), e 4 punti
+   magenta fissi (stessa posizione se rientri ed esci dalla schermata
+   per lo stesso host; posizione diversa per host diversi). Verificare
+   che il pannello non lasci artefatti grafici quando cambi selezione
+   nella lista prima di entrare (nessun residuo di testo sotto).
+4. **Donut**: su `PORT MAPPING` dopo uno scan con almeno una porta
+   aperta, verificare in alto a destra un anello ciano (proporzione
+   aperte) + grigio (resto del range) — con 1 porta aperta su un range
+   1-1024 il segmento ciano sarà minuscolo ma presente; con un range
+   ristretto (es. cambia `PORT END` a 100 in `SETTINGS` prima dello
+   scan) dovrebbe essere più visibile.
+5. **Performance**: con radar e donut visibili, verificare che
+   l'input da tastiera resti reattivo (nessun rallentamento percepibile
+   rispetto alle altre schermate) — sono una manciata di chiamate di
+   disegno a schermata, non dovrebbero pesare, ma è la prima volta che
+   vengono esercitate su hardware reale.
 
 ## Limiti noti e tagli di scope deliberati
 
