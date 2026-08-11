@@ -71,14 +71,15 @@ void BleScanManager::runScanCycle() {
     BLEScan* scan = BLEDevice::getScan();
     scan->setActiveScan(true);
     // Blocking: returns once `kBleScanSeconds` of scanning has elapsed.
-    // See BleScanManager.h's RISK comment - this is the one call in the
-    // whole project most likely to need adjusting for the actual
-    // arduino-esp32 core version this builds against.
-    BLEScanResults* results = scan->start(kBleScanSeconds, false);
-    int count = results ? results->getCount() : 0;
+    // Returned BY VALUE on the arduino-esp32 core version this project
+    // actually builds against (confirmed on real hardware - the pointer
+    // variant assumed here originally, matching a different core
+    // release, failed to compile). See BleScanManager.h's RISK comment.
+    BLEScanResults results = scan->start(kBleScanSeconds, false);
+    int count = results.getCount();
 
     for (int i = 0; i < count; i++) {
-        BLEAdvertisedDevice dev = results->getDevice((uint32_t)i);
+        BLEAdvertisedDevice dev = results.getDevice((uint32_t)i);
 
         BleSighting rec;
         rec.address = dev.getAddress().toString();
