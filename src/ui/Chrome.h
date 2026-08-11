@@ -35,7 +35,7 @@ void drawPerspectiveGrid(M5Canvas& gfx, int16_t top, int16_t bottom, uint16_t co
 // drawPerspectiveGrid above, this one is deliberately reseeded over
 // time (not a fixed per-call pattern): a completely static dot field
 // wouldn't read as fog at all, just as noise baked into the
-// background. Reseeded roughly every 150ms rather than every frame, so
+// background. Reseeded roughly every 400ms rather than every frame, so
 // it drifts/shimmers gently instead of flickering like TV static -
 // "leggera" (light), meant to be glanced past, not stared at. Call
 // this before drawing anything else that must stay fully legible over

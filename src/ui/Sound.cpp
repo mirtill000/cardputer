@@ -10,21 +10,31 @@ struct Note {
     uint16_t ms;
 };
 
-// "Nightcall"-inspired original loop, D minor, ~4s/lap — see
+// "Nightcall"-inspired original loop, D minor, ~6.5s/lap — see
 // startBootLoop()'s doc comment for why this is a from-scratch
-// composition evoking the vibe, not a transcription. Two phrases:
-//  - a driving arpeggiated bassline pulse (D2/A2/D3), the Kavinsky-
-//    style "engine" ostinato underneath everything else in that track;
-//  - a slower, moodier descending melodic hook on top, in D natural
-//    minor (D E F G A Bb C);
+// composition evoking the vibe, not a transcription. Slowed down and
+// darkened from the first version on user feedback ("more cyberpunk,
+// slower tempo"): every note runs longer, and the hook now passes
+// through Ab3 - a tritone against the D minor root, the classic
+// "dissonant, ominous" synthwave color - before resolving up, plus a
+// bright octave-up lead stab (D5/A4) for contrast against how low and
+// slow everything else sits. Four phrases:
+//  - a heavy, spaced-out arpeggiated bassline pulse (D2/A2/D3), the
+//    Kavinsky-style "engine" ostinato underneath everything else in
+//    that track;
+//  - a slower, moodier melodic hook through the tritone, in D natural
+//    minor (D E F G A Bb C) plus that one chromatic passing tone;
+//  - a brief bright lead flourish, an octave up, cutting through;
 // then a held low resolve before the loop repeats.
 constexpr Note kBootLoop[] = {
-    {73, 90},  {110, 90}, {147, 90}, {110, 90},  // D2 A2 D3 A2 - pulse x3
-    {73, 90},  {110, 90}, {147, 90}, {110, 90},
-    {73, 90},  {110, 90}, {147, 90}, {110, 90},
-    {294, 220}, {262, 220}, {233, 220}, {220, 340},  // D4 C4 Bb3 A3 - hook
-    {196, 220}, {220, 220}, {233, 340},              // G3 A3 Bb3
-    {147, 260}, {110, 420},                          // D3 A2 - resolve, held
+    {73, 140}, {110, 140}, {147, 140}, {110, 140},  // D2 A2 D3 A2 - pulse x3
+    {73, 140}, {110, 140}, {147, 140}, {110, 140},
+    {73, 140}, {110, 140}, {147, 140}, {110, 140},
+    {294, 320}, {262, 320}, {233, 320}, {208, 260},  // D4 C4 Bb3 Ab3 (tritone)
+    {220, 480},                                      // A3 - resolves up out of the tritone
+    {196, 320}, {220, 320}, {233, 480},               // G3 A3 Bb3
+    {587, 200}, {440, 260},                           // D5 A4 - bright lead stab
+    {147, 380}, {110, 620},                           // D3 A2 - resolve, held
 };
 constexpr size_t kBootLoopCount = sizeof(kBootLoop) / sizeof(kBootLoop[0]);
 
@@ -48,13 +58,20 @@ void bootLoopTask(void*) {
 
 void sound::startBootLoop() {
     if (g_bootLoopRunning) return;
+    // Bumped up from M5Unified's default (~128/255, fairly quiet on
+    // this board's small speaker) on user feedback that the loop was
+    // too soft. This is a device-wide setting, not per-tone, so it also
+    // raises playAlert()/playCredAlert() - no separate reset once the
+    // loop stops, since a slightly louder alert/alarm is a reasonable
+    // side effect too, not a bug to work around.
+    M5Cardputer.Speaker.setVolume(220);
     g_bootLoopRunning = true;
     xTaskCreatePinnedToCore(&bootLoopTask, "bootmusic", 2048, nullptr, 1, nullptr, 0);
 }
 
 void sound::stopBootLoop() {
     // bootLoopTask notices at the next note boundary (worst case, the
-    // loop's longest single note - 420ms) and deletes itself; not
+    // loop's longest single note - 620ms) and deletes itself; not
     // waited on here, so a very short tail can still be heard just
     // after this returns. Accepted, not worth blocking the UI task to
     // close that last sliver.

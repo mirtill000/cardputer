@@ -1220,6 +1220,29 @@ sting, e un effetto di nebbia/statica leggera sullo sfondo.
   cancella pulitamente qualunque puntino ci finisca sotto, senza dover
   calcolare a mano una zona "sicura" da evitare.
 
+**Ritocco successivo, su feedback dell'utente dopo il primo test su
+hardware reale** ("riduci la velocità della nebbia digitale, alza un
+po' il volume, fai la musica più cyberpunk e rallenta il tempo"):
+
+- **Nebbia più lenta**: l'intervallo di reseed di `drawDigitalFog` è
+  passato da ~150ms a ~400ms — stessa densità di puntini, deriva
+  visibilmente più lenta/leggera.
+- **Volume più alto**: `M5Cardputer.Speaker.setVolume(220)` (alzato dal
+  default di M5Unified, intorno a 128/255) chiamato una volta dentro
+  `startBootLoop()`. È un'impostazione globale del device, non per
+  singolo `tone()` — quindi alza anche il volume di `playAlert()`/
+  `playCredAlert()`, non solo del loop di boot; non c'è un reset al
+  volume precedente quando il loop si ferma, dato che un allarme
+  leggermente più udibile è un effetto collaterale ragionevole, non un
+  problema da evitare.
+- **Musica più cupa/"cyberpunk" e più lenta**: durata di ogni nota
+  allungata su tutto il loop (da ~4s a ~6,5s per giro), e l'hook
+  melodico ora passa per un **tritono** (Ab3, la classica "quinta
+  diminuita" contro la tonica di re minore — il colore dissonante e
+  minaccioso tipico del synthwave più cupo) prima di risolvere verso
+  l'alto, più un breve stab di lead un'ottava sopra (D5/A4) per
+  contrasto rispetto al resto, deliberatamente basso e lento.
+
 ## Compilare e flashare
 
 ```
@@ -1969,9 +1992,9 @@ laboratorio isolato) — non in giro per strada con reti di sconosciuti.
    proprio inizio, non da dove si era "fermato silenziosamente".
 4. **Nebbia digitale**: sulla vista NETRUNNER, verifica che compaiano
    puntini fiochi sparsi sullo sfondo che cambiano leggermente
-   posizione ogni circa 150ms (deriva/shimmer, non un flicker frenetico
-   né un pattern statico) — e che titolo/sottotitolo/versione/prompt
-   restino perfettamente leggibili, senza puntini visibili sopra il
+   posizione ogni circa 400ms (deriva/shimmer lenta, non un flicker
+   frenetico né un pattern statico) — e che titolo/sottotitolo/versione/
+   prompt restino perfettamente leggibili, senza puntini visibili sopra il
    testo.
 
 ## Limiti noti e tagli di scope deliberati

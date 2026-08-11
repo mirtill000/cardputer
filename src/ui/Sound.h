@@ -5,8 +5,9 @@
 // read by anything until now).
 namespace sound {
 
-// Starts a looping ~4s "Nightcall"-inspired synthwave theme (driving
-// arpeggiated bassline pulse + a slower D-minor melodic hook - an
+// Starts a looping ~6.5s "Nightcall"-inspired synthwave theme (a heavy,
+// spaced-out arpeggiated bassline pulse + a slower D-minor melodic hook
+// through a tritone passing tone + a bright octave-up lead stab - an
 // original composition evoking that moody 80s-outrun vibe, not a
 // transcription of the real Kavinsky track: M5Cardputer.Speaker is
 // monophonic, one tone() at a time, so it couldn't play the real

@@ -90,7 +90,10 @@ void chrome::drawDigitalFog(M5Canvas& gfx, int16_t x, int16_t y, int16_t w, int1
     // Reseeded on a coarse time bucket (not per-frame) - see the header
     // comment for why a fixed pattern wouldn't read as fog, and why a
     // full per-frame reshuffle would read as static instead of drift.
-    uint32_t seed = (uint32_t)(millis() / 150) * 2654435761u + 1u;
+    // 400ms (slowed down from an initial 150ms, on user feedback that
+    // it drifted too fast) keeps the shimmer gentle without reading as
+    // a fixed pattern either.
+    uint32_t seed = (uint32_t)(millis() / 400) * 2654435761u + 1u;
     for (int i = 0; i < dots; i++) {
         seed = seed * 1103515245u + 12345u;
         int16_t dx = x + (int16_t)(seed % (uint32_t)w);
