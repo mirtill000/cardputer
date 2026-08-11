@@ -267,12 +267,17 @@ void ArpSpoofManager::stop() {
     _running = false;  // run() notices, restores, and exits on its own
 }
 
-void ArpSpoofManager::promiscuousRxTrampoline(void* buf, int type) {
-    // WIFI_PKT_DATA == 3 in esp_wifi_types.h's wifi_promiscuous_pkt_type_t
-    // — checked by value rather than pulling in the enum name here to
-    // keep this file's only esp-idf-internal-flavored dependency (the
-    // wifi_promiscuous_pkt_t layout below) as small as possible.
-    if (type != 3 /* WIFI_PKT_DATA */) return;
+void ArpSpoofManager::promiscuousRxTrampoline(void* buf, wifi_promiscuous_pkt_type_t type) {
+    // Real build failure (see git log): the parameter type here MUST be
+    // exactly wifi_promiscuous_pkt_type_t, not int - a C function
+    // pointer's signature has to match precisely for
+    // esp_wifi_set_promiscuous_rx_cb() to accept it. Fixing that also
+    // meant switching the filter below to the named enum constant
+    // instead of a guessed magic number (originally assumed
+    // WIFI_PKT_DATA == 3) - the real esp-idf ordering has it at 2, so
+    // that guess would have been a second, silent bug layered under the
+    // first: a wrong filter, not a compile error.
+    if (type != WIFI_PKT_DATA) return;
     auto* pkt = static_cast<wifi_promiscuous_pkt_t*>(buf);
     if (!pkt) return;
     g_arpSpoofManager.onPromiscuousFrame(pkt->payload, pkt->rx_ctrl.sig_len);

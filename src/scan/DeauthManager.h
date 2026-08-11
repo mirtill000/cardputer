@@ -5,6 +5,10 @@
 #include "../core/EventQueue.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
+// For wifi_promiscuous_pkt_type_t only - see ArpSpoofManager.h's
+// identical comment on why promiscuousRxTrampoline()'s signature must
+// match esp_wifi_set_promiscuous_rx_cb()'s expected type exactly.
+#include <esp_wifi.h>
 
 // Single-target WPA handshake capture: a small, fixed burst of
 // deauthentication frames against ONE client on ONE access point (never
@@ -70,7 +74,7 @@ private:
     static void taskEntry(void* arg);
     void run();
     bool sendDeauth(const uint8_t dst[6], const uint8_t src[6], const uint8_t bssid[6]);
-    static void promiscuousRxTrampoline(void* buf, int type);
+    static void promiscuousRxTrampoline(void* buf, wifi_promiscuous_pkt_type_t type);
     void onCapturedFrame(const uint8_t* payload, uint16_t len);
     void notify(const String& text);
 

@@ -151,8 +151,12 @@ bool DeauthManager::sendDeauth(const uint8_t dst[6], const uint8_t src[6], const
     return esp_wifi_80211_tx(WIFI_IF_STA, frame, sizeof(frame), true) == ESP_OK;
 }
 
-void DeauthManager::promiscuousRxTrampoline(void* buf, int type) {
-    if (type != 3 /* WIFI_PKT_DATA */ && type != 0 /* WIFI_PKT_MGMT */) return;
+void DeauthManager::promiscuousRxTrampoline(void* buf, wifi_promiscuous_pkt_type_t type) {
+    // Same real build fix as ArpSpoofManager.cpp: the parameter type
+    // must match wifi_promiscuous_cb_t exactly (not int), and the
+    // packet-type filter uses the named enum constants rather than
+    // guessed ordinals - see that file's comment for the full story.
+    if (type != WIFI_PKT_DATA && type != WIFI_PKT_MGMT) return;
     auto* pkt = static_cast<wifi_promiscuous_pkt_t*>(buf);
     if (!pkt) return;
     g_deauthManager.onCapturedFrame(pkt->payload, pkt->rx_ctrl.sig_len);

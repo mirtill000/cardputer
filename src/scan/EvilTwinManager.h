@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Arduino.h>
 #include <atomic>
 #include <vector>
 #include "../core/EventQueue.h"

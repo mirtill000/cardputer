@@ -7,6 +7,13 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
+// For wifi_promiscuous_pkt_type_t only, needed to declare
+// promiscuousRxTrampoline() with the EXACT signature
+// esp_wifi_set_promiscuous_rx_cb() requires (wifi_promiscuous_cb_t is a
+// plain C function pointer type - the second parameter must match
+// precisely, "int" doesn't implicitly convert, confirmed by a real
+// build failure - see git log).
+#include <esp_wifi.h>
 
 // Single-target ARP spoofing + passive traffic-analysis session ("MITM
 // AUDIT" in the UI) — the offensive sibling of WardrivingManager's
@@ -96,7 +103,7 @@ private:
                        const uint8_t claimedMac[6]);
     void restoreTarget();  // sends a correcting ARP reply with the REAL gateway MAC
 
-    static void promiscuousRxTrampoline(void* buf, int type);
+    static void promiscuousRxTrampoline(void* buf, wifi_promiscuous_pkt_type_t type);
     void onPromiscuousFrame(const uint8_t* payload, uint16_t len);
     void analyzeFrame(const uint8_t* pkt, uint16_t ipOffset, uint16_t len, const uint8_t srcMac[6]);
     void maybeSpoofDns(const uint8_t* udpPayload, uint16_t udpLen, const IPAddress& queryFromIp,

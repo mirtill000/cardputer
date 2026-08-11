@@ -1161,6 +1161,25 @@ lampeggiare.
   quale dei due sia quello giusto per la build reale di questo
   progetto. Vedi i commenti in cima a `ArpSpoofManager.h`/
   `DeauthManager.h` per il dettaglio completo.
+- **Aggiornamento — due bug reali trovati dalla prima build vera**:
+  `esp_wifi_set_promiscuous_rx_cb()` richiede una callback con la firma
+  ESATTA `void(*)(void*, wifi_promiscuous_pkt_type_t)` — `int` al posto
+  del tipo enum reale (quello scritto inizialmente, per non introdurre
+  `esp_wifi.h` negli header) non converte implicitamente, in entrambi
+  `ArpSpoofManager.cpp` e `DeauthManager.cpp`. Risolto includendo
+  `esp_wifi.h` anche negli header (serve il tipo dell'enum nella firma
+  dichiarata) e usando `wifi_promiscuous_pkt_type_t` per davvero. Questo
+  ha anche fatto emergere un secondo bug, silente, sotto il primo: il
+  filtro sul tipo di pacchetto usava un numero magico indovinato
+  (`WIFI_PKT_DATA == 3`), ma l'ordine reale nell'enum di esp-idf mette
+  `WIFI_PKT_DATA` a 2 — sostituito con le costanti nominali dell'enum
+  invece di un altro numero indovinato, per non ripetere lo stesso
+  errore. `EvilTwinManager.h` aveva anche lui il bug ormai familiare di
+  `String` non risolvibile (mancava `#include <Arduino.h>` — a
+  differenza di `ArpSpoofManager.h`/`DeauthManager.h`/
+  `HttpPathBruteforcer.h`, che lo ottengono gratis da `<IPAddress.h>`,
+  questo header non aveva bisogno di indirizzi IP e quindi non lo
+  includeva).
 
 ### Fase 17: musica di boot in loop + nebbia digitale
 
@@ -1344,8 +1363,10 @@ originale.
       POP3/IMAP/SMTP (SSH deliberatamente escluso) — vedi sopra per il
       dettaglio di ciascuna e per il gate di autorizzazione rafforzato
       condiviso dai tre strumenti attivi. `ArpSpoofManager`/
-      `DeauthManager` sono il codice meno verificato di tutto il
-      progetto, mai passato da una build reale.
+      `DeauthManager` restano il codice meno verificato di tutto il
+      progetto — la prima build vera ha già trovato due bug reali
+      (firma della callback promiscua, `String` mancante in
+      `EvilTwinManager.h`), entrambi corretti, vedi sopra.
 - [x] **Fase 17 — Musica di boot in loop + nebbia digitale**: il riff
       di boot della Fase 15 sostituito da un loop continuo stile
       "Nightcall" (composizione originale, non una trascrizione — vedi
@@ -1889,10 +1910,11 @@ laboratorio isolato) — non in giro per strada con reti di sconosciuti.
 > punto qui sotto interrompe o intercetta traffico di un dispositivo
 > reale.
 
-1. **Build**: `pio run` deve compilare pulito. `ArpSpoofManager.cpp` e
-   `DeauthManager.cpp` sono il codice più a rischio del progetto (vedi
-   sopra) — se falliscono, il sospetto principale è `esp_wifi_80211_tx`
-   (firma/header) o un tipo mancante da `esp_wifi_types.h`.
+1. **Build**: `pio run` deve compilare pulito. `ArpSpoofManager.cpp`/
+   `DeauthManager.cpp`/`EvilTwinManager.h` sono già stati corretti una
+   volta contro una build reale (vedi sopra); se falliscono ancora, il
+   sospetto principale resta `esp_wifi_80211_tx` (firma/header) o un
+   altro tipo mancante da `esp_wifi_types.h`.
 2. **Gate rafforzato**: da `HOST DETAIL` premi `M`, o da `WAR DRIVING`
    premi `E`/`X` — la prima volta per sessione deve comparire
    `OffensiveDisclaimerScreen` e richiedere di scrivere per intero
