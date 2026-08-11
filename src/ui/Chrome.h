@@ -13,4 +13,11 @@ namespace chrome {
 
 void drawHeader(M5Canvas& gfx, const char* title);
 
+// Decorative "neon skyline" silhouette — a row of outline rects with
+// their bottom edge on baselineY, alternating cyan/magenta, plus a
+// horizontal rule at baselineY. Shared by MainMenuScreen (below its
+// header) and BootScreen (mid-splash) so the two screens draw the same
+// skyline art from one data table instead of two copies drifting apart.
+void drawSkyline(M5Canvas& gfx, int16_t baselineY);
+
 }  // namespace chrome

@@ -500,6 +500,36 @@ puramente decorativi dove non c'è un dato reale da mostrare.
   ricerca di questa fragilità (grep di ogni `.service ==` nel
   codebase) fa ora parte della checklist quando si tocca questo file.
 
+### Fase 9: restyle splash screen + NETWORK SCAN da mockup
+
+- **Skyline condivisa**: l'array `Building`/il loop di disegno usato
+  finora solo da `MainMenuScreen` è stato estratto in
+  `chrome::drawSkyline(gfx, baselineY)` (`src/ui/Chrome.h/.cpp`), cosicché
+  `BootScreen` possa riusare la stessa silhouette invece di duplicarne i
+  dati — un solo posto da aggiornare se lo skyline cambia.
+- **Boot screen a due fasi**: la sequenza di boot log "in typing" resta
+  identica (init a basso livello), ma alla fine non mostra più solo
+  titolo/sottotitolo — passa a una vista da dashboard che ricalca
+  `MAIN MENU`: header condiviso (`CARDPUTER ADV`), titolo `NETRUNNER` in
+  magenta, sottotitolo `ADVANCED NETWORK TOOLKIT`, versione
+  `v1.0.0-ADV`, banda skyline, prompt `[ PRESS ENTER ]` lampeggiante e la
+  stessa status bar in fondo (uptime / `SYSTEM READY` / IP) — lo splash
+  ora è leggibile come il primo frame della stessa dashboard, non una
+  schermata a parte con convenzioni proprie.
+- **`NETWORK SCAN` con tabella incorniciata**: la vecchia riga di stato
+  combinata (`scanning XX% found:N time:mm:ss`) è diventata una vera
+  stat strip a due colonne — `HOSTS FOUND: N` a sinistra, percentuale
+  live (in scansione) o `SCAN TIME mm:ss` (a scansione finita) a destra
+  — e la tabella host ora vive dentro un riquadro con bordo e una riga di
+  intestazione colonne (`IP` / `TYPE` / `VENDOR`), sullo stile già usato
+  da `PORT MAPPING` per la sua tabella porte. I dati mostrati sono
+  invariati (IP, classe dispositivo, vendor OUI, colore per risk level) —
+  è cambiata solo la cornice.
+- **`PORT MAPPING` non toccata**: il mockup allegato mostra anche quello
+  schermo, ma la richiesta esplicita riguardava solo lo splash e
+  `NETWORK SCAN` — `PortScanScreen` aveva già un trattamento coerente
+  dalla Fase 7 (tabella + donut + footer) e non è stata modificata qui.
+
 ## Compilare e flashare
 
 ```
@@ -588,6 +618,13 @@ originale.
       `/oui.bin` invece di `/oui/oui.bin`, fallendo silenziosamente) e
       una regressione nell'audit credenziali sulle porte HTTP
       alternative introdotta dal nuovo DB.
+- [x] **Fase 9 — Restyle splash + NETWORK SCAN**: skyline condivisa
+      estratta in `chrome::drawSkyline`, boot screen esteso con una
+      vista dashboard (titolo `NETRUNNER`, sottotitolo, versione,
+      skyline, status bar) dopo il boot log, `NETWORK SCAN` con stat
+      strip `HOSTS FOUND`/`SCAN TIME` e tabella host incorniciata con
+      intestazione colonne — vedi sopra. `PORT MAPPING` non toccata
+      (non richiesta).
 
 ## Test plan — Fase 1
 
@@ -884,6 +921,34 @@ primo sospetto.
    Inc.", "TP-Link Corporation") invece di "unknown" per dispositivi
    noti — se prima di questa fase mostrava sempre "unknown", era il bug
    del path descritto sopra.
+
+## Test plan — Fase 9 (restyle splash + NETWORK SCAN)
+
+1. **Boot screen**: dopo il log "in typing", deve comparire l'header
+   `>> CARDPUTER ADV`, il titolo `NETRUNNER` in magenta, il sottotitolo
+   `ADVANCED NETWORK TOOLKIT` in ciano, la versione `v1.0.0-ADV` in
+   grigio, la banda skyline (stessa silhouette del `MAIN MENU`), il
+   prompt `[ PRESS ENTER ]` lampeggiante e in fondo uptime/`SYSTEM
+   READY`/IP — verificare che nessun elemento si sovrapponga (in
+   particolare skyline vs. versione sopra, prompt vs. status bar sotto).
+2. **`MAIN MENU` invariato**: dopo l'estrazione di `chrome::drawSkyline`,
+   la skyline sul menu principale deve apparire identica a prima (stessa
+   posizione, stessi colori) — è solo codice condiviso, non un cambio
+   visivo intenzionale su questa schermata.
+3. **`NETWORK SCAN` — stat strip**: durante uno scan, in alto deve
+   comparire `HOSTS FOUND: N` a sinistra (che cresce mano a mano che
+   trova host) e una percentuale a destra; a scan finito la destra deve
+   diventare `SCAN TIME mm:ss` fisso.
+4. **`NETWORK SCAN` — tabella incorniciata**: gli host trovati devono
+   apparire dentro un riquadro con bordo, con una riga di intestazione
+   `IP  TYPE  VENDOR` allineata alle colonne sottostanti — verificare che
+   IP lunghi (es. `192.168.100.100`) non si sovrappongano alla colonna
+   `TYPE`, e che vendor lunghi vengano troncati senza sforare il bordo
+   destro del riquadro.
+5. **Scroll e selezione**: con più host di quanti ne stiano nel
+   riquadro, Su/Giù deve scorrere la lista mantenendo la riga
+   selezionata sempre visibile dentro il bordo (nessuna riga "a
+   cavallo" del bordo inferiore).
 
 ## Limiti noti e tagli di scope deliberati
 

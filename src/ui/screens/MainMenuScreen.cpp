@@ -7,20 +7,6 @@
 #include <cstring>
 
 namespace {
-// Static, deliberately not randomized: this redraws every frame (~30fps),
-// so anything non-deterministic here would jitter instead of animate.
-// Purely decorative — outline-only "neon skyline" silhouette, cheap to
-// draw (a handful of drawRect calls, no fill).
-struct Building {
-    int16_t x, w, h;
-    bool cyan;
-};
-constexpr Building kSkyline[] = {
-    {2, 14, 14, true},  {18, 10, 20, false}, {30, 16, 10, true},  {48, 12, 24, false},
-    {62, 18, 16, true}, {82, 10, 22, false}, {94, 14, 12, true},  {110, 20, 26, false},
-    {132, 12, 14, true}, {146, 16, 20, false}, {164, 10, 12, true}, {176, 22, 24, false},
-    {200, 14, 16, true}, {216, 18, 10, false},
-};
 constexpr int16_t kSkylineTop = 18;
 constexpr int16_t kSkylineH = 24;
 constexpr int16_t kSkylineBaseline = kSkylineTop + kSkylineH;
@@ -62,10 +48,7 @@ void MainMenuScreen::draw(M5Canvas& gfx) {
     chrome::drawHeader(gfx, "NETRUNNER");
 
     // Decorative skyline band between the header and the menu list.
-    gfx.drawFastHLine(0, kSkylineBaseline, gfx.width(), theme::GREY);
-    for (const auto& b : kSkyline) {
-        gfx.drawRect(b.x, kSkylineBaseline - b.h, b.w, b.h, b.cyan ? theme::CYAN : theme::MAGENTA);
-    }
+    chrome::drawSkyline(gfx, kSkylineBaseline);
 
     constexpr int16_t kRowH = 14;
     constexpr int16_t kTop = kSkylineBaseline + 4;

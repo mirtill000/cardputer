@@ -5,6 +5,30 @@
 #include <cstdio>
 #include <cstring>
 
+namespace {
+// Static, deliberately not randomized: this redraws every frame (~30fps),
+// so anything non-deterministic here would jitter instead of animate.
+// Purely decorative — outline-only rects, cheap to draw (a handful of
+// drawRect calls, no fill). Heights are tuned for a ~24px-tall band.
+struct Building {
+    int16_t x, w, h;
+    bool cyan;
+};
+constexpr Building kSkyline[] = {
+    {2, 14, 14, true},  {18, 10, 20, false}, {30, 16, 10, true},  {48, 12, 24, false},
+    {62, 18, 16, true}, {82, 10, 22, false}, {94, 14, 12, true},  {110, 20, 26, false},
+    {132, 12, 14, true}, {146, 16, 20, false}, {164, 10, 12, true}, {176, 22, 24, false},
+    {200, 14, 16, true}, {216, 18, 10, false},
+};
+}  // namespace
+
+void chrome::drawSkyline(M5Canvas& gfx, int16_t baselineY) {
+    gfx.drawFastHLine(0, baselineY, gfx.width(), theme::GREY);
+    for (const auto& b : kSkyline) {
+        gfx.drawRect(b.x, baselineY - b.h, b.w, b.h, b.cyan ? theme::CYAN : theme::MAGENTA);
+    }
+}
+
 void chrome::drawHeader(M5Canvas& gfx, const char* title) {
     gfx.setTextColor(theme::CYAN, theme::BG);
     gfx.setCursor(4, 4);
