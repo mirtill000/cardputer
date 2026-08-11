@@ -48,6 +48,15 @@ public:
         bool open = false;
         bool allowlisted = false;
         bool discovered = false;   // true once an allow-listed open AP has had discovery run against it this session
+
+        // Possible evil twin: another sighting exists with the SAME
+        // SSID but a DIFFERENT BSSID *and* a different encryption
+        // level - the classic "clone a real network's name but drop
+        // the password" attack. Deliberately not asserting which of
+        // the two (if either) is the impostor - see WardrivingManager
+        // for why order alone can't tell that apart.
+        bool suspicious = false;
+        String suspiciousNote;
     };
 
     void begin(QueueHandle_t outQueue);
@@ -62,6 +71,7 @@ public:
 
     uint32_t openCount() const { return _openCount; }
     uint32_t discoveredCount() const { return _discoveredCount; }
+    uint32_t suspiciousCount() const { return _suspiciousCount; }
 
     // Allowlist management (NVS-backed, own namespace) — SSIDs here are
     // networks the user has told this tool they own or are explicitly
@@ -93,6 +103,7 @@ private:
     std::atomic<bool> _running{false};
     std::atomic<uint32_t> _openCount{0};
     std::atomic<uint32_t> _discoveredCount{0};
+    std::atomic<uint32_t> _suspiciousCount{0};
 };
 
 extern WardrivingManager g_wardrivingManager;

@@ -88,6 +88,15 @@ String WifiManager::savedNetworkSsid(uint8_t index) const {
     return s;
 }
 
+String WifiManager::savedNetworkPassword(uint8_t index) const {
+    if (index >= savedNetworkCount()) return "";
+    Preferences prefs;
+    if (!prefs.begin(kNvsNamespace, /*readOnly=*/true)) return "";
+    String s = prefs.getString(slotKey("pass", index).c_str(), "");
+    prefs.end();
+    return s;
+}
+
 bool WifiManager::connectSaved(uint8_t index) {
     if (index >= savedNetworkCount()) return false;
     Preferences prefs;

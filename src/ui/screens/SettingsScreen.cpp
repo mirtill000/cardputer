@@ -4,6 +4,13 @@
 #include "../Theme.h"
 #include "../Chrome.h"
 #include "../../core/Config.h"
+#include "../../storage/ConfigBackup.h"
+#include "../../storage/SdCard.h"
+#include <SD.h>
+
+namespace {
+constexpr const char* kBackupPath = "/config_backup.json";
+}  // namespace
 
 SettingsScreen& SettingsScreen::instance() {
     static SettingsScreen s;
@@ -81,6 +88,24 @@ void SettingsScreen::onKey(UiKey key, char ch) {
             if (ch == 'o' || ch == 'O') {
                 g_config.save();  // same as leaving normally - just also opens OTA UPDATE on top
                 g_ui.pushScreen(&OtaScreen::instance());
+            } else if (ch == 'b' || ch == 'B') {
+                // SD only, never LittleFS - see storage/ConfigBackup.h
+                // for why (must survive the same full-chip erase this
+                // is meant to help recover from).
+                if (!sdcard::isReady()) {
+                    _statusLine = "backup needs an SD card";
+                } else {
+                    g_config.save();  // backs up the RAM copy - flush any pending edit first
+                    _statusLine = ConfigBackup::backup(SD, kBackupPath) ? "backed up to SD" : "backup FAILED (see serial log)";
+                }
+            } else if (ch == 'r' || ch == 'R') {
+                if (!sdcard::isReady()) {
+                    _statusLine = "restore needs an SD card";
+                } else if (!SD.exists(kBackupPath)) {
+                    _statusLine = "no backup found on SD";
+                } else {
+                    _statusLine = ConfigBackup::restore(SD, kBackupPath) ? "restored from SD" : "restore FAILED (see serial log)";
+                }
             }
             break;
         default:
@@ -122,7 +147,13 @@ void SettingsScreen::draw(M5Canvas& gfx) {
         gfx.print(valStr);
     }
 
+    if (_statusLine.length()) {
+        gfx.setTextColor(theme::CYAN, theme::BG);
+        gfx.setCursor(4, gfx.height() - 19);
+        gfx.print(_statusLine);
+    }
+
     gfx.setTextColor(theme::GREY, theme::BG);
     gfx.setCursor(4, gfx.height() - 9);
-    gfx.print("</>:adjust ENTER/DEL:exit O:update");
+    gfx.print("</>:adj ENTER:exit O:ota B:bak R:rst");
 }

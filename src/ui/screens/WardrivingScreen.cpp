@@ -1,4 +1,6 @@
 #include "WardrivingScreen.h"
+#include "SignalFinderScreen.h"
+#include "BleScanScreen.h"
 #include "../UiManager.h"
 #include "../Theme.h"
 #include "../Chrome.h"
@@ -55,6 +57,14 @@ void WardrivingScreen::onKey(UiKey key, char ch) {
             } else if (key == UiKey::Char && (ch == 'a' || ch == 'A')) {
                 _allowlistSelected = 0;
                 _state = State::AllowlistView;
+            } else if (key == UiKey::Char && (ch == 'b' || ch == 'B')) {
+                g_ui.pushScreen(&BleScanScreen::instance());
+            } else if (key == UiKey::Tab) {
+                WardrivingManager::ApSighting ap;
+                if (g_wardrivingManager.getSighting(_sightingsSelected, ap)) {
+                    SignalFinderScreen::instance().setTarget(ap.ssid, ap.bssid);
+                    g_ui.pushScreen(&SignalFinderScreen::instance());
+                }
             } else if (key == UiKey::Back) {
                 g_ui.popScreen();
             }
@@ -67,6 +77,8 @@ void WardrivingScreen::onKey(UiKey key, char ch) {
             } else if (key == UiKey::Char && (ch == 'a' || ch == 'A')) {
                 _allowlistSelected = 0;
                 _state = State::AllowlistView;
+            } else if (key == UiKey::Char && (ch == 'b' || ch == 'B')) {
+                g_ui.pushScreen(&BleScanScreen::instance());
             } else if (key == UiKey::Back) {
                 g_ui.popScreen();  // keeps running in the background - see WardrivingManager
             }
@@ -141,8 +153,13 @@ void WardrivingScreen::draw(M5Canvas& gfx) {
             gfx.print((unsigned)g_wardrivingManager.sightingCount());
             gfx.print(" open:");
             gfx.print((unsigned)g_wardrivingManager.openCount());
-            gfx.print(" discovered:");
+            gfx.print(" disc:");
             gfx.print((unsigned)g_wardrivingManager.discoveredCount());
+            if (g_wardrivingManager.suspiciousCount() > 0) {
+                gfx.setTextColor(theme::RED, theme::BG);
+                gfx.print(" evil:");
+                gfx.print((unsigned)g_wardrivingManager.suspiciousCount());
+            }
 
             drawSightings(gfx, 30);
 
@@ -152,7 +169,7 @@ void WardrivingScreen::draw(M5Canvas& gfx) {
 
             gfx.setTextColor(theme::GREY, theme::BG);
             gfx.setCursor(4, gfx.height() - 9);
-            gfx.print("A:allowlist DEL:back");
+            gfx.print("TAB:locate A:allowlist B:ble DEL:back");
             break;
         }
 
@@ -163,16 +180,22 @@ void WardrivingScreen::draw(M5Canvas& gfx) {
             gfx.print((unsigned)g_wardrivingManager.sightingCount());
             gfx.print(" open:");
             gfx.print((unsigned)g_wardrivingManager.openCount());
-            gfx.print(" discovered:");
+            gfx.print(" disc:");
             gfx.print((unsigned)g_wardrivingManager.discoveredCount());
+            if (g_wardrivingManager.suspiciousCount() > 0) {
+                gfx.setTextColor(theme::RED, theme::BG);
+                gfx.print(" evil:");
+                gfx.print((unsigned)g_wardrivingManager.suspiciousCount());
+            }
 
             gfx.setTextColor(theme::GREY, theme::BG);
             gfx.drawFastHLine(4, 29, gfx.width() - 8, theme::GREY);
 
             for (uint8_t i = 0; i < _logCount; i++) {
                 int16_t y = 32 + i * 9;
+                bool isEvilTwin = _log[i].indexOf("evil twin") >= 0;
                 bool isOpen = _log[i].indexOf("(OPEN)") >= 0;
-                gfx.setTextColor(isOpen ? theme::AMBER : theme::GREEN, theme::BG);
+                gfx.setTextColor(isEvilTwin ? theme::RED : (isOpen ? theme::AMBER : theme::GREEN), theme::BG);
                 gfx.setCursor(6, y);
                 String line = _log[i];
                 if (line.length() > 37) line = line.substring(0, 37);
@@ -181,7 +204,7 @@ void WardrivingScreen::draw(M5Canvas& gfx) {
 
             gfx.setTextColor(theme::GREY, theme::BG);
             gfx.setCursor(4, gfx.height() - 9);
-            gfx.print("ENTER:stop A:allowlist DEL:back(keeps running)");
+            gfx.print("ENTER:stop A:list B:ble DEL:back(bg)");
             break;
         }
 
@@ -280,7 +303,13 @@ void WardrivingScreen::drawSightings(M5Canvas& gfx, int16_t top) {
         uint16_t rowBg = sel ? theme::PANEL_BG : theme::BG;
         if (sel) gfx.fillRect(0, y, gfx.width(), kRowH, rowBg);
 
-        uint16_t color = sel ? theme::CYAN : (ap.discovered ? theme::MAGENTA : (ap.open ? theme::AMBER : theme::GREEN));
+        // Priority: possible evil twin outranks everything else here -
+        // it's a stronger, more specific claim than "discovered" or
+        // merely "open".
+        uint16_t color = sel ? theme::CYAN
+                              : (ap.suspicious ? theme::RED
+                                                : (ap.discovered ? theme::MAGENTA
+                                                                  : (ap.open ? theme::AMBER : theme::GREEN)));
         gfx.setTextColor(color, rowBg);
         gfx.setCursor(6, y);
 
@@ -292,6 +321,6 @@ void WardrivingScreen::drawSightings(M5Canvas& gfx, int16_t top) {
         gfx.print(ap.rssi);
 
         gfx.setCursor(190, y);
-        gfx.print(ap.open ? "OPEN" : "");
+        gfx.print(ap.suspicious ? "!EVIL" : (ap.open ? "OPEN" : ""));
     }
 }

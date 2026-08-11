@@ -43,6 +43,7 @@ void HostListScreen::onScanEvent(const ScanNotification& ev) {
             _statusLine = "";
             _scanStartMs = millis();
             _newHostIps.clear();
+            _neverSeenIps.clear();
             break;
         case ScanEventType::HostChanged:
             if (ev.hostIndex >= 0) _aliveIndices.push_back((size_t)ev.hostIndex);
@@ -51,6 +52,34 @@ void HostListScreen::onScanEvent(const ScanNotification& ev) {
             _scanFinishMs = millis();
 
             fs::FS& fs = sdcard::exportFs();
+
+            // Known-device baseline: built from PRIOR scans of this
+            // exact network, before this scan's own snapshot gets
+            // saved below - so it can never trivially satisfy its own
+            // baseline. Stronger than _newHostIps (which only looks one
+            // scan back): a host missing here has never appeared in any
+            // of the last kMaxEntries scans of this network, not just
+            // the immediately previous one.
+            std::vector<String> knownMacs;
+            ScanHistory::loadKnownMacs(fs, g_wifi.currentSsid(), knownMacs);
+            _neverSeenIps.clear();
+            {
+                size_t n = g_scanManager.hostCount();
+                HostInfo h;
+                for (size_t i = 0; i < n; i++) {
+                    if (!g_scanManager.getHost(i, h) || !h.alive || !h.macKnown) continue;
+                    String mac = macToString(h.mac);
+                    bool known = false;
+                    for (const auto& m : knownMacs) {
+                        if (m == mac) {
+                            known = true;
+                            break;
+                        }
+                    }
+                    if (!known) _neverSeenIps.push_back(h.ip);
+                }
+            }
+
             ScanHistory::saveSnapshot(fs);
             ScanHistory::diffNewHosts(fs, _newHostIps);
 
@@ -71,6 +100,13 @@ void HostListScreen::onScanEvent(const ScanNotification& ev) {
 bool HostListScreen::isNewHost(const IPAddress& ip) const {
     for (const auto& newIp : _newHostIps) {
         if (newIp == ip) return true;
+    }
+    return false;
+}
+
+bool HostListScreen::isNeverSeenBefore(const IPAddress& ip) const {
+    for (const auto& p : _neverSeenIps) {
+        if (p == ip) return true;
     }
     return false;
 }
@@ -192,11 +228,23 @@ void HostListScreen::draw(M5Canvas& gfx) {
     gfx.setCursor(4, 18);
     gfx.print("HOSTS FOUND: ");
     gfx.print((unsigned)_aliveIndices.size());
-    if (!running && !_newHostIps.empty()) {
-        gfx.setTextColor(theme::MAGENTA, theme::BG);
-        gfx.print(" (+");
-        gfx.print((unsigned)_newHostIps.size());
-        gfx.print(" new)");
+    if (!running) {
+        // "+N" (magenta) = new since the immediately previous scan;
+        // "!N" (red) = never seen in ANY past scan of this network -
+        // a stronger claim, see ScanHistory::loadKnownMacs(). Kept to
+        // symbols rather than words - the right-aligned SCAN TIME text
+        // shares this same line and there isn't room for both spelled
+        // out.
+        if (!_newHostIps.empty()) {
+            gfx.setTextColor(theme::MAGENTA, theme::BG);
+            gfx.print(" +");
+            gfx.print((unsigned)_newHostIps.size());
+        }
+        if (!_neverSeenIps.empty()) {
+            gfx.setTextColor(theme::RED, theme::BG);
+            gfx.print(" !");
+            gfx.print((unsigned)_neverSeenIps.size());
+        }
     }
 
     String rightStat = running ? (String(g_scanManager.progressPct()) + "%") : ("SCAN TIME " + String(timeBuf));
@@ -260,8 +308,13 @@ void HostListScreen::drawTable(M5Canvas& gfx, int16_t top) {
         uint16_t rowBg = sel ? theme::PANEL_BG : theme::BG;
         if (sel) gfx.fillRect(3, y, gfx.width() - 6, kRowH, rowBg);
 
+        // Priority when several signals apply to the same row: never-
+        // seen-on-this-network-before outranks merely-new-since-last-
+        // scan (a stronger, more specific claim - see isNeverSeenBefore
+        // vs isNewHost), which outranks the generic risk-level color.
+        bool neverSeen = isNeverSeenBefore(h.ip);
         bool isNew = isNewHost(h.ip);
-        uint16_t color = sel ? theme::CYAN : (isNew ? theme::MAGENTA : theme::riskColor(h.risk));
+        uint16_t color = sel ? theme::CYAN : (neverSeen ? theme::RED : (isNew ? theme::MAGENTA : theme::riskColor(h.risk)));
         gfx.setTextColor(color, rowBg);
 
         gfx.setCursor(kColIp, y + 1);

@@ -1,5 +1,6 @@
 #include "ScanHistory.h"
 #include "../net/TimeSync.h"
+#include "../net/WifiManager.h"
 #include "../scan/ScanManager.h"
 #include <ArduinoJson.h>
 #include <Preferences.h>
@@ -66,6 +67,10 @@ bool ScanHistory::saveSnapshot(fs::FS& fs) {
     // after connecting) - seq is still the reliable ordering key either
     // way, this is purely for human-readable display.
     doc["time"] = TimeSync::nowString();
+    // "" if not connected (shouldn't normally happen - a discovery scan
+    // needs a connection to run at all - but g_wifi.currentSsid() is
+    // cheap to call regardless).
+    doc["network"] = g_wifi.currentSsid();
     JsonArray hosts = doc["hosts"].to<JsonArray>();
 
     size_t n = g_scanManager.hostCount();
@@ -115,6 +120,7 @@ size_t ScanHistory::listEntries(fs::FS& fs, std::vector<HistoryEntry>& out) {
                 e.seq = doc["seq"] | seq;
                 e.hostCount = doc["hosts"].as<JsonArray>().size();
                 e.time = doc["time"] | "";
+                e.network = doc["network"] | "";
                 out.push_back(e);
             }
             f.close();
@@ -173,6 +179,24 @@ size_t ScanHistory::diffNewHosts(fs::FS& fs, std::vector<IPAddress>& newHostsOut
         if (!foundInPrevious) newHostsOut.push_back(h.ip);
     }
     return newHostsOut.size();
+}
+
+size_t ScanHistory::loadKnownMacs(fs::FS& fs, const String& network, std::vector<String>& macsOut) {
+    macsOut.clear();
+    if (network.isEmpty()) return 0;  // "" never matches a real SSID - see saveSnapshot()
+
+    std::vector<HistoryEntry> entries;
+    listEntries(fs, entries);
+
+    for (const auto& e : entries) {
+        if (e.network != network) continue;
+        std::vector<HistoryHostSnapshot> hosts;
+        if (!loadEntry(fs, e.filename, hosts)) continue;
+        for (const auto& h : hosts) {
+            if (h.mac.length()) macsOut.push_back(h.mac);
+        }
+    }
+    return macsOut.size();
 }
 
 void ScanHistory::diffAndSavePorts(fs::FS& fs, const IPAddress& target, std::vector<PortResult>& ports) {

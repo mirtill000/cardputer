@@ -26,6 +26,7 @@ struct HistoryEntry {
     uint32_t seq = 0;
     size_t hostCount = 0;
     String time;         // "YYYY-MM-DD HH:MM:SS" UTC if NTP was synced when saved, "" otherwise (see net/TimeSync.h)
+    String network;       // SSID connected to when this scan ran, "" if unknown (older snapshots predate this field)
 };
 
 struct HistoryHostSnapshot {
@@ -59,6 +60,18 @@ bool loadEntry(fs::FS& fs, const String& filename, std::vector<HistoryHostSnapsh
 // the previous snapshot. Empty (and returns 0) if there's no previous
 // snapshot to compare against yet (the very first scan ever).
 size_t diffNewHosts(fs::FS& fs, std::vector<IPAddress>& newHostsOut);
+
+// Collects every MAC address that has EVER appeared, in any past scan
+// snapshot tagged with this exact network name (see saveSnapshot() -
+// each snapshot now records the SSID it was taken on). A much stronger
+// baseline than diffNewHosts() above (which only looks one scan back):
+// a host missing from this set has never been seen on this network in
+// any of the last kMaxEntries scans, not just the immediately previous
+// one. Call this BEFORE saveSnapshot() for the current scan, so the
+// current scan's own hosts don't trivially satisfy their own baseline.
+// Snapshots saved before this field existed have network == "" and are
+// silently skipped (never match a real SSID).
+size_t loadKnownMacs(fs::FS& fs, const String& network, std::vector<String>& macsOut);
 
 // Compares `ports` (a host's just-finished TCP+UDP port scan results)
 // against the open-port set saved the last time this same host was

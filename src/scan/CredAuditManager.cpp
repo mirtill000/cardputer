@@ -5,6 +5,7 @@
 #include "WordlistLoader.h"
 #include "../core/Config.h"
 #include "../core/Types.h"
+#include "../ui/Sound.h"
 #include <WiFiClient.h>
 #include <cstring>
 
@@ -116,6 +117,8 @@ void CredAuditManager::run() {
             note = String(_attempts) + " combinations tried, nothing accepted (not proof the device is safe)";
         }
     }
+
+    if (vulnerable) sound::playCredAlert();
 
     g_scanManager.setHostCredResult(_target, vulnerable, note);
     _running = false;

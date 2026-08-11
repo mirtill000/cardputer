@@ -20,4 +20,5 @@ private:
 
     static constexpr uint8_t kFieldCount = 7;
     uint8_t _selected = 0;
+    String _statusLine;  // transient feedback after B (backup) / R (restore)
 };

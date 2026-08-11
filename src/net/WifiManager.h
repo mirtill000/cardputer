@@ -65,6 +65,12 @@ public:
     uint8_t savedNetworkCount() const;
     String savedNetworkSsid(uint8_t index) const;  // "" if index is out of range
 
+    // Only for storage/ConfigBackup (backup/restore to SD) — every
+    // other consumer in this codebase deliberately never sees a saved
+    // password (see savedSsid()'s comment above). "" if index is out
+    // of range.
+    String savedNetworkPassword(uint8_t index) const;
+
     // Non-blocking, like beginConnectWithCredentials() — kicks off a
     // connection attempt using an already-saved network's stored
     // password. Returns false (no-op) if index is out of range.

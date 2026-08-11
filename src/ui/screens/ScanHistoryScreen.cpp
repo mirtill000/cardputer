@@ -1,4 +1,5 @@
 #include "ScanHistoryScreen.h"
+#include "StatsScreen.h"
 #include "../UiManager.h"
 #include "../Theme.h"
 #include "../Chrome.h"
@@ -24,7 +25,7 @@ void ScanHistoryScreen::openSelected() {
     }
 }
 
-void ScanHistoryScreen::onKey(UiKey key, char /*ch*/) {
+void ScanHistoryScreen::onKey(UiKey key, char ch) {
     if (_state == State::List) {
         switch (key) {
             case UiKey::Up:
@@ -38,6 +39,9 @@ void ScanHistoryScreen::onKey(UiKey key, char /*ch*/) {
                 break;
             case UiKey::Back:
                 g_ui.popScreen();
+                break;
+            case UiKey::Char:
+                if (ch == 's' || ch == 'S') g_ui.pushScreen(&StatsScreen::instance());
                 break;
             default:
                 break;
@@ -69,7 +73,7 @@ void ScanHistoryScreen::draw(M5Canvas& gfx) {
         drawList(gfx, 20);
         gfx.setTextColor(theme::GREY, theme::BG);
         gfx.setCursor(4, gfx.height() - 9);
-        gfx.print(_entries.empty() ? "DEL:back" : "ENTER:view  DEL:back");
+        gfx.print(_entries.empty() ? "DEL:back" : "ENTER:view S:stats DEL:back");
     } else {
         char title[24];
         snprintf(title, sizeof(title), "SCAN #%05u", (unsigned)_entries[_selected].seq);

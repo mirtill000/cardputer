@@ -33,3 +33,11 @@ void sound::playAlert() {
     if (!g_config.uiSoundEnabled) return;
     M5Cardputer.Speaker.tone(1800, 120);
 }
+
+void sound::playCredAlert() {
+    if (!g_config.uiSoundEnabled) return;
+    M5Cardputer.Speaker.tone(1400, 160);
+    delay(180);
+    M5Cardputer.Speaker.tone(600, 260);
+    delay(280);
+}

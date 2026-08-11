@@ -863,6 +863,103 @@ Sette migliorie richieste in blocco dall'utente, indipendenti tra loro:
   consapevolmente "la rete senza nome all'indirizzo X" scrivendone il
   nome.
 
+### Fase 13: scan BLE passivo, evil-twin, audio audit, STATS, backup config, baseline dispositivi, signal finder
+
+Sette migliorie scelte dall'utente da una lista di dieci proposte di
+questo assistente ("Implementa 1, 2, 4, 5, 7, 8 e 10"):
+
+- **Scan BLE passivo** (`scan/BleScanManager.h/.cpp`, schermata `BLE
+  SCAN` raggiungibile con `B` da `WAR DRIVING`): stesso pattern task
+  FreeRTOS permanente + `start()`/`stop()` di `WardrivingManager`, ma
+  senza alcuna sua logica di connessione — questo modulo non fa
+  **mai** pairing/connessione a un dispositivo BLE, solo ascolto
+  passivo degli advertisement (indirizzo, nome se trasmesso, RSSI),
+  loggati su `/blescan/blescan.csv`. Nessuna allowlist qui: a
+  differenza del join WiFi su una rete aperta, il pairing BLE è
+  un'azione qualitativamente più invasiva che questo assistente non
+  automatizza in alcuna forma, autorizzata o meno — vedi il commento
+  in cima a `BleScanManager.h`. Usa la libreria BLE "classica" di
+  arduino-esp32 (`BLEDevice.h`/`BLEScan.h`/`BLEAdvertisedDevice.h`,
+  già inclusa nel core, nessun `lib_deps` aggiuntivo), la cui firma
+  esatta (`BLEScan::start()` che ritorna un puntatore a
+  `BLEScanResults`, `duration` in secondi, `BLEDevice::init()` da
+  chiamare prima di scansionare) è stata verificata contro i sorgenti
+  reali della versione del core (`arduino-esp32` tag `3.1.0`, stessa
+  major della `framework-arduinoespressif32 @ 3.20017` pinnata in
+  `platformio.ini`) invece che assunta — **resta comunque il codice
+  meno testato in assoluto di questo progetto**, dato che non è mai
+  stato compilato: è il primo punto da controllare in caso di errore
+  di build.
+- **Rilevamento evil-twin / AP sospetti** (`WardrivingManager`): durante
+  la scansione passiva, se lo stesso SSID compare con un livello di
+  cifratura diverso su due BSSID distinti, entrambe le voci vengono
+  marcate `suspicious` (con nota) — euristica volutamente conservativa
+  (niente fuzzy-matching sul vendor, scartato come troppo soggetto a
+  falsi positivi) che **non** prova a stabilire quale dei due sia
+  quello legittimo, perché non è deducibile dal solo ordine di
+  scoperta. In `WAR DRIVING` le voci sospette diventano rosse (priorità
+  massima nello stacking colore, sopra `discovered`/`open`) con
+  etichetta `!EVIL`, il contatore Idle/Running mostra `evil:N` in
+  rosso quando >0, e ogni nuova rilevazione suona lo stesso allarme a
+  due toni discendenti dell'audit credenziali (sotto) — stessa fascia
+  di urgenza, un possibile evil-twin è un finding paragonabile a una
+  credenziale di default funzionante.
+- **Audio su audit credenziali riuscito** (`ui/Sound::playCredAlert`,
+  chiamato da `CredAuditManager::run()` appena una coppia
+  utente/password risulta valida): due toni discendenti (1400Hz poi
+  600Hz, con una breve pausa nel mezzo) — deliberatamente più duro del
+  singolo beep già esistente per un AP aperto trovato in war driving,
+  perché una credenziale confermata funzionante è un finding più forte
+  e azionabile. Come tutto l'audio, gated da
+  `AppConfig::uiSoundEnabled`.
+- **Schermata STATS** (`ui/screens/StatsScreen`, raggiungibile con `S`
+  da `SCAN HISTORY`): grafico a barre dell'andamento host-trovati nel
+  tempo su tutti gli snapshot in `ScanHistory`, barre rosse per gli
+  scan in cui era presente almeno un host a rischio Critical, contorno
+  magenta sulla barra più recente; sopra il grafico, conteggio scan/
+  media host/andamento (↑/↓/= rispetto allo scan precedente) in testo.
+  Nessuna legenda testuale separata per il colore rosso — si appoggia
+  alla stessa convenzione cromatica già stabilita altrove nell'app
+  (rosso = critical), per stare nel budget di spazio del footer.
+- **Backup/restore impostazioni su SD** (`storage/ConfigBackup.h/.cpp`,
+  tasti `B`/`R` in `SETTINGS`): esporta/reimporta `AppConfig`, le reti
+  WiFi salvate (**incluse le password**, in chiaro nel JSON — scelta
+  deliberata: un backup che richiedesse di reinserire le password a
+  mano non servirebbe al suo scopo, che è sopravvivere a un
+  `pio run -t erase` a chip pieno) e l'allowlist di war driving.
+  Richiede esplicitamente una SD (mai LittleFS, che l'erase cancella
+  insieme all'NVS che si vorrebbe recuperare) — vedi il commento in
+  cima a `ConfigBackup.h`. Il restore ripristina l'ordine MRU delle
+  reti salvate reinserendole in ordine inverso attraverso la stessa
+  `WifiManager::saveCredentials()` già esistente, senza bisogno di
+  nessuna nuova API a basso livello.
+- **Baseline "dispositivi noti" per rete** (`storage/ScanHistory` +
+  `HostListScreen`): ogni snapshot di cronologia ora porta anche il
+  nome della rete WiFi corrente (`g_wifi.currentSsid()`), cosa che
+  permette a `ScanHistory::loadKnownMacs()` di raccogliere i MAC visti
+  in passato **sulla stessa rete** (non una baseline globale — un host
+  mai visto sulla rete di casa ma noto su quella dell'ufficio deve
+  comunque poter essere segnalato come nuovo). A fine scan,
+  `HostListScreen` confronta gli host trovati contro questa baseline
+  *prima* di salvare il nuovo snapshot e marca in rosso (priorità
+  massima, sopra il magenta di "nuovo in questo scan") ogni host il
+  cui MAC non risulta mai visto prima su questa rete; lo stat-strip
+  compatto mostra `+N` (nuovi in questo scan, magenta) e `!N` (mai
+  visti prima su questa rete, rosso).
+- **Indicatore di potenza segnale RSSI** (`ui/screens/SignalFinderScreen`,
+  raggiungibile con `Tab` da una riga selezionata in `WAR DRIVING`):
+  barra RSSI live per localizzare fisicamente un AP camminando e
+  osservandola muoversi, con testo `GETTING CLOSER`/`GETTING FARTHER`
+  quando il segnale cambia tra una lettura e la successiva. Guida un
+  proprio ciclo di scan continuo riarmando `WifiManager::beginScan()`
+  ogni volta che uno scan finisce, invece di leggere le sighting di
+  `WardrivingManager` (la cui cadenza di ~15s è troppo lenta per "cammina
+  e guarda cambiare in tempo reale") — stessa API di basso livello già
+  usata da `WifiSetupScreen`. Come ogni altra schermata che guida un suo
+  scan, usarla insieme a `WAR DRIVING`/`WIFI SCAN` fa competere le due
+  per l'unica radio disponibile — stessa limitazione già accettata
+  altrove, vedi sotto.
+
 ## Compilare e flashare
 
 ```
@@ -981,6 +1078,13 @@ originale.
       schermo 30s (dimming, non blocca nulla in background), rilevamento
       WiFi più completo (SSID nascosti, dwell più lungo) — vedi sopra
       per il dettaglio di ciascuna.
+- [x] **Fase 13 — Scan BLE passivo, evil-twin, audio audit, STATS,
+      backup config, baseline dispositivi, signal finder**: sette
+      migliorie scelte dall'utente da una lista di dieci proposte da
+      questo assistente — vedi sopra per il dettaglio di ciascuna. Lo
+      scan BLE (`BleScanManager`) è il codice meno verificato di tutto
+      il progetto, mai compilato: prima cosa da controllare in caso di
+      errore di build.
 
 ## Test plan — Fase 1
 
@@ -1436,6 +1540,56 @@ laboratorio isolato) — non in giro per strada con reti di sconosciuti.
    NON venga mai considerato per la scoperta attiva anche se
    "<hidden>" fosse per assurdo nella tua allowlist.
 
+## Test plan — Fase 13 (BLE, evil-twin, audio audit, STATS, backup, baseline, signal finder)
+
+1. **Build**: prima di tutto, verificare che `pio run` compili pulito —
+   `BleScanManager.cpp` è l'unico file di questa fase (e di tutto il
+   progetto) mai passato da un compilatore reale. Se fallisce, il primo
+   sospetto è la firma di `BLEScan::start()`/`BLEScanResults` — vedi il
+   commento in cima a `BleScanManager.h`.
+2. **Scan BLE**: aprire `WAR DRIVING` → `B` per `BLE SCAN`, premere
+   `Enter` per avviare. Con un telefono/auricolare BLE nelle vicinanze
+   (schermo acceso, Bluetooth attivo), verificare che compaia in lista
+   entro una manciata di cicli (~10s ciascuno), con RSSI plausibile e
+   nome se il dispositivo lo trasmette. Verificare che
+   `/blescan/blescan.csv` su SD contenga una riga per ogni nuovo
+   dispositivo. Premere `Del`: il modulo deve continuare in background
+   (rientrando nella schermata i contatori devono essere avanzati).
+3. **Evil-twin**: con due AP (anche uno dei due un hotspot telefonico)
+   configurati con lo **stesso SSID** ma cifratura diversa (es. uno
+   aperto, uno WPA2), avviare `WAR DRIVING` e verificare che entrambe le
+   voci diventino rosse con `!EVIL`, il contatore `evil:N` compaia in
+   rosso, e si senta l'allarme a due toni.
+4. **Audio audit**: con `CREDENTIAL AUDIT` abilitato (disclaimer `Y`) su
+   un host con una credenziale di default nota, verificare che al
+   momento del login riuscito si senta l'allarme a due toni (diverso dal
+   singolo beep di war driving). Con `SOUND` su `OFF` in `SETTINGS`,
+   nessun suono.
+5. **STATS**: da `SCAN HISTORY`, premere `S`. Con almeno 2-3 scan salvati
+   in cronologia, verificare il grafico a barre (altezza proporzionale
+   al numero di host), le barre rosse sugli scan con un host Critical,
+   il contorno magenta sulla barra più recente, e il testo di andamento
+   sopra.
+6. **Backup/restore**: in `SETTINGS` con una SD inserita, premere `B` —
+   deve apparire "backed up to SD" e comparire `/config_backup.json`
+   sulla SD. Cambiare qualche impostazione, poi premere `R` — deve
+   tornare ai valori del backup. Senza SD inserita, sia `B` che `R`
+   devono mostrare un messaggio d'errore chiaro invece di crashare.
+7. **Baseline dispositivi noti**: fare un `NETWORK SCAN` completo su una
+   rete, aspettare il salvataggio automatico in cronologia, poi
+   spegnere/riaccendere un dispositivo noto (o allontanarlo) e rifare lo
+   scan — quel dispositivo, se assente, semplicemente non compare (atteso);
+   se invece è presente un dispositivo il cui MAC non era mai comparso
+   prima su questa rete, deve apparire in rosso nella tabella con `!N`
+   nello stat-strip. Ripetere lo scan sulla stessa rete senza nuovi
+   dispositivi: nessuna riga rossa.
+8. **Signal finder**: da `WAR DRIVING` (stato Idle, con almeno una
+   sighting), selezionare una riga e premere `Tab`. Verificare che la
+   barra RSSI si aggiorni continuamente e che avvicinandosi/
+   allontanandosi fisicamente dall'AP il testo `GETTING CLOSER`/
+   `GETTING FARTHER` e il colore della barra (verde/ambra/rosso)
+   cambino di conseguenza.
+
 ## Limiti noti e tagli di scope deliberati
 
 Riepilogo di quanto già menzionato nelle sezioni sopra, in un unico
@@ -1496,11 +1650,34 @@ posto:
   la tua password contiene un carattere che non riesci a digitare, è un
   limite della mappatura tastiera di M5Cardputer, non di questo codice
   (che si limita a inoltrare quello che la libreria gli consegna).
-- **Sound design minimo, non un tema audio completo** (Fase 12): solo
-  due suoni esistono — la melodia di boot e il beep su nuova rete
-  aperta in war driving — non un feedback sonoro per ogni azione
-  dell'interfaccia. `M5Cardputer.Speaker` resta disponibile per chi
-  voglia estenderlo.
+- **Sound design minimo, non un tema audio completo** (Fase 12-13): tre
+  suoni esistono — la melodia di boot, il beep su nuova rete aperta in
+  war driving, e l'allarme a due toni condiviso da audit credenziali
+  riuscito ed evil-twin sospetto — non un feedback sonoro per ogni
+  azione dell'interfaccia. `M5Cardputer.Speaker` resta disponibile per
+  chi voglia estenderlo.
+- **Scan BLE mai compilato, la parte di codice meno verificata di tutto
+  il progetto** (Fase 13): `BleScanManager.cpp` è la prima volta che
+  questo firmware usa la libreria BLE "classica" di arduino-esp32, la
+  cui firma è cambiata più volte tra versioni del core — verificata
+  contro i sorgenti reali di `arduino-esp32` tag `3.1.0` (stessa major
+  della `framework-arduinoespressif32` pinnata in `platformio.ini`)
+  invece che assunta, ma senza una build reale a confermarlo. Se
+  `pio run` fallisce dopo questa fase, `BleScanManager.cpp` è il primo
+  sospetto — vedi il commento in cima a `BleScanManager.h`. Puramente
+  passivo: non fa mai pairing/connessione a un dispositivo BLE, a
+  differenza del join WiFi allow-listato di war driving.
+- **Evil-twin: euristica su SSID+cifratura, non una prova crittografica**
+  (Fase 13): due AP con lo stesso nome ma cifratura diversa vengono
+  entrambi segnalati come sospetti, senza alcuna pretesa di stabilire
+  quale sia quello legittimo — un attaccante sufficientemente motivato
+  potrebbe clonare anche la cifratura (nel qual caso questa euristica
+  non lo rileva) o un ambiente con AP legittimi mal configurati
+  potrebbe generare falsi positivi.
+- **Backup impostazioni: password WiFi in chiaro nel JSON su SD**
+  (Fase 13): scelta deliberata (vedi sopra), ma significa che
+  `/config_backup.json` va trattato con la stessa cura della SD stessa
+  — chiunque possa leggere quel file ha le tue password WiFi salvate.
 - **LoRa/GPS**: non presenti di serie sul Cardputer ADV (confermato
   nella ricerca hardware iniziale di questo progetto), quindi non
   affrontati.

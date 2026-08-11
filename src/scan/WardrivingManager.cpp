@@ -163,6 +163,24 @@ void WardrivingManager::runScanCycle() {
                 uint8_t macBytes[6];
                 if (parseMac(r.bssid, macBytes)) g_ouiDb.lookup(macBytes, rec.vendor);
 
+                // Evil-twin heuristic: another already-known sighting
+                // with the SAME SSID but a DIFFERENT encryption level -
+                // flag both, since which one (if either) is the
+                // impostor can't be told from this alone (see the class
+                // comment / ApSighting::suspicious). Skipped for hidden
+                // SSIDs - "<hidden>" isn't a real name to compare.
+                if (!isHidden) {
+                    for (auto& s : _sightings) {
+                        if (s.ssid == rec.ssid && s.encryption != rec.encryption) {
+                            s.suspicious = true;
+                            s.suspiciousNote = "SSID also seen with different encryption (possible evil twin)";
+                            rec.suspicious = true;
+                            rec.suspiciousNote = s.suspiciousNote;
+                            break;
+                        }
+                    }
+                }
+
                 _sightings.push_back(rec);
                 isNew = true;
             }
@@ -174,6 +192,11 @@ void WardrivingManager::runScanCycle() {
             if (rec.open) {
                 _openCount++;
                 sound::playAlert();
+            }
+            if (rec.suspicious) {
+                _suspiciousCount++;
+                sound::playCredAlert();  // same urgency tier as a confirmed default credential
+                notify("possible evil twin: " + rec.ssid);
             }
             if (rec.open && rec.allowlisted && !rec.discovered && !haveToDiscover) {
                 toDiscover = rec;
@@ -192,7 +215,7 @@ void WardrivingManager::logSighting(const ApSighting& ap) {
     bool isNewFile = !fs.exists("/wardrive/wardrive.csv");
     File f = fs.open("/wardrive/wardrive.csv", "a");
     if (!f) return;
-    if (isNewFile) f.println("time,ssid,bssid,rssi,channel,encryption,vendor,open,allowlisted");
+    if (isNewFile) f.println("time,ssid,bssid,rssi,channel,encryption,vendor,open,allowlisted,suspicious");
 
     String t = TimeSync::isSynced() ? TimeSync::nowString() : ("uptime:" + String(millis() / 1000));
 
@@ -214,6 +237,8 @@ void WardrivingManager::logSighting(const ApSighting& ap) {
     row += (ap.open ? "1" : "0");
     row += ',';
     row += (ap.allowlisted ? "1" : "0");
+    row += ',';
+    row += (ap.suspicious ? "1" : "0");
 
     f.println(row);
     f.close();

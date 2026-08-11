@@ -17,4 +17,13 @@ void playBootJingle();
 // No-op if uiSoundEnabled is off.
 void playAlert();
 
+// Two-tone descending alarm - deliberately harsher/more urgent than
+// playAlert(): a confirmed working default credential is a stronger,
+// more actionable finding than "found an open AP", the one other event
+// in this firmware with a sound. Briefly blocks (~400ms, like
+// playBootJingle()) to sequence the two tones - fine to call from any
+// background task (CredAuditManager's own, specifically), just not the
+// UI render task. No-op if uiSoundEnabled is off.
+void playCredAlert();
+
 }  // namespace sound

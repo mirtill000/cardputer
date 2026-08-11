@@ -25,6 +25,7 @@ private:
     void rebuildAliveList();
     void drawTable(M5Canvas& gfx, int16_t top);
     bool isNewHost(const IPAddress& ip) const;
+    bool isNeverSeenBefore(const IPAddress& ip) const;
 
     std::vector<size_t> _aliveIndices;
     size_t _selected = 0;
@@ -32,4 +33,5 @@ private:
     uint32_t _scanStartMs = 0;
     uint32_t _scanFinishMs = 0;  // valid once a scan has completed at least once
     std::vector<IPAddress> _newHostIps;  // set after ScanFinished - see storage/ScanHistory.h
+    std::vector<IPAddress> _neverSeenIps;  // set after ScanFinished - MAC not in any past scan of this network
 };
