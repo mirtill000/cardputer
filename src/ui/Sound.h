@@ -5,23 +5,20 @@
 // read by anything until now).
 namespace sound {
 
-// Starts a looping ~6.5s "Nightcall"-inspired synthwave theme (a heavy,
-// spaced-out arpeggiated bassline pulse + a slower D-minor melodic hook
-// through a tritone passing tone + a bright octave-up lead stab - an
-// original composition evoking that moody 80s-outrun vibe, not a
-// transcription of the real Kavinsky track: M5Cardputer.Speaker is
-// monophonic, one tone() at a time, so it couldn't play the real
-// track's simultaneous bassline+lead+vocal layers anyway, and
-// reproducing someone else's copyrighted melody note-for-note isn't
-// something this project does — see README) on its own background
-// FreeRTOS task, repeating until stopBootLoop() is called. Runs on the
-// splash screen only (BootScreen starts it once the title is revealed,
-// stops it in onExit() — see BootScreen.cpp) — non-blocking, so it's
-// safe to call from the UI render task unlike the other functions
-// here. No-op (task never even starts) if already running; if
-// uiSoundEnabled is OFF, the loop still runs and keeps time silently
-// (tone() calls skipped) so toggling sound back on mid-track resumes
-// in the right rhythmic position instead of restarting.
+// Starts a looping ~13s theme (see kBootLoop in Sound.cpp) on its own
+// background FreeRTOS task, repeating until stopBootLoop() is called.
+// A solo-voice arrangement of a piece the user supplied as sheet music
+// (confirmed as their own/rights-cleared before this was written) -
+// condensed to one monophonic line since M5Cardputer.Speaker only ever
+// plays one tone() at a time and the original is a two-hand piano
+// piece. Runs on the splash screen only (BootScreen starts it once the
+// title is revealed, stops it in onExit() — see BootScreen.cpp) —
+// non-blocking, so it's safe to call from the UI render task unlike
+// the other functions here. No-op (task never even starts) if already
+// running; if uiSoundEnabled is OFF, the loop still runs and keeps
+// time silently (tone() calls skipped) so toggling sound back on
+// mid-track resumes in the right rhythmic position instead of
+// restarting.
 void startBootLoop();
 void stopBootLoop();
 

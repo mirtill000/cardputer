@@ -1245,6 +1245,28 @@ po' il volume, fai la musica più cyberpunk e rallenta il tempo"):
   l'alto, più un breve stab di lead un'ottava sopra (D5/A4) per
   contrasto rispetto al resto, deliberatamente basso e lento.
 
+**Secondo ritocco: melodia sostituita con uno spartito fornito
+dall'utente**. A differenza della composizione originale "in stile
+Nightcall" descritta sopra, questa volta l'utente ha allegato uno
+spartito pianistico reale e ha confermato esplicitamente che è una
+composizione propria (o comunque di cui ha i diritti) — solo a quel
+punto, coerentemente con quanto scritto sopra sul non riprodurre
+melodie di terzi senza autorizzazione, è stata trascritta. `kBootLoop`
+in `ui/Sound.cpp` ora è un **arrangiamento a voce sola** delle prime
+quattro battute dello spartito (progressione La minore-Fa-Do-Sol, la
+classica "i-VI-III-VII"): per ogni battuta, la nota di basso della mano
+sinistra (tenuta), poi l'arpeggio della mano destra letto dallo
+spartito dal basso all'acuto, poi la sua nota più alta tenuta un po' di
+più come picco melodico — dato che `M5Cardputer.Speaker` suona una sola
+nota alla volta, le due mani del pianoforte sono state condensate in
+un'unica linea, non una trascrizione letterale di una mano sola. Tempo
+allineato a quello indicato sullo spartito (♩ = 89). Loop di ~13s,
+letto da una foto dello spartito e non passato per OCR — la fedeltà
+esatta nota per nota non è garantita, e correzioni su note specifiche
+che suonano sbagliate rispetto all'originale sono benvenute, stesso
+principio del "la build reale è l'unica verifica" usato per tutto il
+resto del firmware.
+
 ## Compilare e flashare
 
 ```
@@ -1998,6 +2020,12 @@ laboratorio isolato) — non in giro per strada con reti di sconosciuti.
    frenetico né un pattern statico) — e che titolo/sottotitolo/versione/
    prompt restino perfettamente leggibili, senza puntini visibili sopra il
    testo.
+5. **Fedeltà della melodia trascritta** (dopo il secondo ritocco):
+   ascolta il loop (~13s) e confrontalo con lo spartito originale —
+   quattro battute, La minore-Fa-Do-Sol, ciascuna basso-poi-arpeggio-poi
+   picco melodico. Segnala eventuali note che suonano chiaramente
+   sbagliate rispetto all'originale, così da poterle correggere
+   puntualmente in `kBootLoop` (`ui/Sound.cpp`).
 
 ## Limiti noti e tagli di scope deliberati
 
@@ -2068,9 +2096,16 @@ posto:
   disponibile per chi voglia estenderlo, ma resta monofonico (un solo
   `tone()` alla volta) — niente accordi reali, solo linee melodiche
   sequenziali.
-- **Musica di boot: composizione originale ispirata a Nightcall, non
-  una trascrizione** (Fase 17): scelta deliberata, non solo un limite
-  tecnico del buzzer monofonico — vedi la sezione "Fase 17" sopra.
+- **Musica di boot: ora un arrangiamento a voce sola di un brano fornito
+  dall'utente, trascritto solo dopo conferma esplicita che ne aveva i
+  diritti** (Fase 17, secondo ritocco): la versione precedente era una
+  composizione originale "in stile Nightcall" proprio per evitare di
+  trascrivere una melodia di terzi senza autorizzazione — questa
+  distinzione (comporre qualcosa "in stile X" vs. trascrivere
+  letteralmente uno spartito) resta il criterio guida per qualunque
+  musica futura in questo progetto. Trascrizione letta da una foto
+  dello spartito, non passata per OCR — fedeltà nota per nota non
+  garantita, vedi il test plan dedicato sopra.
 - **Nebbia digitale: puramente decorativa, densità legata all'area, non
   un vero effetto di trasparenza** (Fase 17): `chrome::drawDigitalFog`
   disegna punti singoli opachi, non una vera sovrapposizione
