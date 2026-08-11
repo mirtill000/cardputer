@@ -661,12 +661,15 @@ la 10 — non sono state richieste dall'utente e non sono state fatte).
   del download+flash, con schermata "DO NOT power off" fissa) — non è
   una svista: un aggiornamento OTA ha comunque bisogno di una schermata
   da cui l'utente non può navigare via, quindi bloccare è la UX
-  corretta, non un bug. **Rischio principale, non verificabile senza una
-  build reale**: se il binario compilato non entra nei 1.625 MB per
-  slot, `pio run -t upload` fallisce rumorosamente ("app image is too
-  big") — fallimento visibile e sicuro, non un device brickato — e la
-  correzione è allargare `ota_0`/`ota_1` e restringere `spiffs` di pari
-  passo nel file partizioni.
+  corretta, non un bug. **Rischio dimensione slot, confermato risolto**:
+  la build reale del firmware occupa 1.251.041 byte su 1.638.400
+  disponibili per slot (76.4%) — c'è margine. Se in futuro crescesse
+  oltre i 1.625 MB, `pio run -t upload` fallirebbe rumorosamente ("app
+  image is too big") — fallimento visibile e sicuro, non un device
+  brickato — e la correzione è allargare `ota_0`/`ota_1` e restringere
+  `spiffs` di pari passo nel file partizioni. Il vero problema trovato
+  al primo flash reale non era questo, ma un bug di offset in
+  `otadata` — vedi il bullet dedicato più sotto.
 - **Bug reale di link trovato durante la prima build della Fase 10**:
   `src/scan/Base64.cpp` (dalla Fase 4, encoder minimale per
   `Authorization: Basic`) definiva `namespace base64 { String
@@ -687,6 +690,36 @@ la 10 — non sono state richieste dall'utente e non sono state fatte).
   dal primo tentativo di link reale dell'utente dopo l'aggiunta
   dell'OTA. Corretto rinominando il namespace del nostro encoder da
   `base64` a `b64` (nessun cambio di comportamento, solo di nome).
+- **Bug reale trovato al primo flash reale della tabella OTA — boot
+  loop**: dopo `erase` + `upload` + `uploadfs` andati tutti a buon
+  fine (nessun errore in nessuno dei tre), il device restava bloccato
+  in un loop di reset, ripetendo solo il banner della ROM
+  (`ESP-ROM:esp32s3-20210327`...) senza mai stampare una riga di
+  bootloader di secondo stadio o dell'app — stesso Program Counter
+  salvato a ogni giro, segno di un crash deterministico prestissimo nel
+  boot. La diagnosi è arrivata dal log completo di `esptool.py` durante
+  `upload`: tra la scrittura della partition table (`0x8000`) e quella
+  dell'app (`0x10000`) compariva una scrittura da 8192 byte a
+  `0x0000e000` mai richiesta esplicitamente da questo progetto —
+  PlatformIO/Arduino-ESP32, quando rileva una tabella con OTA
+  (`ota_0`/`ota_1`/`otadata`), flasha automaticamente un piccolo blob
+  (`boot_app0.bin`, inizializza `otadata` per puntare a `ota_0`) **a un
+  offset fisso hardcoded, `0xE000`**, indipendentemente da cosa dice
+  `partitions.csv`. La tabella di questa fase metteva `otadata` a
+  `0xF000` (con `phy_init` a `0xE000`, ricalcando il layout della
+  vecchia tabella non-OTA) — quella scrittura automatica cancellava
+  quindi tutta `phy_init` e la prima metà di `otadata`, lasciando
+  `otadata` con contenuto incoerente e il bootloader di secondo stadio
+  (che legge proprio `otadata` per decidere quale slot avviare) in
+  crash immediato. Non individuabile da una revisione del codice sola —
+  serviva il log esatto di `esptool.py` durante un flash reale, che
+  l'utente ha fornito. Corretto spostando `otadata` esattamente a
+  `0xE000` e togliendo `phy_init` come voce separata (le tabelle OTA di
+  riferimento di Arduino-ESP32 non ne hanno una: la calibrazione PHY
+  funziona comunque, senza una partizione dedicata) — vedi i commenti
+  in `partitions.csv` per il dettaglio completo. **Richiede un nuovo
+  `erase` + `upload` + `uploadfs`**: l'`otadata` corrotto dal tentativo
+  precedente va ripulito, non basta riflashare sopra.
 
 ### Fase 11: war driving, allowlist per la scoperta attiva, orario NTP
 
@@ -1347,11 +1380,14 @@ posto:
   meno verificabile di tutto il firmware — vedi il commento in
   `storage/SdCard.cpp`. Se non hai una SD inserita, tutto continua a
   funzionare su LittleFS esattamente come prima.
-- **Probe UDP/OTA/mDNS non compilati né testati qui** (Fase 10): le tre
+- **Probe UDP/mDNS non compilati né testati qui** (Fase 10): le due
   parti più a rischio di questa fase (pin SD, firma
-  `beginMulticast()`, dimensione immagine OTA negli slot da 1.625 MB)
-  sono tutte segnalate esplicitamente nei rispettivi sorgenti/commit —
-  vedi il test plan dedicato sopra.
+  `beginMulticast()`) sono segnalate esplicitamente nei rispettivi
+  sorgenti/commit — vedi il test plan dedicato sopra. La terza parte a
+  rischio, la tabella partizioni OTA, **è stata testata su hardware
+  reale** ed è stato trovato e corretto un bug reale (offset di
+  `otadata` sbagliato, causava un boot loop) — vedi il bullet dedicato
+  nella sezione "Fase 10" sopra.
 - **Copertura caratteri per la password WiFi non garantita al 100%**:
   `WifiSetupScreen` accetta qualunque carattere che `M5Cardputer.Keyboard`
   consegni in `status.word` (lettere, cifre, simboli comuni raggiunti

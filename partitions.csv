@@ -29,19 +29,34 @@
 # it's what makes both of those work without extra parameters anywhere
 # in this codebase.
 #
+# otadata MUST be at 0xE000 — a real bug found on the first real
+# flash of this table (not something reviewable from source, only from
+# a hardware log): PlatformIO/arduino-esp32 auto-flashes a small
+# "boot_app0.bin" blob (initializes otadata to point at ota_0) at a
+# HARDCODED offset of 0xE000 whenever it detects an OTA-style partition
+# table (ota_0/ota_1/otadata present) — regardless of what this file
+# says. An earlier version of this table put otadata at 0xF000 (with a
+# phy_init partition at 0xE000, matching the old non-OTA table's
+# layout), so that auto-flash silently overwrote all of phy_init and
+# the first half of otadata with boot_app0.bin's bytes, leaving otadata
+# corrupted and the bootloader crash-looping before it could print
+# anything (same banner over and over, identical PC every time — see
+# git history for the full symptom + diagnosis). There's no longer a
+# phy_init entry at all: Arduino-ESP32's own reference OTA partition
+# tables don't have one either (PHY calibration works without a
+# dedicated partition, falling back gracefully), which is what makes
+# 0xE000 free for otadata in the first place.
+#
 # ota_0/ota_1 offsets are 0x10000-aligned (a hard requirement for app
 # partitions - the bootloader memory-maps them at 64KB granularity).
-# otadata (fixed 0x2000, ESP-IDF's required size for it) is what the
-# bootloader reads to decide which of the two slots to boot; left
-# blank/erased (as it is on a first flash before any OTA update has
-# ever run), the bootloader's documented fallback is to boot ota_0 -
-# so a plain `pio run -t upload` needs no special handling to work here.
+# otadata left blank/erased (as it is on a first flash before any OTA
+# update has ever run) makes the bootloader's documented fallback boot
+# ota_0 - so a plain `pio run -t upload` needs no special handling.
 #
 # Name,      Type, SubType,  Offset,   Size,     Flags
 nvs,         data, nvs,      0x9000,   0x5000,
-phy_init,    data, phy,      0xe000,   0x1000,
-otadata,     data, ota,      0xf000,   0x2000,
-ota_0,       app,  ota_0,    0x20000,  0x190000,
-ota_1,       app,  ota_1,    0x1B0000, 0x190000,
-spiffs,      data, spiffs,   0x340000, 0x4B0000,
+otadata,     data, ota,      0xe000,   0x2000,
+ota_0,       app,  ota_0,    0x10000,  0x190000,
+ota_1,       app,  ota_1,    0x1A0000, 0x190000,
+spiffs,      data, spiffs,   0x330000, 0x4C0000,
 coredump,    data, coredump, 0x7F0000, 0x10000,
