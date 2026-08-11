@@ -12,7 +12,7 @@ constexpr uint32_t kRainTickMs = 70;                   // ~14Hz animation, indep
 constexpr UBaseType_t kScanQueueLen = 24;
 }  // namespace
 
-void UiManager::begin() {
+void UiManager::begin(Screen* initialScreen) {
     auto& display = M5Cardputer.Display;
 
     // No PSRAM on this board (ESP32-S3FN8) — say so explicitly rather
@@ -38,6 +38,19 @@ void UiManager::begin() {
     _scanQueue = xQueueCreate(kScanQueueLen, sizeof(ScanNotification));
 
     _input.begin();
+
+    // Push+activate the first screen here, synchronously, still on
+    // whichever task called begin() (normally the Arduino setup() /
+    // loopTask) — and only THEN start the render task. Doing it in this
+    // order means the render task's first loop iteration already finds
+    // a non-empty, fully-settled _stack, instead of a window where
+    // setup() and the freshly-started render task could both be
+    // touching _stack/_canvas at once. See the ordering note on
+    // begin()'s declaration in the header.
+    if (initialScreen) {
+        _stack.push_back(initialScreen);
+        activate(initialScreen);
+    }
 
     xTaskCreatePinnedToCore(&UiManager::taskEntry, "ui", 8192, this, 2, nullptr, 1);
 }

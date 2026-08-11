@@ -44,17 +44,6 @@ void setup() {
     }
     g_ouiDb.begin();
 
-    g_ui.begin();
-    g_scanManager.begin(g_ui.scanQueue());
-    g_portScanManager.begin(g_ui.scanQueue());
-    g_credAuditManager.begin(g_ui.scanQueue());
-
-    // Non-blocking: if a network was saved from a previous WIFI SETUP
-    // run, this kicks the connection off immediately at boot instead of
-    // waiting for the user to open NETWORK SCAN first. No-op if nothing
-    // is saved yet (first boot, or after FORGET).
-    g_wifi.autoConnect();
-
     g_portScanScreen.configure(
         "PORT SCANNER",
         "Port scanning targets one host at a time: run NETWORK SCAN, select a "
@@ -76,7 +65,21 @@ void setup() {
     g_menuItems[4] = {"SETTINGS", &g_settingsScreen};
     MainMenuScreen::instance().configure(g_menuItems, 5);
 
-    g_ui.pushScreen(&g_bootScreen);
+    // MainMenuScreen must already be configured by this point: once the
+    // render task starts, BootScreen can transition straight to it on
+    // the first Enter keypress. See UiManager::begin() for why the
+    // initial screen is passed in here rather than pushed afterwards.
+    g_ui.begin(&g_bootScreen);
+
+    g_scanManager.begin(g_ui.scanQueue());
+    g_portScanManager.begin(g_ui.scanQueue());
+    g_credAuditManager.begin(g_ui.scanQueue());
+
+    // Non-blocking: if a network was saved from a previous WIFI SETUP
+    // run, this kicks the connection off immediately at boot instead of
+    // waiting for the user to open NETWORK SCAN first. No-op if nothing
+    // is saved yet (first boot, or after FORGET).
+    g_wifi.autoConnect();
 }
 
 void loop() {

@@ -20,7 +20,18 @@ class Screen;
 // polling or vice versa.
 class UiManager {
 public:
-    void begin();
+    // initialScreen is activated synchronously, on the calling task,
+    // BEFORE the render task is created — see the .cpp for why this
+    // matters: every pushScreen()/popScreen()/replaceScreen() call in
+    // this codebase happens from inside a screen's own onKey(), which
+    // only ever runs on the UI task itself (via run() -> handleKeyEvent()),
+    // so _stack and _canvas are otherwise never touched from more than
+    // one task. Passing the first screen through begin() instead of a
+    // separate pushScreen() call after starting the task keeps that
+    // invariant true from the very first frame instead of racing setup()
+    // (a different task) against the newly-started render task over the
+    // same unsynchronized std::vector and M5Canvas.
+    void begin(Screen* initialScreen);
 
     void pushScreen(Screen* s);
     void popScreen();
