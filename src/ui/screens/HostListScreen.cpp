@@ -185,7 +185,7 @@ void HostListScreen::draw(M5Canvas& gfx) {
     // live scan percentage or the final elapsed time right-aligned.
     uint32_t elapsedMs = (running ? millis() : _scanFinishMs) - _scanStartMs;
     uint32_t sec = elapsedMs / 1000;
-    char timeBuf[8];
+    char timeBuf[16];  // "MM:SS" is 6 bytes, but minutes isn't clamped - room for a much longer scan
     snprintf(timeBuf, sizeof(timeBuf), "%02u:%02u", (unsigned)(sec / 60), (unsigned)(sec % 60));
 
     gfx.setTextColor(running ? theme::CYAN : theme::GREEN, theme::BG);

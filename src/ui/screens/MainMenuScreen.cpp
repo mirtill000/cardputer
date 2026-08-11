@@ -63,7 +63,7 @@ void MainMenuScreen::draw(M5Canvas& gfx) {
     // footer on this one screen — Up/Down/Enter is already the
     // established convention by the time a user reaches the menu.
     uint32_t upSec = millis() / 1000;
-    char upBuf[10];
+    char upBuf[16];  // "HH:MM:SS" is 9 bytes, but hours isn't clamped - room for a much longer uptime
     snprintf(upBuf, sizeof(upBuf), "%02u:%02u:%02u", (unsigned)(upSec / 3600), (unsigned)((upSec / 60) % 60),
              (unsigned)(upSec % 60));
 

@@ -55,7 +55,7 @@ void SettingsScreen::adjust(int direction) {
     }
 }
 
-void SettingsScreen::onKey(UiKey key, char /*ch*/) {
+void SettingsScreen::onKey(UiKey key, char ch) {
     switch (key) {
         case UiKey::Up:
             _selected = (_selected == 0) ? (uint8_t)(kFieldCount - 1) : (uint8_t)(_selected - 1);

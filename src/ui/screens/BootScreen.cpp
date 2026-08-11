@@ -113,7 +113,7 @@ void BootScreen::draw(M5Canvas& gfx) {
     // reads as the first frame of one continuous dashboard rather than a
     // separate screen with its own conventions.
     uint32_t upSec = millis() / 1000;
-    char upBuf[10];
+    char upBuf[16];  // "HH:MM:SS" is 9 bytes, but hours isn't clamped - room for a much longer uptime
     snprintf(upBuf, sizeof(upBuf), "%02u:%02u:%02u", (unsigned)(upSec / 3600), (unsigned)((upSec / 60) % 60),
              (unsigned)(upSec % 60));
 
