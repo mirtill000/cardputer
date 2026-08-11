@@ -43,11 +43,40 @@ public:
     // once it observes isConnected() == true, so a wrong password
     // never gets written to NVS just because someone tried it.
     void beginConnectWithCredentials(const String& ssid, const String& password);
+
+    // Saves (ssid, password) as the most-recently-used network. If ssid
+    // already has a saved entry, it's updated in place and moved to the
+    // front; otherwise it's inserted at the front, evicting the
+    // least-recently-used entry once kMaxSavedNetworks is reached. See
+    // WifiManager.cpp for the on-disk layout.
     void saveCredentials(const String& ssid, const String& password);
 
     bool hasSavedCredentials() const;
-    String savedSsid() const;  // display only — never exposes the password
-    void forgetSavedCredentials();
+    String savedSsid() const;  // most-recently-used, display only — never exposes the password
+    void forgetSavedCredentials();  // forgets ALL saved networks
+
+    // Up to kMaxSavedNetworks networks, most-recently-used first (index
+    // 0 == savedSsid()) — backs WifiSetupScreen's quick-switch list, so
+    // reconnecting to a network typed in before never needs its
+    // password retyped.
+    static constexpr uint8_t kMaxSavedNetworks = 3;
+    uint8_t savedNetworkCount() const;
+    String savedNetworkSsid(uint8_t index) const;  // "" if index is out of range
+
+    // Non-blocking, like beginConnectWithCredentials() — kicks off a
+    // connection attempt using an already-saved network's stored
+    // password. Returns false (no-op) if index is out of range.
+    bool connectSaved(uint8_t index);
+
+    // Re-inserts an already-saved network at the front of the
+    // most-recently-used list using its own stored password (never
+    // touches the password) — call this instead of saveCredentials()
+    // when reconnecting via connectSaved() succeeded, so the list
+    // reflects actual recency of use without risking overwriting a
+    // real password with an empty one.
+    void touchSavedNetwork(uint8_t index);
+
+    void forgetSavedNetwork(uint8_t index);  // forgets just this one
 
     bool isConnected() const;
     // True once the driver has definitively given up on the current

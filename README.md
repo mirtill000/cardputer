@@ -529,6 +529,144 @@ puramente decorativi dove non c'è un dato reale da mostrare.
   schermo, ma la richiesta esplicita riguardava solo lo splash e
   `NETWORK SCAN` — `PortScanScreen` aveva già un trattamento coerente
   dalla Fase 7 (tabella + donut + footer) e non è stata modificata qui.
+- **Addendum post-Fase 9**: su richiesta dell'utente, la skyline
+  decorativa è stata rimossa da `MAIN MENU` (restava solo sullo splash,
+  vedi sopra) — le voci di menu sono salite subito sotto l'header, righe
+  leggermente più alte (16px invece di 14px) per usare lo spazio
+  liberato. `chrome::drawSkyline()` resta comunque condivisa, perché la
+  usa ancora `BootScreen`.
+
+### Fase 10: cronologia scan, SD, WiFi multi-rete, UDP, mDNS, firme vuln, OTA
+
+Otto migliorie tecniche/funzionali richieste dall'utente dopo una lista
+di 10 proposte fatte da questo assistente (vedi cronologia) — numerate
+qui come nell'elenco originale (1, 2, 3, 4, 5, 6, 7, 10; la 8 e la 9
+della lista originale — dashboard web e OTA erano scambiate, l'OTA era
+la 10 — non sono state richieste dall'utente e non sono state fatte).
+
+- **#3 — SD card cablata**: nuovo modulo `storage/SdCard.h/.cpp`. Pin
+  SPI dedicato (SCK=40, MISO=39, MOSI=14, CS=12, bus `HSPI` separato dal
+  display) preso dallo sketch di esempio SD ufficiale di M5Stack per
+  Cardputer. **Questo è l'unico numero "magico" in tutto il firmware che
+  non è stato possibile incrociare con nient'altro già funzionante nel
+  codebase** (a differenza, per dire, dei pin tastiera/display che
+  M5Unified auto-rileva) — se `sdcard::begin()` fallisce sempre anche
+  con una scheda inserita (log seriale: `sdcard: no SD card detected`),
+  è il primo posto da correggere. Quando una SD è presente, `NETWORK
+  SCAN` (export manuale `E` e auto-export) e la cronologia scan (sotto)
+  scrivono lì invece che su LittleFS — `sdcard::exportFs()`/
+  `exportFsLabel()` centralizzano la scelta, così ogni chiamante mostra
+  "(SD)" o "(flash)" nel proprio messaggio di stato senza doverlo sapere
+  in anticipo.
+- **#1 — Cronologia scan persistita**: nuovo modulo
+  `storage/ScanHistory.h/.cpp` + nuova schermata `SCAN HISTORY` (in
+  `MAIN MENU`, sesta voce). Ogni `NETWORK SCAN` completato salva uno
+  snapshot JSON (`/history/scan_NNNNN.json`, host vivi con IP/MAC/
+  hostname/vendor/classe/risk) via ArduinoJson — libreria già dichiarata
+  come dipendenza dalla Fase 1 ma mai usata finora, qui finalmente
+  sfruttata per la lettura strutturata che il formato di export di
+  `ResultStore` (scrittura streaming one-way) non offre. Il numero di
+  sequenza (non un timestamp: **niente RTC/NTP su questa scheda**, vedi
+  sotto) vive in NVS e viene incrementato a ogni salvataggio; solo gli
+  ultimi `kMaxEntries` (20) snapshot vengono tenuti, i più vecchi
+  vengono cancellati automaticamente. `SCAN HISTORY` mostra l'elenco
+  (più recente in cima, marcato "latest") e il dettaglio di ogni scan in
+  una tabella incorniciata nello stile della Fase 9.
+- **#2 — Diff e alert sui cambiamenti**: usa la Fase 1 sopra. Al termine
+  di un `NETWORK SCAN`, lo snapshot appena salvato viene confrontato con
+  quello immediatamente precedente: gli host presenti ora ma non prima
+  sono "nuovi" — evidenziati in magenta nella tabella di `NETWORK SCAN`
+  e conteggiati nella stat strip (`HOSTS FOUND: N (+M new)`). Per le
+  porte, `PortScanManager` salva/confronta un piccolo snapshot per-host
+  (`/history/ports_<ip>.json`, solo numeri di porta) a ogni port scan:
+  una porta aperta ora ma non l'ultima volta è "nuova" — evidenziata in
+  magenta su `PORT MAPPING` (a meno che non abbia anche una firma
+  vulnerabile nota, vedi #6 sotto, nel qual caso vince il rosso) e
+  conteggiata (`open:N (+M new)`). Limite accettato: il diff porte
+  confronta solo per numero di porta, non (porta, protocollo) — una
+  porta 53 TCP e una 53 UDP aperte nello stesso host sono
+  indistinguibili per questo confronto (vedi commento in
+  `ScanHistory.h`).
+- **#4 — Probe UDP di base**: nuovo modulo `scan/UdpProbe.h/.cpp`,
+  eseguito una volta per host subito dopo lo sweep TCP di
+  `PortScanManager`. Tre probe fissi — DNS/53 (query A valida per un
+  nome che non risolverà mai a nulla di reale, sufficiente a far
+  rispondere qualunque server DNS reale), NTP/123 (richiesta SNTP
+  standard, primo byte `0x1B`), SNMP/161 (GetRequest SNMPv1 per
+  `sysDescr.0`, community `public` — pacchetto BER/ASN.1 costruito e
+  verificato a mano byte-per-byte con uno script Python usa-e-getta
+  prima di essere hardcoded, stessa disciplina già usata per il formato
+  binario del DB OUI). **Onestà del risultato**: a differenza del TCP
+  connect-scan, l'UDP senza ICMP raw non permette di distinguere "porta
+  chiusa" da "pacchetto silenziosamente scartato" — questi probe quindi
+  **non riportano mai "chiuso/filtrato"**, solo "ha risposto" (nel qual
+  caso è sicuramente aperto) o "nessuna riga in tabella" (nessuna
+  affermazione). Le porte UDP trovate appaiono in `PORT MAPPING` con
+  suffisso `/u`.
+- **#5 — Risoluzione hostname via mDNS**: nuovo modulo
+  `scan/MdnsReverseResolver.h/.cpp` + `net/DnsWire.h/.cpp` (parsing/
+  building DNS condiviso, con supporto alla compressione dei nomi RFC
+  1035 §4.1.4 — verificato con uno script Python di riferimento,
+  incluso un caso con puntatore di compressione, prima di essere
+  scritto in C++). A differenza di `HostnameResolver` (NBNS, Fase 2),
+  **non** usa la libreria `ESPmDNS` — quella è pensata per pubblicizzare
+  il nome di *questo* dispositivo e sfogliare servizi, non per
+  interrogare l'IP di qualcun altro. Questo modulo costruisce a mano una
+  query PTR reverse (`10.1.168.192.in-addr.arpa`, RFC 6762 §3 elenca
+  esplicitamente le zone reverse private come valide su mDNS senza
+  suffisso `.local`) e la spedisce in multicast su `224.0.0.251:5353`.
+  `ScanManager::probeHost` la usa come fallback **solo** se NBNS non ha
+  già trovato un nome — copre un'ampia fetta di dispositivi (telefoni,
+  Mac, Chromecast, molto IoT) che NBNS da solo non vedeva. **Rischio più
+  alto del resto del codice di rete**: il multicast UDP (bind sulla
+  porta 5353, join al gruppo) non è mai stato esercitato altrove in
+  questo codebase per fare un confronto, e la firma esatta di
+  `WiFiUdp::beginMulticast()` usata (2 argomenti) potrebbe non essere
+  quella giusta per la versione del core Arduino-ESP32 in uso — se non
+  compila, è il primo posto da guardare (vedi commento nel sorgente).
+- **#6 — Firme di vulnerabilità note**: nuovo modulo
+  `scan/VulnSignatures.h/.cpp` — una tabella piccola e scelta a mano
+  (9 voci: backdoor vsftpd 2.3.4/ProFTPD 1.3.3c, OpenSSH 1.x-3.x, IIS
+  5/6, Apache 1.3/2.0.x), **non** un database CVE generico e **non** un
+  parser euristico di range di versione — solo substring match esatte
+  su stringhe di banner reali, con la provenienza di ogni voce
+  documentata nel sorgente. Un match forza il risk level dell'host a
+  Critical (stessa forza di un default credential confermato) e mostra
+  una riga `VULN:` su `HOST DETAIL`; su `PORT MAPPING` la porta
+  interessata appare in rosso (priorità massima tra i colori,
+  sopra "nuova porta" e "porta legacy generica").
+- **#7 — Reti WiFi multiple salvate**: `WifiManager` ora persiste fino a
+  `kMaxSavedNetworks` (3) reti invece di una sola, come lista MRU
+  (most-recently-used) in NVS — un nuovo salvataggio va sempre in testa,
+  un duplicato per SSID viene deduplicato/aggiornato in posizione, oltre
+  la soglia la voce meno recente viene scartata. `WIFI SETUP` ha un
+  nuovo stato "reti salvate" (tasto `S` da Idle): selezionarne una
+  riconnette senza dover ridigitare la password. **Bug evitato in fase
+  di progettazione**: riconnettersi a una rete salvata non richiama
+  `saveCredentials()` (che avrebbe sovrascritto la password reale con
+  quella vuota di questo percorso, mai digitata) — usa invece
+  `touchSavedNetwork()`, che rilegge la password già salvata e la
+  riscrive invariata solo per aggiornare l'ordine MRU.
+- **#10 — Aggiornamento OTA**: `partitions.csv` riscritta per due slot
+  app da 1.625 MB (`ota_0`/`ota_1`) + `otadata`, al posto dell'unico
+  slot `factory` da 4 MB — vedi i commenti nel file per l'analisi
+  completa degli offset (somma esatta a 8 MB, verificata con uno script
+  Python). Nuovo modulo `net/OtaUpdater.h/.cpp` (scarica un
+  `firmware.bin` via HTTP — solo `http://`, non `https://`, deliberato:
+  niente bundle CA da gestire per un dispositivo pensato per aggiornarsi
+  da un host sulla stessa LAN — e lo flasha nello slot OTA inattivo
+  tramite la libreria `Update` di Arduino-ESP32) + nuova schermata `OTA
+  UPDATE` (raggiungibile da `SETTINGS` con `O`). L'operazione è
+  volutamente sincrona sul task UI (blocca il rendering per la durata
+  del download+flash, con schermata "DO NOT power off" fissa) — non è
+  una svista: un aggiornamento OTA ha comunque bisogno di una schermata
+  da cui l'utente non può navigare via, quindi bloccare è la UX
+  corretta, non un bug. **Rischio principale, non verificabile senza una
+  build reale**: se il binario compilato non entra nei 1.625 MB per
+  slot, `pio run -t upload` fallisce rumorosamente ("app image is too
+  big") — fallimento visibile e sicuro, non un device brickato — e la
+  correzione è allargare `ota_0`/`ota_1` e restringere `spiffs` di pari
+  passo nel file partizioni.
 
 ## Compilare e flashare
 
@@ -624,7 +762,14 @@ originale.
       skyline, status bar) dopo il boot log, `NETWORK SCAN` con stat
       strip `HOSTS FOUND`/`SCAN TIME` e tabella host incorniciata con
       intestazione colonne — vedi sopra. `PORT MAPPING` non toccata
-      (non richiesta).
+      (non richiesta). Skyline rimossa da `MAIN MENU` in un addendum
+      successivo, su richiesta dell'utente.
+- [x] **Fase 10 — Cronologia scan/diff, SD, WiFi multi-rete, probe UDP,
+      mDNS, firme vulnerabilità note, OTA**: otto migliorie richieste in
+      blocco dall'utente da una lista di proposte di questo assistente —
+      vedi sopra per il dettaglio di ciascuna. SD card ora cablata di
+      default (era rimandata dalla Fase 5); mDNS ora implementato come
+      fallback a NBNS (era esplicitamente rimandato dalla Fase 2).
 
 ## Test plan — Fase 1
 
@@ -931,10 +1076,9 @@ primo sospetto.
    prompt `[ PRESS ENTER ]` lampeggiante e in fondo uptime/`SYSTEM
    READY`/IP — verificare che nessun elemento si sovrapponga (in
    particolare skyline vs. versione sopra, prompt vs. status bar sotto).
-2. **`MAIN MENU` invariato**: dopo l'estrazione di `chrome::drawSkyline`,
-   la skyline sul menu principale deve apparire identica a prima (stessa
-   posizione, stessi colori) — è solo codice condiviso, non un cambio
-   visivo intenzionale su questa schermata.
+2. **`MAIN MENU`**: **aggiornato dall'addendum post-Fase 9** — la skyline
+   non c'è più su questa schermata (resta solo sullo splash), le voci di
+   menu iniziano subito sotto la riga dell'header.
 3. **`NETWORK SCAN` — stat strip**: durante uno scan, in alto deve
    comparire `HOSTS FOUND: N` a sinistra (che cresce mano a mano che
    trova host) e una percentuale a destra; a scan finito la destra deve
@@ -950,6 +1094,68 @@ primo sospetto.
    selezionata sempre visibile dentro il bordo (nessuna riga "a
    cavallo" del bordo inferiore).
 
+## Test plan — Fase 10 (cronologia/diff, SD, WiFi multi-rete, UDP, mDNS, firme vuln, OTA)
+
+Otto feature indipendenti — si possono testare una alla volta, non c'è
+bisogno di verificarle tutte nella stessa sessione:
+
+1. **SD card (#3)**: con una microSD inserita e formattata FAT32,
+   controllare nel log seriale che NON compaia `sdcard: no SD card
+   detected`. Fare un export (`E` su `NETWORK SCAN`): il messaggio di
+   stato deve dire `exported (SD) ...` invece di `(flash)`, e
+   `/export.json`/`.csv` devono comparire sulla SD quando la si legge su
+   un PC. **Se il log mostra sempre "no SD card detected" anche con la
+   scheda inserita**: il sospetto numero uno sono i 4 pin SPI in
+   `SdCard.cpp` — vedi il commento lì.
+2. **Cronologia scan (#1)**: fare 2-3 `NETWORK SCAN` completi, poi
+   aprire `SCAN HISTORY` dal menu principale — deve mostrare una riga
+   per scan (più recente in cima, marcata "latest"), `ENTER` su una
+   riga mostra la tabella host di quello scan specifico.
+3. **Diff host nuovi (#2)**: fare uno scan, spegnere/scollegare un
+   dispositivo dalla rete (o accenderne uno nuovo), rifare lo scan — il
+   nuovo host deve apparire in magenta nella tabella di `NETWORK SCAN` e
+   la stat strip deve mostrare `HOSTS FOUND: N (+1 new)`.
+4. **Diff porte nuove (#2)**: su un host con un servizio che puoi
+   avviare/fermare a piacere (es. un web server locale), fare un port
+   scan senza il servizio attivo, poi avviarlo e rifare il port scan —
+   la nuova porta deve apparire in magenta su `PORT MAPPING` e il
+   footer mostrare `open:N (+1 new)`.
+5. **Probe UDP (#4)**: puntare un port scan verso un host che sicuramente
+   risponde ad almeno uno tra DNS/NTP/SNMP (es. il router stesso, spesso
+   ha un resolver DNS su 53/udp) — deve comparire una riga con suffisso
+   `/u` nella tabella porte.
+6. **mDNS (#5)**: fare `NETWORK SCAN` su una rete con almeno un iPhone/
+   Mac/Chromecast collegato — il campo hostname di quel dispositivo in
+   `HOST DETAIL` dovrebbe essere popolato (prima di questa fase sarebbe
+   rimasto vuoto, dato che NBNS da solo non li copre). **Se il firmware
+   non compila**, il sospetto numero uno è la firma di
+   `WiFiUdp::beginMulticast()` in `MdnsReverseResolver.cpp` — vedi il
+   commento lì.
+7. **Firme di vulnerabilità (#6)**: la verifica pulita richiede un
+   servizio di test con uno dei banner esatti in `VulnSignatures.cpp`
+   (es. un vecchio vsftpd 2.3.4 in un container Docker isolato, MAI
+   esposto a una rete reale). Con un match: `HOST DETAIL` deve mostrare
+   una riga `VULN: ...` e il risk level dell'host deve diventare
+   Critical (rosso).
+8. **WiFi multi-rete (#7)**: da `WIFI SETUP`, connettersi a due reti
+   diverse in sequenza (es. una rete di casa e un hotspot del telefono).
+   Tornare su `WIFI SETUP` da Idle e premere `S`: devono comparire
+   entrambe le reti, quella usata più di recente marcata `*`. Selezionare
+   quella vecchia e premere `ENTER`: deve riconnettersi **senza chiedere
+   la password**. Su quella schermata, `F` sulla voce selezionata deve
+   dimenticare solo quella rete (l'altra deve restare salvata).
+9. **OTA (#10)**: compilare (`pio run -e cardputer-adv`), servire il
+   `.bin` risultante (`.pio/build/cardputer-adv/firmware.bin`) con
+   `python3 -m http.server` da un PC sulla stessa rete del Cardputer, poi
+   da `SETTINGS` premere `O`, digitare `http://<ip-del-pc>:8000/firmware.bin`
+   e `ENTER`. Il device deve mostrare "downloading + flashing...",
+   riavviarsi da solo, e tornare a funzionare con lo stesso firmware
+   (o uno nuovo, se nel frattempo è cambiato qualcosa). **Prima di
+   questo test**, verificare che il passo `pio run -t upload` (flash via
+   USB-C con la nuova `partitions.csv`) sia andato a buon fine senza
+   errori "app image is too big" — se fallisce lì, vedi il commento in
+   `partitions.csv` per come correggere le dimensioni degli slot.
+
 ## Limiti noti e tagli di scope deliberati
 
 Riepilogo di quanto già menzionato nelle sezioni sopra, in un unico
@@ -959,9 +1165,11 @@ posto:
   subnet DHCP-rilevata (non ha senso poterla cambiare finché non c'è
   un modo di specificare un range arbitrario in modo sicuro). Il range
   porte invece **è** ora editabile da `SETTINGS` (Fase 6).
-- **mDNS non implementato**: hostname via NBNS soltanto (vedi Fase 2)
-  — dispositivi Apple/Android/Chromecast tipicamente non avranno un
-  hostname risolto.
+- **mDNS ora implementato, ma solo come fallback a NBNS** (Fase 10, #5):
+  interrogato solo quando NBNS non ha già trovato un nome, e solo con
+  una singola query PTR reverse a bassa priorità — non è un browser di
+  servizi mDNS completo, e dispositivi che ignorano query reverse PTR
+  (alcuni, non tutti, lo fanno) restano senza hostname.
 - **Euristica Telnet non affidabile al 100%**: il rilevamento di login
   riuscito è basato su pattern-matching testuale, non su un parser di
   protocollo — vedi Fase 4. FTP invece usa i codici di risposta
@@ -970,9 +1178,15 @@ posto:
   grafica avanzata (radar/grafici a ciambella) non implementati** —
   scelte deliberate motivate in dettaglio nella sezione "Fase 6"
   sopra, non dimenticanze.
-- **SD card non cablata di default**: supportata dal codice
-  (`ResultStore` è filesystem-agnostico) ma senza un pin CS verificato
-  per il Cardputer ADV — vedi Fase 5.
+- **SD card ora cablata di default** (Fase 10, #3), ma con il pin CS
+  meno verificabile di tutto il firmware — vedi il commento in
+  `storage/SdCard.cpp`. Se non hai una SD inserita, tutto continua a
+  funzionare su LittleFS esattamente come prima.
+- **Probe UDP/OTA/mDNS non compilati né testati qui** (Fase 10): le tre
+  parti più a rischio di questa fase (pin SD, firma
+  `beginMulticast()`, dimensione immagine OTA negli slot da 1.625 MB)
+  sono tutte segnalate esplicitamente nei rispettivi sorgenti/commit —
+  vedi il test plan dedicato sopra.
 - **Copertura caratteri per la password WiFi non garantita al 100%**:
   `WifiSetupScreen` accetta qualunque carattere che `M5Cardputer.Keyboard`
   consegni in `status.word` (lettere, cifre, simboli comuni raggiunti

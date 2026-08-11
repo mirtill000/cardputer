@@ -9,27 +9,57 @@ namespace {
 constexpr const char* kNvsNamespace = "wifi";
 }
 
-bool WifiManager::hasSavedCredentials() const {
-    Preferences prefs;
-    if (!prefs.begin(kNvsNamespace, /*readOnly=*/true)) return false;
-    bool has = prefs.isKey("ssid");
-    prefs.end();
-    return has;
+// On-disk layout (NVS namespace "wifi"): "count" (uint8, 0..
+// kMaxSavedNetworks) plus "ssid0"/"pass0" .. "ssid<N-1>"/"pass<N-1>",
+// index 0 always the most-recently-used network. There's no separate
+// migration for the single-network layout this used to have — a first
+// save() under the new scheme just starts a fresh list, and any prior
+// single "ssid"/"pass" keys are simply never read again (harmless
+// orphaned NVS entries, not a crash risk).
+namespace {
+String slotKey(const char* prefix, uint8_t index) {
+    return String(prefix) + String(index);
 }
+}  // namespace
 
-String WifiManager::savedSsid() const {
-    Preferences prefs;
-    if (!prefs.begin(kNvsNamespace, /*readOnly=*/true)) return "";
-    String s = prefs.getString("ssid", "");
-    prefs.end();
-    return s;
-}
+bool WifiManager::hasSavedCredentials() const { return savedNetworkCount() > 0; }
+
+String WifiManager::savedSsid() const { return savedNetworkSsid(0); }
 
 void WifiManager::saveCredentials(const String& ssid, const String& password) {
     Preferences prefs;
     if (!prefs.begin(kNvsNamespace, /*readOnly=*/false)) return;
-    prefs.putString("ssid", ssid);
-    prefs.putString("pass", password);
+
+    uint8_t count = prefs.getUChar("count", 0);
+    if (count > kMaxSavedNetworks) count = kMaxSavedNetworks;
+    String oldSsids[kMaxSavedNetworks];
+    String oldPasses[kMaxSavedNetworks];
+    for (uint8_t i = 0; i < count; i++) {
+        oldSsids[i] = prefs.getString(slotKey("ssid", i).c_str(), "");
+        oldPasses[i] = prefs.getString(slotKey("pass", i).c_str(), "");
+    }
+
+    // New/updated entry always goes to the front; any existing entry
+    // for the same SSID is dropped from its old position (dedup) rather
+    // than kept as a stale duplicate further down the list.
+    String newSsids[kMaxSavedNetworks];
+    String newPasses[kMaxSavedNetworks];
+    newSsids[0] = ssid;
+    newPasses[0] = password;
+    uint8_t writeCount = 1;
+    for (uint8_t i = 0; i < count && writeCount < kMaxSavedNetworks; i++) {
+        if (oldSsids[i] == ssid) continue;
+        newSsids[writeCount] = oldSsids[i];
+        newPasses[writeCount] = oldPasses[i];
+        writeCount++;
+    }
+
+    for (uint8_t i = 0; i < writeCount; i++) {
+        prefs.putString(slotKey("ssid", i).c_str(), newSsids[i]);
+        prefs.putString(slotKey("pass", i).c_str(), newPasses[i]);
+    }
+    prefs.putUChar("count", writeCount);
+
     prefs.end();
 }
 
@@ -41,19 +71,82 @@ void WifiManager::forgetSavedCredentials() {
     WiFi.disconnect(/*wifioff=*/false, /*eraseap=*/true);
 }
 
-bool WifiManager::autoConnect() {
+uint8_t WifiManager::savedNetworkCount() const {
+    Preferences prefs;
+    if (!prefs.begin(kNvsNamespace, /*readOnly=*/true)) return 0;
+    uint8_t count = prefs.getUChar("count", 0);
+    prefs.end();
+    return (count > kMaxSavedNetworks) ? kMaxSavedNetworks : count;
+}
+
+String WifiManager::savedNetworkSsid(uint8_t index) const {
+    if (index >= savedNetworkCount()) return "";
+    Preferences prefs;
+    if (!prefs.begin(kNvsNamespace, /*readOnly=*/true)) return "";
+    String s = prefs.getString(slotKey("ssid", index).c_str(), "");
+    prefs.end();
+    return s;
+}
+
+bool WifiManager::connectSaved(uint8_t index) {
+    if (index >= savedNetworkCount()) return false;
     Preferences prefs;
     if (!prefs.begin(kNvsNamespace, /*readOnly=*/true)) return false;
-    String ssid = prefs.getString("ssid", "");
-    String pass = prefs.getString("pass", "");
+    String ssid = prefs.getString(slotKey("ssid", index).c_str(), "");
+    String pass = prefs.getString(slotKey("pass", index).c_str(), "");
     prefs.end();
-
     if (ssid.isEmpty()) return false;
 
     WiFi.mode(WIFI_STA);
     WiFi.begin(ssid.c_str(), pass.c_str());
     return true;
 }
+
+void WifiManager::touchSavedNetwork(uint8_t index) {
+    if (index >= savedNetworkCount()) return;
+    Preferences prefs;
+    if (!prefs.begin(kNvsNamespace, /*readOnly=*/true)) return;
+    String ssid = prefs.getString(slotKey("ssid", index).c_str(), "");
+    String pass = prefs.getString(slotKey("pass", index).c_str(), "");
+    prefs.end();
+    if (ssid.isEmpty()) return;
+    saveCredentials(ssid, pass);  // re-inserts at front with its own (unchanged) password
+}
+
+void WifiManager::forgetSavedNetwork(uint8_t index) {
+    Preferences prefs;
+    if (!prefs.begin(kNvsNamespace, /*readOnly=*/false)) return;
+    uint8_t count = prefs.getUChar("count", 0);
+    if (count > kMaxSavedNetworks) count = kMaxSavedNetworks;
+    if (index >= count) {
+        prefs.end();
+        return;
+    }
+
+    String ssids[kMaxSavedNetworks];
+    String passes[kMaxSavedNetworks];
+    for (uint8_t i = 0; i < count; i++) {
+        ssids[i] = prefs.getString(slotKey("ssid", i).c_str(), "");
+        passes[i] = prefs.getString(slotKey("pass", i).c_str(), "");
+    }
+
+    uint8_t newCount = 0;
+    for (uint8_t i = 0; i < count; i++) {
+        if (i == index) continue;
+        prefs.putString(slotKey("ssid", newCount).c_str(), ssids[i]);
+        prefs.putString(slotKey("pass", newCount).c_str(), passes[i]);
+        newCount++;
+    }
+    // Clear the now-unreferenced trailing slot - NVS hygiene, not a
+    // correctness requirement (nothing ever reads index >= count).
+    prefs.remove(slotKey("ssid", count - 1).c_str());
+    prefs.remove(slotKey("pass", count - 1).c_str());
+    prefs.putUChar("count", newCount);
+
+    prefs.end();
+}
+
+bool WifiManager::autoConnect() { return connectSaved(0); }
 
 void WifiManager::beginConnectWithCredentials(const String& ssid, const String& password) {
     WiFi.mode(WIFI_STA);

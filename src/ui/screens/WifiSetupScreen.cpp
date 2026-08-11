@@ -40,7 +40,18 @@ void WifiSetupScreen::enterPasswordEntry(const String& ssid) {
 
 void WifiSetupScreen::attemptConnect() {
     g_ui.setTextEntryMode(false);
+    _savingOnConnect = true;
+    _pendingSavedIndex = -1;
     g_wifi.beginConnectWithCredentials(_pendingSsid, _password);
+    _connectStartMs = millis();
+    _state = State::Connecting;
+}
+
+void WifiSetupScreen::connectToSavedNetwork(uint8_t index) {
+    _pendingSsid = g_wifi.savedNetworkSsid(index);
+    _savingOnConnect = false;
+    _pendingSavedIndex = (int16_t)index;
+    g_wifi.connectSaved(index);
     _connectStartMs = millis();
     _state = State::Connecting;
 }
@@ -50,10 +61,29 @@ void WifiSetupScreen::onKey(UiKey key, char ch) {
         case State::Idle:
             if (key == UiKey::Enter) {
                 startScan();
+            } else if (key == UiKey::Char && (ch == 's' || ch == 'S') && g_wifi.savedNetworkCount() > 0) {
+                _selected = 0;
+                _state = State::SavedList;
             } else if (key == UiKey::Char && (ch == 'f' || ch == 'F') && g_wifi.hasSavedCredentials()) {
                 g_wifi.forgetSavedCredentials();
             } else if (key == UiKey::Back) {
                 g_ui.popScreen();
+            }
+            break;
+
+        case State::SavedList:
+            if (key == UiKey::Up) {
+                if (_selected > 0) _selected--;
+            } else if (key == UiKey::Down) {
+                if (_selected + 1 < g_wifi.savedNetworkCount()) _selected++;
+            } else if (key == UiKey::Enter) {
+                connectToSavedNetwork((uint8_t)_selected);
+            } else if (key == UiKey::Char && (ch == 'f' || ch == 'F')) {
+                g_wifi.forgetSavedNetwork((uint8_t)_selected);
+                if (_selected > 0 && _selected >= g_wifi.savedNetworkCount()) _selected--;
+                if (g_wifi.savedNetworkCount() == 0) _state = State::Idle;
+            } else if (key == UiKey::Back) {
+                _state = State::Idle;
             }
             break;
 
@@ -147,7 +177,11 @@ void WifiSetupScreen::update(uint32_t nowMs) {
         // kScanRunning: keep waiting.
     } else if (_state == State::Connecting) {
         if (g_wifi.isConnected()) {
-            g_wifi.saveCredentials(_pendingSsid, _password);
+            if (_savingOnConnect) {
+                g_wifi.saveCredentials(_pendingSsid, _password);
+            } else if (_pendingSavedIndex >= 0) {
+                g_wifi.touchSavedNetwork((uint8_t)_pendingSavedIndex);
+            }
             _lastConnectOk = true;
             _state = State::Result;
         } else if (g_wifi.connectFailed() || (nowMs - _connectStartMs > kConnectTimeoutMs)) {
@@ -187,7 +221,11 @@ void WifiSetupScreen::draw(M5Canvas& gfx) {
 
             gfx.setTextColor(theme::GREY, theme::BG);
             gfx.setCursor(4, gfx.height() - 9);
-            gfx.print(g_wifi.hasSavedCredentials() ? "F:forget DEL:back" : "DEL:back");
+            if (g_wifi.savedNetworkCount() > 0) {
+                gfx.print("ENTER:scan S:saved F:forget DEL:back");
+            } else {
+                gfx.print("DEL:back");
+            }
             break;
         }
 
@@ -202,6 +240,13 @@ void WifiSetupScreen::draw(M5Canvas& gfx) {
             gfx.setTextColor(theme::GREY, theme::BG);
             gfx.setCursor(4, gfx.height() - 9);
             gfx.print("ENTER:select R:rescan DEL:back");
+            break;
+
+        case State::SavedList:
+            drawSavedList(gfx, 20);
+            gfx.setTextColor(theme::GREY, theme::BG);
+            gfx.setCursor(4, gfx.height() - 9);
+            gfx.print("ENTER:connect F:forget DEL:back");
             break;
 
         case State::PasswordEntry: {
@@ -263,6 +308,30 @@ void WifiSetupScreen::draw(M5Canvas& gfx) {
             gfx.setCursor(4, gfx.height() - 9);
             gfx.print(_lastConnectOk ? "ENTER/DEL: back" : "ENTER/DEL: try again");
             break;
+    }
+}
+
+void WifiSetupScreen::drawSavedList(M5Canvas& gfx, int16_t top) {
+    uint8_t count = g_wifi.savedNetworkCount();
+    if (count == 0) {
+        gfx.setTextColor(theme::AMBER, theme::BG);
+        gfx.setCursor(6, top + 4);
+        gfx.print("no saved networks");
+        return;
+    }
+
+    constexpr int16_t kRowH = 10;
+    for (uint8_t i = 0; i < count; i++) {
+        int16_t y = top + (int16_t)i * kRowH;
+        bool sel = (i == _selected);
+        uint16_t rowBg = sel ? theme::GREEN_DIM : theme::BG;
+        if (sel) gfx.fillRect(0, y, gfx.width(), kRowH, rowBg);
+
+        gfx.setTextColor(sel ? theme::GREEN_BRIGHT : theme::GREEN, rowBg);
+        gfx.setCursor(2, y + 1);
+        if (i == 0) gfx.print("* ");  // most-recently-used
+        else gfx.print("  ");
+        gfx.print(g_wifi.savedNetworkSsid(i));
     }
 }
 

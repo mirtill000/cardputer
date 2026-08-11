@@ -1,4 +1,5 @@
 #include "SettingsScreen.h"
+#include "OtaScreen.h"
 #include "../UiManager.h"
 #include "../Theme.h"
 #include "../Chrome.h"
@@ -73,6 +74,12 @@ void SettingsScreen::onKey(UiKey key, char /*ch*/) {
             g_config.save();
             g_ui.popScreen();
             break;
+        case UiKey::Char:
+            if (ch == 'o' || ch == 'O') {
+                g_config.save();  // same as leaving normally - just also opens OTA UPDATE on top
+                g_ui.pushScreen(&OtaScreen::instance());
+            }
+            break;
         default:
             break;
     }
@@ -113,5 +120,5 @@ void SettingsScreen::draw(M5Canvas& gfx) {
 
     gfx.setTextColor(theme::GREY, theme::BG);
     gfx.setCursor(4, gfx.height() - 9);
-    gfx.print("</>:adjust  ENTER/DEL: save & exit");
+    gfx.print("</>:adjust ENTER/DEL:exit O:update");
 }

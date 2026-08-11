@@ -1,12 +1,19 @@
-# Custom partition table — ESP32-S3FN8 (8 MB flash, no PSRAM), no OTA.
+# Custom partition table — ESP32-S3FN8 (8 MB flash, no PSRAM), OTA-capable.
 #
-# We don't implement OTA updates in this firmware (reflashing over USB-C
-# is the expected workflow for a pentesting tool you keep on a bench), so
-# the space that a dual-OTA scheme would reserve for a second app slot is
-# given to LittleFS instead. That's what stores the OUI vendor database,
-# the default-credentials dictionary and exported scan results (JSON/CSV),
-# all of which benefit far more from 3.9 MB of room than a second 4 MB app
-# slot nobody writes to would.
+# Two 1.6 MB app slots (ota_0/ota_1) instead of one 4 MB "factory" slot,
+# so OtaUpdater (src/net/OtaUpdater.h) has an inactive slot to flash a
+# new image into and fall back from if it's bad — swapped for LittleFS
+# space, which still comes out ahead of the original no-OTA table's 3.9
+# MB (see git history): 4.69 MB now, since two 1.6 MB app slots (3.2 MB)
+# take less room than one 4 MB slot did.
+#
+# RISK — the one thing this assistant could not verify without a real
+# build (see README's testing note): whether the actual compiled
+# firmware image fits inside 0x190000 (1,638,400 bytes) per slot. If it
+# doesn't, `pio run -t upload` fails loudly at the esptool.py "app image
+# is too big" step — a safe, visible failure, not a bricked device — and
+# the fix is to grow ota_0/ota_1 and shrink spiffs to match (both must
+# change together to keep the table summing to exactly 0x800000).
 #
 # SubType "spiffs" below, not "littlefs": ESP-IDF's partition tool
 # (gen_esp32part.py) validates SubType against a fixed keyword list
@@ -22,9 +29,19 @@
 # it's what makes both of those work without extra parameters anywhere
 # in this codebase.
 #
+# ota_0/ota_1 offsets are 0x10000-aligned (a hard requirement for app
+# partitions - the bootloader memory-maps them at 64KB granularity).
+# otadata (fixed 0x2000, ESP-IDF's required size for it) is what the
+# bootloader reads to decide which of the two slots to boot; left
+# blank/erased (as it is on a first flash before any OTA update has
+# ever run), the bootloader's documented fallback is to boot ota_0 -
+# so a plain `pio run -t upload` needs no special handling to work here.
+#
 # Name,      Type, SubType,  Offset,   Size,     Flags
 nvs,         data, nvs,      0x9000,   0x5000,
 phy_init,    data, phy,      0xe000,   0x1000,
-factory,     app,  factory,  0x10000,  0x400000,
-spiffs,      data, spiffs,   0x410000, 0x3E0000,
+otadata,     data, ota,      0xf000,   0x2000,
+ota_0,       app,  ota_0,    0x20000,  0x190000,
+ota_1,       app,  ota_1,    0x1B0000, 0x190000,
+spiffs,      data, spiffs,   0x340000, 0x4B0000,
 coredump,    data, coredump, 0x7F0000, 0x10000,
