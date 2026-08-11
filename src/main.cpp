@@ -8,10 +8,12 @@
 #include "ui/screens/MainMenuScreen.h"
 #include "ui/screens/PlaceholderScreen.h"
 #include "ui/screens/HostListScreen.h"
+#include "ui/screens/WifiSetupScreen.h"
 #include "scan/OuiDatabase.h"
 #include "scan/ScanManager.h"
 #include "scan/PortScanManager.h"
 #include "scan/CredAuditManager.h"
+#include "net/WifiManager.h"
 
 namespace {
 BootScreen g_bootScreen;
@@ -23,7 +25,7 @@ PlaceholderScreen g_portScanScreen;
 PlaceholderScreen g_credAuditScreen;
 PlaceholderScreen g_settingsScreen;
 
-MenuItem g_menuItems[4];
+MenuItem g_menuItems[5];
 }  // namespace
 
 void setup() {
@@ -47,6 +49,12 @@ void setup() {
     g_portScanManager.begin(g_ui.scanQueue());
     g_credAuditManager.begin(g_ui.scanQueue());
 
+    // Non-blocking: if a network was saved from a previous WIFI SETUP
+    // run, this kicks the connection off immediately at boot instead of
+    // waiting for the user to open NETWORK SCAN first. No-op if nothing
+    // is saved yet (first boot, or after FORGET).
+    g_wifi.autoConnect();
+
     g_portScanScreen.configure(
         "PORT SCANNER",
         "Port scanning targets one host at a time: run NETWORK SCAN, select a "
@@ -61,11 +69,12 @@ void setup() {
         "SETTINGS",
         "Subnet / port range / rate-limit configuration arrives together with the scan modules that use it.");
 
-    g_menuItems[0] = {"NETWORK SCAN", &HostListScreen::instance()};
-    g_menuItems[1] = {"PORT SCANNER", &g_portScanScreen};
-    g_menuItems[2] = {"CREDENTIAL AUDIT", &g_credAuditScreen};
-    g_menuItems[3] = {"SETTINGS", &g_settingsScreen};
-    MainMenuScreen::instance().configure(g_menuItems, 4);
+    g_menuItems[0] = {"WIFI SETUP", &WifiSetupScreen::instance()};
+    g_menuItems[1] = {"NETWORK SCAN", &HostListScreen::instance()};
+    g_menuItems[2] = {"PORT SCANNER", &g_portScanScreen};
+    g_menuItems[3] = {"CREDENTIAL AUDIT", &g_credAuditScreen};
+    g_menuItems[4] = {"SETTINGS", &g_settingsScreen};
+    MainMenuScreen::instance().configure(g_menuItems, 5);
 
     g_ui.pushScreen(&g_bootScreen);
 }

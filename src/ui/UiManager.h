@@ -30,6 +30,13 @@ public:
     // forwards each notification to the active screen's onScanEvent().
     QueueHandle_t scanQueue() const { return _scanQueue; }
 
+    // Forwards to InputManager — see its header for what this does and
+    // why a screen must turn it back off. Also force-reset to off on
+    // every screen transition (push/pop/replace) as a safety net, so a
+    // screen that forgets to clean up on exit can't permanently wedge
+    // arrow-key navigation everywhere else in the app.
+    void setTextEntryMode(bool enabled) { _input.setTextEntryMode(enabled); }
+
 private:
     static void taskEntry(void* arg);
     void run();

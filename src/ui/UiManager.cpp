@@ -43,6 +43,7 @@ void UiManager::begin() {
 }
 
 void UiManager::activate(Screen* s) {
+    _input.setTextEntryMode(false);  // safety net — see setTextEntryMode() in the header
     _canvas.fillScreen(theme::BG);  // wipe whatever the previous screen/rain left behind
     if (s->wantsRain()) {
         _rain.setDensity(s->rainDensity());

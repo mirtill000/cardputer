@@ -4,11 +4,13 @@
 #include <vector>
 #include <cstddef>
 
-// The "NETWORK SCAN" dashboard: drives WiFi connect + the discovery
-// sweep, and shows discovered hosts as a hacker-terminal-style table
-// (IP / vendor / class), color-coded by risk. Deliberately shows only
-// hosts confirmed alive — a home/office subnet scan is mostly silence,
-// and a wall of "no response" rows would bury the interesting rows.
+// The "NETWORK SCAN" dashboard: drives the discovery sweep (WiFi
+// connection itself is WifiSetupScreen's job, kicked off at boot with
+// any saved credentials — see main.cpp) and shows discovered hosts as a
+// hacker-terminal-style table (IP / vendor / class), color-coded by
+// risk. Deliberately shows only hosts confirmed alive — a home/office
+// subnet scan is mostly silence, and a wall of "no response" rows would
+// bury the interesting rows.
 class HostListScreen : public Screen {
 public:
     static HostListScreen& instance();
@@ -16,7 +18,6 @@ public:
     void onEnter() override;
     void onKey(UiKey key, char ch) override;
     void onScanEvent(const ScanNotification& ev) override;
-    void update(uint32_t nowMs) override;
     void draw(M5Canvas& gfx) override;
 
 private:
@@ -25,6 +26,5 @@ private:
 
     std::vector<size_t> _aliveIndices;
     size_t _selected = 0;
-    bool _wifiConnectTriggered = false;
     String _statusLine;  // transient feedback, e.g. after an export (E)
 };

@@ -1,5 +1,6 @@
 #include "HostListScreen.h"
 #include "HostDetailScreen.h"
+#include "WifiSetupScreen.h"
 #include "../UiManager.h"
 #include "../Theme.h"
 #include "../../core/Types.h"
@@ -14,7 +15,6 @@ HostListScreen& HostListScreen::instance() {
 }
 
 void HostListScreen::onEnter() {
-    _wifiConnectTriggered = false;
     rebuildAliveList();
 }
 
@@ -46,14 +46,16 @@ void HostListScreen::onScanEvent(const ScanNotification& ev) {
     }
 }
 
-void HostListScreen::update(uint32_t /*nowMs*/) {
-    if (!g_wifi.isConnected() && !_wifiConnectTriggered) {
-        _wifiConnectTriggered = true;
-        g_wifi.beginConnect();
-    }
-}
-
 void HostListScreen::onKey(UiKey key, char ch) {
+    // Always available, connected or not — WifiSetupScreen owns
+    // actually establishing a connection (see main.cpp: it's kicked off
+    // once at boot with any saved credentials); this screen only ever
+    // reflects status and offers a way there.
+    if (key == UiKey::Char && (ch == 'w' || ch == 'W')) {
+        g_ui.pushScreen(&WifiSetupScreen::instance());
+        return;
+    }
+
     if (!g_wifi.isConnected()) {
         if (key == UiKey::Back) g_ui.popScreen();
         return;
@@ -111,10 +113,18 @@ void HostListScreen::draw(M5Canvas& gfx) {
     if (!g_wifi.isConnected()) {
         gfx.setTextColor(theme::CYAN, theme::BG);
         gfx.setCursor(6, 30);
-        gfx.print("connecting to wifi...");
-        gfx.setTextColor(theme::GREY, theme::BG);
+        if (g_wifi.hasSavedCredentials()) {
+            gfx.print("connecting to ");
+            gfx.print(g_wifi.savedSsid());
+            gfx.print("...");
+        } else {
+            gfx.setTextColor(theme::AMBER, theme::BG);
+            gfx.print("no network configured");
+        }
+        gfx.setTextColor(theme::MAGENTA, theme::BG);
         gfx.setCursor(6, 44);
-        gfx.print("(check include/secrets.h)");
+        gfx.print("W: wifi setup");
+        gfx.setTextColor(theme::GREY, theme::BG);
         gfx.setCursor(4, gfx.height() - 9);
         gfx.print("DEL:back");
         return;
@@ -164,7 +174,7 @@ void HostListScreen::draw(M5Canvas& gfx) {
 
     gfx.setTextColor(theme::GREY, theme::BG);
     gfx.setCursor(4, gfx.height() - 9);
-    gfx.print("ENTER:detail  E:export  DEL:back");
+    gfx.print("ENTER:detail E:export W:wifi DEL:back");
 }
 
 void HostListScreen::drawTable(M5Canvas& gfx, int16_t top) {

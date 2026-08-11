@@ -164,10 +164,47 @@ il dizionario delle credenziali di default e l'export dei risultati.
   byte-swappato rispetto a quanto ci si aspetta). Un editor manuale
   subnet/porte è rimandato alla Fase Settings futura — scelta di scope
   deliberata, non dimenticanza.
-- **Credenziali WiFi**: non c'è ancora una UI di provisioning a
-  tastiera; vanno in `include/secrets.h` (gitignored, copia
-  `include/secrets.h.example`). Anche questo è un taglio di scope
-  deliberato — vedi Roadmap.
+- **Credenziali WiFi**: mai hardcoded. Scansione reti + selezione +
+  password da tastiera fisica, con persistenza in NVS — vedi
+  "WIFI SETUP" più sotto.
+
+### WIFI SETUP: provisioning da tastiera, nessuna credenziale hardcoded
+
+- **Nessun `secrets.h`**: le versioni precedenti di questo firmware
+  leggevano SSID/password da un header C++ compilato nel binario. Ora
+  `WifiSetupScreen` fa scan (`WiFi.scanNetworks(async=true)`, non
+  bloccante — il task `ui` continua a disegnare/rispondere alla
+  tastiera mentre lo scan gira), l'utente seleziona una rete dalla
+  lista (deduplicata per SSID, ordinata per potenza del segnale) e
+  digita la password sulla tastiera fisica. Alla prima connessione
+  riuscita, `WifiManager::saveCredentials()` scrive SSID+password in
+  NVS (`Preferences`, namespace `wifi`) — **solo dopo** che la
+  connessione ha funzionato, mai prima, così una password sbagliata
+  digitata per errore non finisce mai salvata. Ad ogni boot,
+  `WifiManager::autoConnect()` (chiamato una volta in `main.cpp`)
+  riprova con le credenziali salvate, se presenti.
+- **NVS non è cifrata di default**: stesso modello di fiducia di tutto
+  ciò che questa firmware scrive in flash — chi ha accesso fisico al
+  dispositivo ha accesso a quello che contiene. Non diverso, in
+  pratica, da un client WiFi salvato su qualsiasi laptop/telefono.
+- **Conflitto risolto tra navigazione e digitazione testo**: i tasti
+  `;`/`.`/`,`/`/` fanno normalmente da frecce direzionali (vedi Fase 1),
+  ma sono anche caratteri comuni in password reali. `InputManager`
+  espone `setTextEntryMode(bool)`: quando un campo di testo è attivo
+  (l'inserimento password), quei quattro tasti smettono di essere
+  rimappati e arrivano come caratteri letterali. `UiManager` lo
+  reimposta forzatamente a `false` ad ogni cambio di schermata (push/
+  pop/replace), così uno screen che dimentica di ripulirlo all'uscita
+  non può bloccare la navigazione a frecce ovunque nel resto dell'app —
+  vedi i commenti in `src/ui/InputManager.h`.
+- **Accessibile da ovunque**: il tasto `W` apre `WIFI SETUP` sia dal
+  menu principale sia da dentro `NETWORK SCAN` (utile se ti accorgi di
+  non essere sulla rete giusta mentre stai già scansionando).
+- **`F` per dimenticare la rete salvata**: dalla schermata iniziale di
+  `WIFI SETUP`, se una rete è salvata. Cancella SSID/password da NVS e
+  disconnette (`WiFi.disconnect(false, true)`, la seconda `true`
+  cancella anche la config AP cache a livello di driver, non solo la
+  nostra copia in `Preferences`).
 
 ### Fase 3: port scanner e banner grabbing
 
@@ -300,9 +337,11 @@ originale.
       vendor OUI offline (DB reale IEEE, 35k record), risoluzione
       hostname via NBNS (non mDNS, vedi sopra), classificazione
       euristica del device, dashboard host list navigabile + schermata
-      di dettaglio per host. Credenziali WiFi da `include/secrets.h`
-      (niente UI di provisioning ancora); subnet/porte manuali rimandate
-      alla Fase Settings.
+      di dettaglio per host; subnet/porte manuali rimandate alla Fase
+      Settings.
+- [x] **WIFI SETUP**: scan reti + selezione + password da tastiera,
+      nessuna credenziale hardcoded, persistenza in NVS, auto-reconnect
+      al boot. Vedi sezione dedicata sopra.
 - [x] **Fase 3 — Port scanner**: TCP connect-scan per singolo host
       (avviato da `HOST DETAIL` con `Tab`), banner grabbing di base
       (HTTP/FTP/SSH/Telnet/SMTP/POP3/IMAP; SMB solo come porta aperta),
@@ -343,21 +382,70 @@ Da verificare su hardware reale (non testabile in questo sandbox):
    comportamento in questa fase (la config NVS esiste ma non ha ancora
    uno screen Settings che la modifichi).
 
+## Test plan — WIFI SETUP
+
+1. **Nessuna credenziale precaricata**: su un dispositivo appena
+   flashato (o dopo un `pio run -t erase`), `WIFI SETUP` deve mostrare
+   "no network configured" — non deve tentare di connettersi a nulla.
+2. **Scan**: `ENTER` da `WIFI SETUP` deve mostrare "scanning..." e poi
+   la lista delle reti visibili, ordinate per segnale (le più vicine/
+   forti in cima), senza duplicati per reti con più access point sullo
+   stesso SSID (mesh). Le reti aperte devono essere marcate `o`
+   (colore ambra), quelle protette `*` (colore verde).
+3. **Rete aperta**: selezionare una rete senza password (se
+   disponibile, es. un hotspot di test) e premere `ENTER` — deve
+   connettersi direttamente, senza chiedere una password.
+4. **Rete protetta — digitazione password**: selezionare una rete
+   WPA2, verificare che compaia il campo password e che digitando sulla
+   tastiera fisica compaiano i caratteri attesi — **incluse le lettere
+   normalmente rimappate a frecce** (`;` `.` `,` `/`): se una di queste
+   viene interpretata come navigazione invece che come carattere, è il
+   bug che `setTextEntryMode()` dovrebbe prevenire (vedi sezione
+   dedicata sopra). `DEL` su un campo non vuoto deve cancellare l'ultimo
+   carattere; `DEL` su campo vuoto deve tornare alla lista reti.
+5. **Connessione riuscita**: con la password corretta, `ENTER` deve
+   mostrare "connecting to..." poi "connected!" con l'IP ottenuto.
+   Uscire (`ENTER`/`DEL`) e rientrare in `WIFI SETUP`: deve mostrare
+   "connected: <ssid>" con lo stesso IP, non richiedere di rifare lo
+   scan.
+6. **Password sbagliata**: ripetere con una password errata — deve
+   mostrare "connection failed" entro ~15s (o prima, se il device
+   risponde con un fallimento esplicito), tornare alla lista reti su
+   `ENTER`/`DEL`, e **non** deve aver salvato nulla in NVS (verificabile
+   riavviando: `WIFI SETUP` non deve mostrare quella rete come "saved"
+   se il precedente tentativo corretto non è mai andato a buon fine).
+7. **Persistenza tra riavvii**: dopo una connessione riuscita,
+   riavviare il dispositivo (power cycle, non solo reset software) e
+   verificare che si riconnetta da solo entro pochi secondi dal boot,
+   senza dover rientrare in `WIFI SETUP`.
+8. **Navigazione altrove intatta**: dopo essere stati in `WIFI SETUP`
+   (in particolare dopo aver digitato una password), tornare al menu
+   principale e verificare che `;`/`.`/`,`/`/` funzionino di nuovo come
+   frecce normalmente — copre la rete di sicurezza in
+   `UiManager::activate()`.
+9. **Scorciatoia `W`**: da `NETWORK SCAN`, sia connessi sia no, `W`
+   deve aprire `WIFI SETUP` immediatamente.
+10. **Dimenticare la rete**: da `WIFI SETUP` con una rete salvata, `F`
+    deve disconnettere e tornare a "no network configured". Riavviare:
+    non deve più tentare di riconnettersi da solo.
+
 ## Test plan — Fase 2
 
-Prerequisiti: `include/secrets.h` compilato con credenziali WiFi valide;
-`pio run -t uploadfs` eseguito almeno una volta (altrimenti
-`data/oui/oui.bin` non è su LittleFS e ogni lookup vendor fallisce in
-silenzio, che è il comportamento atteso in quel caso — non un crash).
+Prerequisiti: `pio run -t uploadfs` eseguito almeno una volta
+(altrimenti `data/oui/oui.bin` non è su LittleFS e ogni lookup vendor
+fallisce in silenzio, che è il comportamento atteso in quel caso — non
+un crash); una rete WiFi configurata da `WIFI SETUP` (vedi il suo test
+plan più sotto) — senza credenziali salvate, `NETWORK SCAN` mostra
+"no network configured" invece di connettersi.
 
 1. **Boot + LittleFS**: nel log seriale, verificare l'assenza di
    `OuiDatabase: could not open /oui.bin` e di `main: LittleFS mount
    failed`. Se compare il primo, mancava l'`uploadfs`.
-2. **Connessione WiFi**: da `NETWORK SCAN`, deve apparire
-   "connecting to wifi..." e poi, entro qualche secondo, la schermata
-   con subnet/gateway rilevati. Se resta bloccato su "connecting", il
-   problema più probabile è `include/secrets.h` mancante/errato — il
-   `#warning` a compile-time lo segnala.
+2. **Connessione WiFi**: con credenziali già salvate da `WIFI SETUP`,
+   da `NETWORK SCAN` deve apparire "connecting to <ssid>..." e poi,
+   entro qualche secondo, la schermata con subnet/gateway rilevati.
+   Senza credenziali salvate, deve apparire "no network configured" con
+   l'indicazione "W: wifi setup" — non un blocco silenzioso.
 3. **Avvio scan**: `Enter` su "ENTER: start scan" deve far comparire
    la percentuale di avanzamento e host che appaiono progressivamente
    nella tabella (non tutti insieme alla fine) — è la prova che i
@@ -472,12 +560,6 @@ silenzio, che è il comportamento atteso in quel caso — non un crash).
 Riepilogo di quanto già menzionato nelle sezioni sopra, in un unico
 posto:
 
-- **Nessuna UI di provisioning WiFi**: credenziali da
-  `include/secrets.h`, non da tastiera. Motivo: la tastiera del
-  Cardputer già gestisce input di testo (vedi `UiKey::Char`), ma un
-  editor SSID/password completo (con caratteri speciali, `Fn`/`Opt` per
-  simboli) è un pezzo di UI a sé che non era il cuore di questo
-  incarico.
 - **Nessun editor manuale di subnet/range porte**: `NETWORK SCAN` usa
   sempre la subnet DHCP-rilevata; `PORT SCAN` usa sempre
   `g_config.portRangeStart/End` (default 1-1024), modificabili solo
@@ -492,6 +574,15 @@ posto:
 - **SD card non cablata di default**: supportata dal codice
   (`ResultStore` è filesystem-agnostico) ma senza un pin CS verificato
   per il Cardputer ADV — vedi Fase 5.
+- **Copertura caratteri per la password WiFi non garantita al 100%**:
+  `WifiSetupScreen` accetta qualunque carattere che `M5Cardputer.Keyboard`
+  consegni in `status.word` (lettere, cifre, simboli comuni raggiunti
+  con `Fn`/`Opt`). Non è stato possibile verificare su hardware reale
+  se **ogni** combinazione di simboli usabile in una passphrase WPA2 sia
+  effettivamente raggiungibile dalla tastiera fisica del Cardputer — se
+  la tua password contiene un carattere che non riesci a digitare, è un
+  limite della mappatura tastiera di M5Cardputer, non di questo codice
+  (che si limita a inoltrare quello che la libreria gli consegna).
 - **Sound design non implementato**: la spec lo marcava "opzionale";
   non è stato aggiunto in nessuna fase. `M5Cardputer.Speaker` è
   disponibile per chi voglia aggiungerlo.
