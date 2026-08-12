@@ -1,5 +1,6 @@
 #include "Chrome.h"
 #include "Theme.h"
+#include "ActivityStatus.h"
 #include "../net/WifiManager.h"
 #include <M5Unified.h>
 #include <cstdio>
@@ -134,6 +135,11 @@ void chrome::drawHeader(M5Canvas& gfx, const char* title) {
     gfx.setTextColor(theme::GREEN, theme::BG);
     gfx.print(battBuf);
     gfx.print('%');
+
+    // Radio-owner indicator, right-aligned just left of the battery block
+    // (draws nothing unless a promiscuous feature is active) — see
+    // ActivityStatus.h for why this lives on every screen's header.
+    activity::draw(gfx, (int16_t)(x - 4), 4);
 
     gfx.setTextColor(theme::GREY, theme::BG);
     gfx.drawFastHLine(4, 15, gfx.width() - 8, theme::GREY);

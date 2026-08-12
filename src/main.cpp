@@ -25,6 +25,10 @@
 #include "scan/SsdpDiscovery.h"
 #include "scan/RogueDhcpDetector.h"
 #include "scan/SmbNegotiateCheck.h"
+#include "scan/PassiveHostDiscovery.h"
+#include "scan/ServiceEnumerator.h"
+#include "scan/SnmpSweep.h"
+#include "scan/AssessmentRunner.h"
 #include "net/WifiManager.h"
 #include "net/TimeSync.h"
 #include "storage/SdCard.h"
@@ -33,6 +37,11 @@
 #include "ui/screens/CdpLldpScreen.h"
 #include "ui/screens/SsdpScreen.h"
 #include "ui/screens/RogueDhcpScreen.h"
+#include "ui/screens/PassiveHostScreen.h"
+#include "ui/screens/ServiceScreen.h"
+#include "ui/screens/SnmpScreen.h"
+#include "ui/screens/ThreatsScreen.h"
+#include "ui/screens/AssessmentScreen.h"
 
 namespace {
 BootScreen g_bootScreen;
@@ -43,7 +52,7 @@ BootScreen g_bootScreen;
 PlaceholderScreen g_portScanScreen;
 PlaceholderScreen g_credAuditScreen;
 
-MenuItem g_menuItems[10];
+MenuItem g_menuItems[15];
 }  // namespace
 
 void setup() {
@@ -78,15 +87,20 @@ void setup() {
 
     g_menuItems[0] = {"WIFI SCAN", &WifiSetupScreen::instance()};
     g_menuItems[1] = {"NETWORK SCAN", &HostListScreen::instance()};
-    g_menuItems[2] = {"PORT SCANNER", &g_portScanScreen};
-    g_menuItems[3] = {"CREDENTIAL AUDIT", &g_credAuditScreen};
-    g_menuItems[4] = {"SCAN HISTORY", &ScanHistoryScreen::instance()};
-    g_menuItems[5] = {"WAR DRIVING", &WardrivingScreen::instance()};
-    g_menuItems[6] = {"LAN TOPOLOGY", &CdpLldpScreen::instance()};
-    g_menuItems[7] = {"UPNP DISCOVERY", &SsdpScreen::instance()};
-    g_menuItems[8] = {"ROGUE DHCP", &RogueDhcpScreen::instance()};
-    g_menuItems[9] = {"SETTINGS", &SettingsScreen::instance()};
-    MainMenuScreen::instance().configure(g_menuItems, 10);
+    g_menuItems[2] = {"AUTO ASSESS", &AssessmentScreen::instance()};
+    g_menuItems[3] = {"THREATS", &ThreatsScreen::instance()};
+    g_menuItems[4] = {"PORT SCANNER", &g_portScanScreen};
+    g_menuItems[5] = {"CREDENTIAL AUDIT", &g_credAuditScreen};
+    g_menuItems[6] = {"SCAN HISTORY", &ScanHistoryScreen::instance()};
+    g_menuItems[7] = {"WAR DRIVING", &WardrivingScreen::instance()};
+    g_menuItems[8] = {"LAN TOPOLOGY", &CdpLldpScreen::instance()};
+    g_menuItems[9] = {"UPNP DISCOVERY", &SsdpScreen::instance()};
+    g_menuItems[10] = {"SERVICE SCAN", &ServiceScreen::instance()};
+    g_menuItems[11] = {"PASSIVE HOSTS", &PassiveHostScreen::instance()};
+    g_menuItems[12] = {"ROGUE DHCP", &RogueDhcpScreen::instance()};
+    g_menuItems[13] = {"SNMP SWEEP", &SnmpScreen::instance()};
+    g_menuItems[14] = {"SETTINGS", &SettingsScreen::instance()};
+    MainMenuScreen::instance().configure(g_menuItems, 15);
 
     // MainMenuScreen must already be configured by this point: once the
     // render task starts, BootScreen can transition straight to it on
@@ -107,6 +121,10 @@ void setup() {
     g_ssdpDiscovery.begin(g_ui.scanQueue());
     g_rogueDhcpDetector.begin(g_ui.scanQueue());
     g_smbCheck.begin(g_ui.scanQueue());
+    g_passiveHostDiscovery.begin(g_ui.scanQueue());
+    g_serviceEnumerator.begin(g_ui.scanQueue());
+    g_snmpSweep.begin(g_ui.scanQueue());
+    g_assessmentRunner.begin(g_ui.scanQueue());
 
     // Non-blocking: if a network was saved from a previous WIFI SCAN
     // run, this kicks the connection off immediately at boot instead of

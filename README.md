@@ -1383,6 +1383,74 @@ strumenti Fase 16, non tra le voci qui sotto.
 > documentato per WAR DRIVING vs NETWORK SCAN: accettato, non un bug. Usa
 > una funzione promiscua alla volta.
 
+### Fase 19: UX/discovery — status bar radio, dashboard THREATS, auto-assess, host passivi, servizi mDNS, SNMP
+
+Sei migliorie scelte dall'utente (1, 2, 5, 6, 7, 8 di una lista di dieci),
+tutte sul lato difensivo/benigno. Il punto 10 della lista (Responder-lite
+/ cattura NetNTLM), segnalato come ad alto rischio, è stato **escluso su
+istruzione esplicita dell'utente**.
+
+- **Barra di stato radio globale** (`ui/ActivityStatus`, agganciata a
+  `chrome::drawHeader` → compare su ogni schermata): rende visibile l'unico
+  pezzo di stato globale che l'UI prima nascondeva — **quale funzione
+  promiscua possiede la radio**. `esp_wifi` accetta una sola callback
+  promiscua alla volta, quindi l'header ora mostra `RF:<nome>` (ambra)
+  quando una è attiva e `RF:N!` (rosso) quando due o più lo sono insieme
+  (il conflitto). Trasforma il footgun documentato in un avviso a colpo
+  d'occhio. Tenuto fuori da `Chrome.cpp` (che altrimenti dovrebbe includere
+  tutti i manager) in un modulo dedicato.
+- **Dashboard THREATS** (`ui/screens/ThreatsScreen`, voce di menu
+  `THREATS`): una vista unica che **aggrega live** i finding sparsi tra i
+  moduli — credenziali deboli e banner con firma vulnerabile (dalla tabella
+  host di `ScanManager`), servizi in chiaro (telnet/ftp), e server rogue
+  DHCP sospetti (da `RogueDhcpDetector`). Read-only, ri-deriva la lista dai
+  dati vivi a ogni frame: è il corrispettivo on-device della sezione
+  ATTACK SURFACE del report HTML, senza dover passare da SD.
+- **Auto-assess a un tasto** (`scan/AssessmentRunner` +
+  `ui/screens/AssessmentScreen`, voce `AUTO ASSESS`): concatena i passi
+  *non-gated* di un assessment di base — discovery → port scan di ogni host
+  vivo a turno → report HTML su SD — con barra di avanzamento a fasi.
+  **Guida** soltanto i manager esistenti via le loro API pubbliche
+  (aspetta i loro `isRunning()`), non re-implementa niente. L'**audit
+  credenziali è deliberatamente escluso** dalla catena: sta dietro un gate
+  di autorizzazione per-sessione e automatizzarlo su ogni host aggirerebbe
+  il modello di consenso esplicito del resto del firmware — l'utente lo
+  lancia a mano per host.
+- **Scoperta host passiva** (`scan/PassiveHostDiscovery` +
+  `ui/screens/PassiveHostScreen`, voce `PASSIVE HOSTS`): impara quali host
+  esistono **solo ascoltando** il traffico in modalità promiscua — ogni
+  frame dati IPv4 dà una coppia (MAC, IP sorgente). Un host che non
+  risponde mai a un probe attivo (firewallato, o addormentato durante lo
+  sweep) compare comunque appena trasmette qualcosa. Lista propria con
+  schermata dedicata, **non** iniettata nella tabella di `ScanManager`
+  (la cui logica di generazione è tarata sullo sweep attivo — mescolarci
+  righe da un listener in background sarebbe rischioso). Aggiunge un sesto
+  consumatore promiscuo, riflesso nella nuova barra di stato radio.
+- **Enumerazione servizi mDNS/DNS-SD** (`scan/ServiceEnumerator` +
+  `ui/screens/ServiceScreen`, voce `SERVICE SCAN`): la meta-query DNS-SD
+  standard a due livelli — prima PTR di `_services._dns-sd._udp.local` per
+  elencare i **tipi** di servizio annunciati (`_airplay._tcp`, `_ipp._tcp`,
+  `_googlecast._tcp`, ...), poi PTR di ogni tipo per le **istanze** con nome
+  (e la porta dal record SRV quando presente). Ben più ricca del fallback
+  reverse-PTR di `MdnsReverseResolver`. Riusa gli helper verificati di
+  `net/DnsWire` e lo stesso pattern multicast. *Scope*: tipo + nome istanza
+  (+ porta), senza inseguire i target SRV fino ai record A per l'IP.
+- **Sweep SNMP community "public"** (`scan/SnmpSweep` +
+  `ui/screens/SnmpScreen`, voce `SNMP SWEEP`): per ogni host vivo manda una
+  GET SNMPv2c di `sysDescr.0` con community `public` e, alla risposta,
+  registra la descrizione di sistema. Un agent che risponde a `public` è
+  una misconfig classica e diffusissima (la community di lettura di default
+  espone modello, OS/firmware, interfacce). **Read-only**: solo GET (mai
+  SET), solo lo scalare `sysDescr` — l'equivalente SNMP di un banner grab.
+  Richiesta e risposta BER/ASN.1 costruite/parsate a mano, tutto
+  bounds-checked.
+
+> **La radio condivisa ora vale per sei funzioni**: alla famiglia
+> promiscua (ARP/MITM, deauth, PMKID, CDP/LLDP, rogue DHCP) si aggiunge la
+> scoperta host passiva. La nuova barra di stato in header serve proprio a
+> non farsi sorprendere: se vedi `RF:2!` in rosso, due funzioni si stanno
+> rubando i frame a vicenda.
+
 ## Compilare e flashare
 
 ```
@@ -1549,6 +1617,18 @@ originale.
       `storage/PcapWriter` per i cinque consumatori promiscui — vedi
       sopra per il dettaglio e per il limite della radio condivisa che
       ora vale per cinque funzioni.
+- [x] **Fase 19 — UX/discovery: status bar radio, THREATS, auto-assess,
+      host passivi, servizi mDNS, SNMP**: sei migliorie scelte dall'utente
+      (1,2,5,6,7,8 di una lista di dieci), tutte difensive/benigne —
+      barra di stato in header che segnala il proprietario della radio
+      promiscua (`RF:<nome>` / `RF:N!` rosso in conflitto), dashboard
+      `THREATS` che aggrega live i finding, workflow `AUTO ASSESS` a un
+      tasto (discovery→port scan→report, audit credenziali escluso di
+      proposito), scoperta host passiva (`PASSIVE HOSTS`), enumerazione
+      servizi mDNS/DNS-SD (`SERVICE SCAN`) e sweep SNMP `public`
+      (`SNMP SWEEP`). Il punto 10 (Responder-lite/NetNTLM) escluso su
+      istruzione esplicita perché ad alto rischio. Il menu principale è
+      ora a 15 voci (lo scroll aggiunto in Fase 18 le regge).
 
 ## Test plan — Fase 1
 
@@ -2205,6 +2285,42 @@ parentesi in locale. Da verificare su hardware:
    frame — comportamento atteso e documentato, non un bug. Usare una
    funzione promiscua alla volta.
 
+## Test plan — Fase 19 (status bar, THREATS, auto-assess, host passivi, servizi, SNMP)
+
+Anche questa fase non è ancora passata da una build reale — solo controllo
+di bilanciamento parentesi in locale. Da verificare su hardware:
+
+1. **Barra di stato radio**: con nessuna funzione promiscua attiva
+   l'header non mostra niente di nuovo (solo `W <batt>%`). Avviando UNA
+   funzione promiscua (es. `PASSIVE HOSTS` → ENTER) deve comparire
+   `RF:PSV` in ambra a sinistra della batteria, su **tutte** le schermate.
+   Avviandone una seconda (es. anche `ROGUE DHCP`) deve diventare `RF:2!`
+   in rosso. Fermandole, l'indicatore sparisce.
+2. **Menu a 15 voci con scroll**: dal menu, scorrendo in giù oltre la
+   settima voce deve scrollare con i marcatori `^`/`v`; tutte e 15 le voci
+   (incluse AUTO ASSESS, THREATS, SERVICE SCAN, PASSIVE HOSTS, SNMP SWEEP)
+   devono essere raggiungibili e aprire la schermata giusta.
+3. **AUTO ASSESS**: connesso a una rete, `ENTER` avvia la sequenza; la
+   barra di avanzamento deve passare per DISCOVERY → PORT SCAN (con
+   contatore host x/y) → REPORT → DONE, e alla fine mostrare il path
+   `/report.html`. `ENTER` durante l'esecuzione ferma; `DEL` esce
+   lasciandolo girare in background. Verifica che il report esista su SD.
+4. **THREATS**: dopo uno scan con almeno un host cred-vulnerabile o con
+   telnet/ftp aperti, la dashboard deve elencarli (rosso per critical,
+   ambra per warning). Con un server rogue DHCP rilevato, deve comparire
+   anche quello. A rete "pulita": messaggio "nothing flagged".
+5. **PASSIVE HOSTS**: su rete **aperta**, `ENTER` avvia l'ascolto; man mano
+   che gli host trasmettono devono comparire IP + MAC + conteggio frame,
+   **senza** aver lanciato alcuno scan attivo. Su rete WPA: lista vuota
+   (atteso).
+6. **SERVICE SCAN**: `ENTER` avvia la browse DNS-SD; su una rete con
+   Chromecast/AirPlay/stampanti/NAS devono comparire istanze con tipo
+   servizio e, dove annunciata, la porta. Zero servizi non è un errore.
+7. **SNMP SWEEP**: dopo un `NETWORK SCAN`, `ENTER` sonda gli host vivi con
+   community `public`; quelli che rispondono compaiono con il loro
+   sysDescr. La barra di progresso avanza fino al 100%. Nessun host vivo →
+   messaggio che invita a fare prima `NETWORK SCAN`.
+
 ## Limiti noti e tagli di scope deliberati
 
 Riepilogo di quanto già menzionato nelle sezioni sopra, in un unico
@@ -2367,11 +2483,34 @@ posto:
   degli altri moduli — non esegue nuovi test né assegna punteggi CVSS.
   "Nessun finding" non significa "rete sicura", solo "niente ha fatto
   scattare le euristiche".
-- **Radio promiscua condivisa: il limite ora vale per cinque funzioni**
-  (Fase 18): `esp_wifi` accetta una sola callback promiscua alla volta —
-  ARP/MITM, deauth, PMKID, CDP/LLDP e rogue DHCP non vanno usate in
-  parallelo (l'ultima avviata ruba i frame alle altre). Stesso genere di
-  limite già accettato per WAR DRIVING vs NETWORK SCAN.
+- **Radio promiscua condivisa: il limite ora vale per SEI funzioni**
+  (Fase 18-19): `esp_wifi` accetta una sola callback promiscua alla volta
+  — ARP/MITM, deauth, PMKID, CDP/LLDP, rogue DHCP e (Fase 19) scoperta
+  host passiva non vanno usate in parallelo (l'ultima avviata ruba i frame
+  alle altre). Stesso genere di limite già accettato per WAR DRIVING vs
+  NETWORK SCAN. La barra di stato radio in header (Fase 19) esiste proprio
+  per rendere questo conflitto visibile invece che silenzioso.
+- **Responder-lite/NetNTLM (punto 10) escluso di proposito** (Fase 19):
+  era in una delle liste di proposte ed è stato escluso su istruzione
+  esplicita dell'utente perché ad alto rischio (impersona servizi verso
+  client di terzi per raccogliere hash). Implementabile in futuro solo su
+  richiesta esplicita e dietro il gate `OffensiveDisclaimerScreen`.
+- **Auto-assess: catena volutamente parziale** (Fase 19): concatena solo
+  i passi non-gated (discovery, port scan, report). L'audit credenziali
+  NON è automatizzato — sta dietro un consenso per-sessione e lanciarlo su
+  ogni host aggirerebbe quel modello. Va ancora fatto a mano per host.
+- **Scoperta host passiva: lista separata, solo reti aperte** (Fase 19):
+  non viene fusa nella tabella di `ScanManager` (per non toccare la sua
+  logica di generazione, già verificata) e, come tutta la famiglia
+  promiscua, non vede nulla su WiFi WPA cifrato.
+- **Enumerazione servizi mDNS: tipo + istanza (+ porta), non l'IP**
+  (Fase 19): `ServiceEnumerator` non insegue i target SRV fino ai record A
+  per risolvere l'IP di backing — il nome istanza più la tabella host già
+  scoperta danno il contesto, e ogni round-trip in più è tempo su radio.
+- **Sweep SNMP: solo GET di sysDescr con community "public"** (Fase 19):
+  read-only, mai SET, un solo scalare, una sola community di default — è
+  un banner grab SNMP, non un walk completo della MIB né un test di
+  community multiple.
 - **Nessuna build reale eseguita**: vale per ogni fase di questo
   progetto — il sandbox di sviluppo non ha accesso al registry
   PlatformIO. Tutto il codice è stato scritto con attenzione e, dove

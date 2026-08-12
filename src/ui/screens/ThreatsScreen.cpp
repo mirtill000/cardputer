@@ -1,0 +1,126 @@
+#include "ThreatsScreen.h"
+#include "../UiManager.h"
+#include "../Theme.h"
+#include "../Chrome.h"
+#include "../../core/Types.h"
+#include "../../scan/ScanManager.h"
+#include "../../scan/RogueDhcpDetector.h"
+#include <vector>
+
+ThreatsScreen& ThreatsScreen::instance() {
+    static ThreatsScreen s;
+    return s;
+}
+
+void ThreatsScreen::onEnter() {
+    _selected = 0;
+}
+
+void ThreatsScreen::onKey(UiKey key, char /*ch*/) {
+    if (key == UiKey::Up) {
+        if (_selected > 0) _selected--;
+    } else if (key == UiKey::Down) {
+        _selected++;  // clamped against the live count in draw()
+    } else if (key == UiKey::Back) {
+        g_ui.popScreen();
+    }
+}
+
+namespace {
+struct Finding {
+    String text;
+    uint16_t color;
+};
+
+// Re-derives the finding list from live data. Bounded to keep the
+// per-draw cost predictable; the most severe categories are appended
+// first so a truncated list still shows the worst.
+void collectFindings(std::vector<Finding>& out) {
+    constexpr size_t kMax = 40;
+
+    size_t n = g_scanManager.hostCount();
+    HostInfo h;
+    for (size_t i = 0; i < n && out.size() < kMax; i++) {
+        if (!g_scanManager.getHost(i, h) || !h.alive) continue;
+
+        if (h.credVulnerable) {
+            out.push_back({h.ip.toString() + " default/weak creds", theme::RED});
+            continue;  // strongest finding for this host, don't pile on
+        }
+        if (h.vulnNote.length()) {
+            String note = h.vulnNote;
+            if (note.length() > 22) note = note.substring(0, 22);
+            out.push_back({h.ip.toString() + " " + note, theme::RED});
+            continue;
+        }
+        bool telnet = false, ftp = false;
+        for (const auto& p : h.ports) {
+            if (p.service == "telnet" || p.port == 23) telnet = true;
+            if (p.service == "ftp" || p.port == 21) ftp = true;
+        }
+        if (telnet || ftp) {
+            out.push_back({h.ip.toString() + (telnet ? " telnet open" : " ftp open"), theme::AMBER});
+        }
+    }
+
+    size_t rc = g_rogueDhcpDetector.sightingCount();
+    RogueDhcpDetector::Sighting s;
+    for (size_t i = 0; i < rc && out.size() < kMax; i++) {
+        if (g_rogueDhcpDetector.getSighting(i, s) && s.suspicious) {
+            out.push_back({s.serverIp.toString() + " rogue DHCP?", theme::RED});
+        }
+    }
+}
+}  // namespace
+
+void ThreatsScreen::draw(M5Canvas& gfx) {
+    gfx.fillScreen(theme::BG);
+    chrome::drawHeader(gfx, "THREATS");
+
+    std::vector<Finding> findings;
+    collectFindings(findings);
+
+    if (_selected >= findings.size()) _selected = findings.empty() ? 0 : findings.size() - 1;
+
+    gfx.setTextColor(findings.empty() ? theme::GREEN : theme::RED, theme::BG);
+    gfx.setCursor(6, 18);
+    gfx.print("findings: ");
+    gfx.print((unsigned)findings.size());
+
+    if (findings.empty()) {
+        gfx.setTextColor(theme::GREY, theme::BG);
+        gfx.setCursor(6, 40);
+        gfx.print("nothing flagged (yet).");
+        gfx.setCursor(6, 52);
+        gfx.print("run NETWORK SCAN / audits to");
+        gfx.setCursor(6, 64);
+        gfx.print("populate this view.");
+    } else {
+        int16_t top = 28;
+        gfx.setTextColor(theme::GREY, theme::BG);
+        gfx.drawFastHLine(4, top, gfx.width() - 8, theme::GREY);
+
+        constexpr int16_t kRowH = 11;
+        constexpr size_t kMaxRows = 8;
+        size_t first = 0;
+        if (_selected >= kMaxRows) first = _selected - kMaxRows + 1;
+
+        for (size_t row = 0; row < kMaxRows; row++) {
+            size_t i = first + row;
+            if (i >= findings.size()) break;
+            int16_t y = top + 3 + (int16_t)row * kRowH;
+            bool sel = (i == _selected);
+            uint16_t rowBg = sel ? theme::PANEL_BG : theme::BG;
+            if (sel) gfx.fillRect(0, y - 1, gfx.width(), kRowH, rowBg);
+            gfx.setTextColor(sel ? theme::CYAN : findings[i].color, rowBg);
+            gfx.setCursor(6, y);
+            String t = findings[i].text;
+            if (t.length() > 38) t = t.substring(0, 38);
+            gfx.print(t);
+        }
+    }
+
+    gfx.setTextColor(theme::GREY, theme::BG);
+    gfx.setCursor(4, gfx.height() - 9);
+    gfx.print("DEL:back  (red=critical amber=warn)");
+}

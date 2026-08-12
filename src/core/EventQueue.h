@@ -56,6 +56,10 @@ enum class ScanSource : uint8_t {
     Ssdp,
     RogueDhcp,
     Smb,
+    PassiveHost,
+    ServiceEnum,
+    Snmp,
+    Assessment,
 };
 
 struct ScanNotification {
