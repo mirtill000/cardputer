@@ -4,7 +4,6 @@
 #include "../core/Types.h"
 #include <WiFiClient.h>
 #include <mbedtls/md.h>
-#include <mbedtls/des.h>
 #include <cstring>
 
 ServiceAuditManager g_serviceAuditManager;
@@ -377,92 +376,34 @@ int postgresTry(const IPAddress& ip, uint16_t port, const String& user, const St
 
 // ---- VNC (RFB) --------------------------------------------------------
 
-// Encrypts the 16-byte challenge with the RFB DES scheme (password as key,
-// each key byte bit-reversed) and writes 16 bytes into resp.
-void vncEncrypt(const String& pass, const uint8_t challenge[16], uint8_t resp[16]) {
-    uint8_t key[8] = {0};
-    for (int i = 0; i < 8 && i < (int)pass.length(); i++) {
-        uint8_t b = (uint8_t)pass[i];
-        uint8_t rev = 0;  // RFB reverses the bit order of each key byte
-        for (int k = 0; k < 8; k++)
-            if (b & (1 << k)) rev |= (1 << (7 - k));
-        key[i] = rev;
-    }
-    mbedtls_des_context ctx;
-    mbedtls_des_init(&ctx);
-    mbedtls_des_setkey_enc(&ctx, key);
-    mbedtls_des_crypt_ecb(&ctx, challenge, resp);
-    mbedtls_des_crypt_ecb(&ctx, challenge + 8, resp + 8);
-    mbedtls_des_free(&ctx);
-}
-
-// Returns 1 no-auth, 2 password hit (outPass), 0 auth required (no default
-// worked), -1 unreachable.
-int vncCheck(const IPAddress& ip, uint16_t port, String& outPass) {
-    // Peek the security types on a first connection.
-    bool hasNone = false, hasVnc = false;
-    {
-        WiFiClient c;
-        if (!c.connect(ip, port, kConnectTimeoutMs)) return -1;
-        uint8_t ver[12];
-        if (readN(c, ver, 12, kReadTimeoutMs) != 12) {
-            c.stop();
-            return -1;
-        }
-        c.write((const uint8_t*)"RFB 003.008\n", 12);
-        uint8_t nTypes = 0;
-        if (readN(c, &nTypes, 1, kReadTimeoutMs) != 1 || nTypes == 0) {
-            c.stop();
-            return -1;
-        }
-        uint8_t types[32];
-        int rd = readN(c, types, nTypes > 32 ? 32 : nTypes, kReadTimeoutMs);
-        for (int i = 0; i < rd; i++) {
-            if (types[i] == 1) hasNone = true;
-            if (types[i] == 2) hasVnc = true;
-        }
+// Returns 1 = no authentication (security type "None" offered), 0 = auth
+// required, -1 = unreachable.
+//
+// The DES challenge/response brute against default passwords was dropped:
+// ESP-IDF's precompiled mbedtls ships with MBEDTLS_DES_C disabled (DES is
+// deprecated), so mbedtls_des_* won't link, and hand-rolling DES would go
+// against this project's "no artisanal crypto" rule. The high-value part —
+// a VNC server offering NO authentication at all (full remote control with
+// no password) — needs no crypto and is what this reports.
+int vncCheck(const IPAddress& ip, uint16_t port) {
+    WiFiClient c;
+    if (!c.connect(ip, port, kConnectTimeoutMs)) return -1;
+    uint8_t ver[12];
+    if (readN(c, ver, 12, kReadTimeoutMs) != 12) {
         c.stop();
+        return -1;
     }
-
-    if (hasNone) return 1;  // no authentication at all
-    if (!hasVnc) return 0;
-
-    const char* pws[] = {"", "password", "admin", "vnc", "1234", "raspberry"};
-    for (const char* pw : pws) {
-        WiFiClient c;
-        if (!c.connect(ip, port, kConnectTimeoutMs)) return -1;
-        uint8_t ver[12];
-        if (readN(c, ver, 12, kReadTimeoutMs) != 12) {
-            c.stop();
-            continue;
-        }
-        c.write((const uint8_t*)"RFB 003.008\n", 12);
-        uint8_t nTypes = 0;
-        if (readN(c, &nTypes, 1, kReadTimeoutMs) != 1 || nTypes == 0) {
-            c.stop();
-            continue;
-        }
-        uint8_t types[32];
-        readN(c, types, nTypes > 32 ? 32 : nTypes, kReadTimeoutMs);
-        uint8_t sel = 2;  // select VNC auth
-        c.write(&sel, 1);
-        uint8_t challenge[16];
-        if (readN(c, challenge, 16, kReadTimeoutMs) != 16) {
-            c.stop();
-            continue;
-        }
-        uint8_t resp[16];
-        vncEncrypt(String(pw), challenge, resp);
-        c.write(resp, 16);
-        uint8_t sr[4];
-        int got = readN(c, sr, 4, kReadTimeoutMs);
+    c.write((const uint8_t*)"RFB 003.008\n", 12);
+    uint8_t nTypes = 0;
+    if (readN(c, &nTypes, 1, kReadTimeoutMs) != 1 || nTypes == 0) {
         c.stop();
-        if (got == 4 && be32(sr) == 0) {
-            outPass = pw;
-            return 2;
-        }
-        delay(kAttemptDelayMs);
+        return -1;
     }
+    uint8_t types[32];
+    int rd = readN(c, types, nTypes > 32 ? 32 : nTypes, kReadTimeoutMs);
+    c.stop();
+    for (int i = 0; i < rd; i++)
+        if (types[i] == 1) return 1;  // "None" security type = no auth
     return 0;
 }
 
@@ -808,11 +749,9 @@ void ServiceAuditManager::auditPostgres(uint16_t port) {
 
 void ServiceAuditManager::auditVnc(uint16_t port) {
     notify("vnc: auth check...");
-    String pass;
-    int r = vncCheck(_target, port, pass);
+    int r = vncCheck(_target, port);
     if (r == 1) addFinding("vnc", "NO authentication", true);
-    else if (r == 2) addFinding("vnc", String("default password '") + (pass.length() ? pass : "(empty)") + "'", true);
-    else if (r == 0) addFinding("vnc", "auth required (no default pw)", false);
+    else if (r == 0) addFinding("vnc", "auth required (challenge brute n/a)", false);
 }
 
 void ServiceAuditManager::auditHttp(uint16_t port) {

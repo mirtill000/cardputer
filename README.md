@@ -1513,8 +1513,11 @@ scritte a mano, coerente col principio che aveva escluso SSH.
     (mbedtls SHA1) (item 2).
   - **PostgreSQL (5432)** — trust/cleartext/MD5 di default (mbedtls MD5);
     SCRAM rilevato e segnalato, non brute-forzato (item 2).
-  - **VNC (5900)** — no-auth + brute della challenge DES con password di
-    default (mbedtls DES) (item 4).
+  - **VNC (5900)** — rilevamento **no-auth** (server che offre security
+    type "None") (item 4). Il brute della challenge DES è stato tolto: la
+    mbedtls di ESP-IDF ha `MBEDTLS_DES_C` disabilitato (DES deprecato),
+    quindi `mbedtls_des_*` non linka, e scrivere DES a mano è escluso dal
+    principio "niente crypto artigianale".
   - **HTTP (80/8080/8000/8888)** — brute **basic-auth** con credenziali di
     default (item 8).
   Ogni brute usa un **set compatto di credenziali di default** (non l'intera

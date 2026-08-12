@@ -28,8 +28,10 @@
 //     MSSQL are out of scope.
 //   - PostgreSQL (5432): trust / cleartext / MD5 default creds (mbedtls
 //     MD5). SCRAM is detected and reported, not brute-forced.
-//   - VNC (5900): no-auth check + DES challenge default-password attempts
-//     (mbedtls DES).
+//   - VNC (5900): no-auth check only (a server offering security type
+//     "None"). The DES challenge brute was dropped — ESP-IDF's mbedtls
+//     ships MBEDTLS_DES_C disabled, so mbedtls_des_* won't link, and
+//     hand-rolling DES is out per the no-artisanal-crypto rule.
 //   - HTTP (80/8080/8000/8888): Basic-auth default creds. Form-based
 //     login brute is out of scope in this pass.
 // Each brute uses a small built-in default-credential set (not the full
