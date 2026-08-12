@@ -1,5 +1,6 @@
 #include "PassiveHostDiscovery.h"
 #include "../net/Ieee80211Frame.h"
+#include <Arduino.h>  // millis()
 #include <cstring>
 
 PassiveHostDiscovery g_passiveHostDiscovery;
