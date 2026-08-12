@@ -37,15 +37,13 @@
 #include "storage/SdCard.h"
 #include "ui/screens/ScanHistoryScreen.h"
 #include "ui/screens/WardrivingScreen.h"
-#include "ui/screens/CdpLldpScreen.h"
-#include "ui/screens/SsdpScreen.h"
-#include "ui/screens/RogueDhcpScreen.h"
-#include "ui/screens/PassiveHostScreen.h"
-#include "ui/screens/ServiceScreen.h"
-#include "ui/screens/SnmpScreen.h"
 #include "ui/screens/ThreatsScreen.h"
 #include "ui/screens/AssessmentScreen.h"
-#include "ui/screens/DataStoreScreen.h"
+// The discovery screens (LAN TOPOLOGY / UPNP DISCOVERY / SERVICE SCAN /
+// PASSIVE HOSTS / ROGUE DHCP / SNMP SWEEP / DATASTORE SWEEP) are no longer
+// top-level menu entries — they're grouped under NETWORK SCAN via
+// DiscoveryMenuScreen, so main.cpp doesn't reference their screens here.
+// Their background managers are still begin()'d below.
 
 namespace {
 BootScreen g_bootScreen;
@@ -56,7 +54,7 @@ BootScreen g_bootScreen;
 PlaceholderScreen g_portScanScreen;
 PlaceholderScreen g_credAuditScreen;
 
-MenuItem g_menuItems[16];
+MenuItem g_menuItems[9];
 }  // namespace
 
 void setup() {
@@ -97,15 +95,10 @@ void setup() {
     g_menuItems[5] = {"CREDENTIAL AUDIT", &g_credAuditScreen};
     g_menuItems[6] = {"SCAN HISTORY", &ScanHistoryScreen::instance()};
     g_menuItems[7] = {"WAR DRIVING", &WardrivingScreen::instance()};
-    g_menuItems[8] = {"LAN TOPOLOGY", &CdpLldpScreen::instance()};
-    g_menuItems[9] = {"UPNP DISCOVERY", &SsdpScreen::instance()};
-    g_menuItems[10] = {"SERVICE SCAN", &ServiceScreen::instance()};
-    g_menuItems[11] = {"PASSIVE HOSTS", &PassiveHostScreen::instance()};
-    g_menuItems[12] = {"ROGUE DHCP", &RogueDhcpScreen::instance()};
-    g_menuItems[13] = {"SNMP SWEEP", &SnmpScreen::instance()};
-    g_menuItems[14] = {"DATASTORE SWEEP", &DataStoreScreen::instance()};
-    g_menuItems[15] = {"SETTINGS", &SettingsScreen::instance()};
-    MainMenuScreen::instance().configure(g_menuItems, 16);
+    g_menuItems[8] = {"SETTINGS", &SettingsScreen::instance()};
+    // The seven discovery tools moved under NETWORK SCAN -> 'D' (see
+    // DiscoveryMenuScreen); their managers are still begin()'d below.
+    MainMenuScreen::instance().configure(g_menuItems, 9);
 
     // MainMenuScreen must already be configured by this point: once the
     // render task starts, BootScreen can transition straight to it on

@@ -1,6 +1,7 @@
 #include "HostListScreen.h"
 #include "HostDetailScreen.h"
 #include "WifiSetupScreen.h"
+#include "DiscoveryMenuScreen.h"
 #include "../UiManager.h"
 #include "../Theme.h"
 #include "../Chrome.h"
@@ -121,6 +122,13 @@ void HostListScreen::onKey(UiKey key, char ch) {
         g_ui.pushScreen(&WifiSetupScreen::instance());
         return;
     }
+    // All the network-discovery tools now live under one submenu, reached
+    // from here — see DiscoveryMenuScreen. Available in every state (each
+    // tool handles its own prerequisites like "needs a scan first").
+    if (key == UiKey::Char && (ch == 'd' || ch == 'D')) {
+        g_ui.pushScreen(&DiscoveryMenuScreen::instance());
+        return;
+    }
 
     if (!g_wifi.isConnected()) {
         if (key == UiKey::Back) g_ui.popScreen();
@@ -218,7 +226,7 @@ void HostListScreen::draw(M5Canvas& gfx) {
 
         gfx.setTextColor(theme::GREY, theme::BG);
         gfx.setCursor(4, gfx.height() - 9);
-        gfx.print("DEL:back");
+        gfx.print("ENTER:scan D:discovery W:wifi DEL:bk");
         return;
     }
 
@@ -269,7 +277,7 @@ void HostListScreen::draw(M5Canvas& gfx) {
 
     gfx.setTextColor(theme::GREY, theme::BG);
     gfx.setCursor(4, gfx.height() - 9);
-    gfx.print("ENTER:detail E:exp R:rep W:wifi DEL:bk");
+    gfx.print("ENTER:host D:disc E:exp R:rep W:wifi");
 }
 
 void HostListScreen::drawTable(M5Canvas& gfx, int16_t top) {

@@ -1554,6 +1554,20 @@ non divergere dalle altre ~20 schermate).
   geografica c'è la lista reale degli AP. Come per il radar dell'host
   detail, questo firmware non mostra dati sensore fabbricati.
 
+### Fase 23: tutti gli strumenti di discovery raggruppati sotto NETWORK SCAN
+
+Su richiesta ("avere tutte le informazioni di discovery in un unico
+punto"): i sette strumenti di discovery che erano voci separate del menu
+principale — **LAN TOPOLOGY, UPNP DISCOVERY, SERVICE SCAN, PASSIVE HOSTS,
+ROGUE DHCP, SNMP SWEEP, DATASTORE SWEEP** — sono ora dietro un unico
+sotto-menu **DISCOVERY** (`ui/screens/DiscoveryMenuScreen`), raggiungibile
+con **`D` da NETWORK SCAN**. Il menu principale scende da 16 a **9 voci**
+(WIFI SCAN, NETWORK SCAN, AUTO ASSESS, THREATS, PORT SCANNER, CREDENTIAL
+AUDIT, SCAN HISTORY, WAR DRIVING, SETTINGS). I manager di background sono
+sempre avviati in `setup()` come prima — è cambiata solo la navigazione,
+non la logica. Ogni strumento gestisce da sé i propri prerequisiti (es.
+SNMP/DATASTORE ricordano di lanciare prima un NETWORK SCAN).
+
 ## Compilare e flashare
 
 ```
