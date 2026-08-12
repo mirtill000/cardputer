@@ -1604,6 +1604,27 @@ si rompe):
     (`sound::playDone`, non bloccante) a ogni evento `ScanFinished`,
     rispettando l'impostazione SOUND.
 
+### Fase 25: "RUN ALL DISCOVERY" nel sotto-menu DISCOVERY
+
+Nuova prima voce del menu DISCOVERY che esegue **tutti** gli strumenti di
+discovery con un tasto (`scan/DiscoveryRunner` + `ui/screens/
+DiscoveryAllScreen`). **Non è realmente simultaneo, e non può esserlo**:
+tre tool (LAN topology, passive hosts, rogue DHCP) condividono l'unica
+callback promiscua di `esp_wifi`, quindi avviarli insieme farebbe ricevere
+i frame solo all'ultimo. Il runner quindi **sequenzia**:
+
+1. le query one-shot UDP/TCP una dopo l'altra — UPnP/SSDP, servizi mDNS,
+   sweep SNMP, sweep data-store;
+2. poi ogni listener promiscuo a turno, con una finestra di cattura
+   dedicata (~12s l'uno), fermato prima di passare al successivo.
+
+I risultati restano nelle schermate dei singoli strumenti (la lista vicini
+di LAN TOPOLOGY, i device UPnP, ecc.); `RUN ALL` mostra solo fase +
+avanzamento + log, con `ENTER` start/stop. È lo stesso pattern-orchestratore
+di `AUTO ASSESS`: guida i manager esistenti via le loro API pubbliche, non
+reimplementa nulla, e rispetta il vincolo della radio condivisa che tutto
+il firmware tiene documentato.
+
 ## Compilare e flashare
 
 ```

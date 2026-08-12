@@ -1,4 +1,5 @@
 #include "DiscoveryMenuScreen.h"
+#include "DiscoveryAllScreen.h"
 #include "CdpLldpScreen.h"
 #include "SsdpScreen.h"
 #include "ServiceScreen.h"
@@ -17,6 +18,7 @@ struct DItem {
     const char* label;
     Screen* (*get)();
 };
+Screen* gRunAll() { return &DiscoveryAllScreen::instance(); }
 Screen* gCdp() { return &CdpLldpScreen::instance(); }
 Screen* gSsdp() { return &SsdpScreen::instance(); }
 Screen* gSvc() { return &ServiceScreen::instance(); }
@@ -26,9 +28,9 @@ Screen* gSnmp() { return &SnmpScreen::instance(); }
 Screen* gData() { return &DataStoreScreen::instance(); }
 
 const DItem kItems[] = {
-    {"LAN TOPOLOGY", gCdp},      {"UPNP DISCOVERY", gSsdp}, {"SERVICE SCAN", gSvc},
-    {"PASSIVE HOSTS", gPassive}, {"ROGUE DHCP", gRogue},    {"SNMP SWEEP", gSnmp},
-    {"DATASTORE SWEEP", gData},
+    {"RUN ALL DISCOVERY", gRunAll}, {"LAN TOPOLOGY", gCdp},   {"UPNP DISCOVERY", gSsdp},
+    {"SERVICE SCAN", gSvc},         {"PASSIVE HOSTS", gPassive}, {"ROGUE DHCP", gRogue},
+    {"SNMP SWEEP", gSnmp},          {"DATASTORE SWEEP", gData},
 };
 constexpr size_t kCount = sizeof(kItems) / sizeof(kItems[0]);
 }  // namespace
@@ -65,8 +67,8 @@ void DiscoveryMenuScreen::draw(M5Canvas& gfx) {
     gfx.fillScreen(theme::BG);
     chrome::drawHeader(gfx, "DISCOVERY");
 
-    constexpr int16_t kRowH = 14;
-    constexpr int16_t kTop = 20;
+    constexpr int16_t kRowH = 13;  // 8 items now (RUN ALL added) - tighter rows to fit
+    constexpr int16_t kTop = 18;
     for (size_t i = 0; i < kCount; i++) {
         int16_t y = kTop + (int16_t)i * kRowH;
         bool sel = (i == _selected);

@@ -63,6 +63,7 @@ enum class ScanSource : uint8_t {
     CaptivePortal,
     DataStore,
     ServiceAudit,
+    DiscoveryAll,
 };
 
 struct ScanNotification {
