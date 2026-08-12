@@ -5,20 +5,21 @@
 // read by anything until now).
 namespace sound {
 
-// Starts a looping ~13s theme (see kBootLoop in Sound.cpp) on its own
+// Starts a looping ~10s theme (see kBootLoop in Sound.cpp) on its own
 // background FreeRTOS task, repeating until stopBootLoop() is called.
-// A solo-voice arrangement of a piece the user supplied as sheet music
-// (confirmed as their own/rights-cleared before this was written) -
-// condensed to one monophonic line since M5Cardputer.Speaker only ever
-// plays one tone() at a time and the original is a two-hand piano
-// piece. Runs on the splash screen only (BootScreen starts it once the
-// title is revealed, stops it in onExit() — see BootScreen.cpp) —
-// non-blocking, so it's safe to call from the UI render task unlike
-// the other functions here. No-op (task never even starts) if already
-// running; if uiSoundEnabled is OFF, the loop still runs and keeps
-// time silently (tone() calls skipped) so toggling sound back on
-// mid-track resumes in the right rhythmic position instead of
-// restarting.
+// An ORIGINAL composition again (built on the Am-F-C-G chord
+// foundation from the user-supplied sheet music, but not a
+// transcription of it or of anything else) evoking Nightcall's vibe
+// through technique - a driving pulsing bass ostinato, a slow minor-key
+// melodic hook, a wistful descending outro - rather than quoting its
+// actual tune. Runs on the splash screen only (BootScreen starts it
+// once the title is revealed, stops it in onExit() — see
+// BootScreen.cpp) — non-blocking, so it's safe to call from the UI
+// render task unlike the other functions here. No-op (task never even
+// starts) if already running; if uiSoundEnabled is OFF, the loop still
+// runs and keeps time silently (tone() calls skipped) so toggling
+// sound back on mid-track resumes in the right rhythmic position
+// instead of restarting.
 void startBootLoop();
 void stopBootLoop();
 

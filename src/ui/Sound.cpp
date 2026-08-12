@@ -10,42 +10,43 @@ struct Note {
     uint16_t ms;
 };
 
-// User-provided piece (sheet music supplied directly, confirmed as the
-// user's own/rights-cleared - NOT the earlier "Nightcall"-inspired
-// original this replaces, and unlike that one, this IS meant to
-// reproduce the actual piece, as closely as a monophonic buzzer can).
+// Recreated again, on user request ("con dei sentori di Nightcall" -
+// with hints/flavor of Nightcall). Back to an ORIGINAL composition,
+// like the very first Fase 17 version, NOT a transcription of anything
+// - the whole reason that first version existed was to evoke the vibe
+// without reproducing anyone's copyrighted melody note-for-note, and
+// that's the rule again here. Keeps the one thing that's actually the
+// user's own and freely reusable: the Am-F-C-G (i-VI-III-VII in A
+// minor) chord foundation from the sheet music they gave permission to
+// use - that specific progression is also extremely common (it's the
+// harmonic backbone of a huge number of pop songs, not something
+// anyone owns), so building on it is safe on its own merits, not just
+// because of the earlier permission.
 //
-// This is a solo-voice ARRANGEMENT of the opening four bars (i-VI-III-
-// VII in A minor: Am-F-C-G, the piano score's left-hand harmony under
-// a continuous right-hand broken-chord figure), not a literal encoding
-// of either hand alone — M5Cardputer.Speaker plays one tone() at a
-// time, so both hands had to be condensed into one line. Each bar:
-// the left-hand bass root (held), then the right-hand arpeggio read
-// off the score low-to-high, then its top note held slightly longer as
-// the phrase's melodic peak. Tempo matches the score's marking (quarter
-// = 89 BPM: quarter note ≈ 674ms, eighth ≈ 337ms, dotted quarter ≈
-// 1011ms, rounded below).
-//
-// Read from a photographed score, not run through OCR - please flag
-// anything that sounds off against the original once you hear it on
-// hardware, same as every other build-verified thing in this project.
+// The "Nightcall sentori" come from technique, not melody-copying: a
+// driving pulsing root-fifth bass ostinato under each chord (the
+// hallmark of that track's whole sound), a slow, spacious minor-key
+// melodic hook drifting over it, and a wistful, half-chromatic
+// descending line at the end of each lap before it resolves back down
+// to the low root - evoking that song's melancholy synthwave outro
+// feel without quoting its actual tune.
 constexpr Note kBootLoop[] = {
-    // Bar 1 - Am (A C E)
-    {110, 1010},                                    // A2 - bass root
-    {220, 340}, {262, 340}, {330, 340}, {440, 340},  // A3 C4 E4 A4 - arpeggio
-    {659, 674},                                      // E5 - melodic peak
-    // Bar 2 - F (F A C)
-    {87, 1010},                                      // F2 - bass root
-    {175, 340}, {220, 340}, {262, 340}, {349, 340},  // F3 A3 C4 F4 - arpeggio
-    {440, 674},                                       // A4 - melodic peak
-    // Bar 3 - C (C E G)
-    {131, 1010},                                     // C3 - bass root
-    {262, 340}, {330, 340}, {392, 340}, {523, 340},  // C4 E4 G4 C5 - arpeggio
-    {659, 674},                                       // E5 - melodic peak
-    // Bar 4 - G (G B D) - held a touch longer, marks the end of the phrase
-    {98, 1010},                                       // G2 - bass root
-    {196, 340}, {247, 340}, {294, 340}, {392, 340},  // G3 B3 D4 G4 - arpeggio
-    {587, 850},                                        // D5 - melodic peak, held
+    // Am - pulsing root/fifth ostinato, then a rising hook held on top
+    {110, 180}, {165, 180}, {110, 180}, {165, 180},  // A2 E3 A2 E3 - pulse
+    {262, 220}, {330, 220}, {440, 560},              // C4 E4 A4(held) - hook
+    // F
+    {87, 180}, {131, 180}, {87, 180}, {131, 180},    // F2 C3 F2 C3 - pulse
+    {220, 220}, {262, 220}, {349, 560},              // A3 C4 F4(held) - hook
+    // C
+    {131, 180}, {196, 180}, {131, 180}, {196, 180},  // C3 G3 C3 G3 - pulse
+    {330, 220}, {392, 220}, {523, 560},              // E4 G4 C5(held) - hook
+    // G
+    {98, 180}, {147, 180}, {98, 180}, {147, 180},    // G2 D3 G2 D3 - pulse
+    {247, 220}, {294, 220}, {392, 560},              // B3 D4 G4(held) - hook
+    // Wistful descending outro, half-chromatic, settling back to the
+    // low root before the loop repeats.
+    {440, 260}, {392, 260}, {349, 260}, {330, 260}, {294, 300}, {262, 300}, {220, 340},
+    {110, 700},  // A2, held - loop resolves here
 };
 constexpr size_t kBootLoopCount = sizeof(kBootLoop) / sizeof(kBootLoop[0]);
 
@@ -83,7 +84,7 @@ void sound::startBootLoop() {
 
 void sound::stopBootLoop() {
     // bootLoopTask notices at the next note boundary (worst case, the
-    // loop's longest single note - the ~1010ms bass root) and deletes
+    // loop's longest single note - the ~700ms final outro note) and deletes
     // itself; not waited on here, so a short tail can still be heard
     // just after this returns. Accepted, not worth blocking the UI task to
     // close that last sliver.

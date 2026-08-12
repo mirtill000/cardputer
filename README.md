@@ -1267,6 +1267,23 @@ che suonano sbagliate rispetto all'originale sono benvenute, stesso
 principio del "la build reale è l'unica verifica" usato per tutto il
 resto del firmware.
 
+**Terzo ritocco: di nuovo una composizione originale, ma con "sentori
+di Nightcall"**. Richiesta esplicita dell'utente dopo aver sentito la
+trascrizione: tornare a una composizione originale (non una
+trascrizione di niente) che però evochi l'atmosfera di Nightcall —
+esattamente il criterio della primissima versione della Fase 17, non
+un'eccezione ad esso. `kBootLoop` riparte dalla progressione La minore-
+Fa-Do-Sol dello spartito dell'utente (armonia libera da riutilizzare
+sia perché autorizzata sia perché è una progressione talmente comune —
+la base armonica di innumerevoli canzoni pop — che non appartiene a
+nessuno), ma tutto il resto è nuovo: un ostinato di basso pulsante
+tonica/quinta sotto ogni accordo (la caratteristica più riconoscibile
+del sound di quel brano), un hook melodico lento e malinconico in
+tonalità minore sopra, e un outro discendente semicromatico e nostalgico
+che torna alla tonica grave prima che il loop ricominci — l'atmosfera
+evocata attraverso la tecnica compositiva, non la melodia vera e propria
+citata. Loop di ~10s.
+
 ## Compilare e flashare
 
 ```
@@ -2020,12 +2037,12 @@ laboratorio isolato) — non in giro per strada con reti di sconosciuti.
    frenetico né un pattern statico) — e che titolo/sottotitolo/versione/
    prompt restino perfettamente leggibili, senza puntini visibili sopra il
    testo.
-5. **Fedeltà della melodia trascritta** (dopo il secondo ritocco):
-   ascolta il loop (~13s) e confrontalo con lo spartito originale —
-   quattro battute, La minore-Fa-Do-Sol, ciascuna basso-poi-arpeggio-poi
-   picco melodico. Segnala eventuali note che suonano chiaramente
-   sbagliate rispetto all'originale, così da poterle correggere
-   puntualmente in `kBootLoop` (`ui/Sound.cpp`).
+5. **Sentori di Nightcall, non una copia** (dopo il terzo ritocco):
+   ascolta il loop (~10s) — deve percepirsi chiaramente un ostinato di
+   basso pulsante sotto ogni accordo (La minore-Fa-Do-Sol), un hook
+   melodico lento e minore sopra, e un outro discendente malinconico
+   prima che il giro ricominci. Deve evocare l'atmosfera, non suonare
+   come una citazione riconoscibile della melodia vera del brano.
 
 ## Limiti noti e tagli di scope deliberati
 
@@ -2096,16 +2113,17 @@ posto:
   disponibile per chi voglia estenderlo, ma resta monofonico (un solo
   `tone()` alla volta) — niente accordi reali, solo linee melodiche
   sequenziali.
-- **Musica di boot: ora un arrangiamento a voce sola di un brano fornito
-  dall'utente, trascritto solo dopo conferma esplicita che ne aveva i
-  diritti** (Fase 17, secondo ritocco): la versione precedente era una
-  composizione originale "in stile Nightcall" proprio per evitare di
-  trascrivere una melodia di terzi senza autorizzazione — questa
-  distinzione (comporre qualcosa "in stile X" vs. trascrivere
-  letteralmente uno spartito) resta il criterio guida per qualunque
-  musica futura in questo progetto. Trascrizione letta da una foto
-  dello spartito, non passata per OCR — fedeltà nota per nota non
-  garantita, vedi il test plan dedicato sopra.
+- **Musica di boot: di nuovo una composizione originale, non una
+  trascrizione** (Fase 17, tre ritocchi): la cronologia completa —
+  originale "in stile Nightcall" → trascrizione a voce sola dello
+  spartito dell'utente (fatta solo dopo conferma esplicita dei diritti)
+  → di nuovo originale, su richiesta dell'utente, ma stavolta costruita
+  sulla stessa progressione armonica dello spartito (La minore-Fa-Do-
+  Sol, riutilizzabile anche a prescindere dall'autorizzazione dato
+  quanto è comune) — mostra il criterio guida usato per qualunque
+  musica in questo progetto: comporre "in stile X"/evocare un'atmosfera
+  è sempre permesso, trascrivere letteralmente la melodia di qualcun
+  altro richiede prima un'autorizzazione esplicita e verificabile.
 - **Nebbia digitale: puramente decorativa, densità legata all'area, non
   un vero effetto di trasparenza** (Fase 17): `chrome::drawDigitalFog`
   disegna punti singoli opachi, non una vera sovrapposizione
