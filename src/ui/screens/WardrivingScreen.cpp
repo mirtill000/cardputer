@@ -3,6 +3,7 @@
 #include "EvilTwinScreen.h"
 #include "DeauthScreen.h"
 #include "PmkidScreen.h"
+#include "OpenConnectScreen.h"
 #include "OffensiveDisclaimerScreen.h"
 #include "../UiManager.h"
 #include "../Theme.h"
@@ -99,6 +100,16 @@ void WardrivingScreen::onKey(UiKey key, char ch) {
                         OffensiveDisclaimerScreen::instance().setPendingTargetScreen(&PmkidScreen::instance());
                         g_ui.pushScreen(&OffensiveDisclaimerScreen::instance());
                     }
+                }
+            } else if (key == UiKey::Char && (ch == 'c' || ch == 'C')) {
+                // Join a selected OPEN network (no password) and check for a
+                // captive portal. Only meaningful for open APs — a
+                // password-protected one can't be joined from here anyway.
+                WardrivingManager::ApSighting ap;
+                if (g_wardrivingManager.getSighting(_sightingsSelected, ap) && ap.open &&
+                    !ap.ssid.equals("<hidden>")) {
+                    OpenConnectScreen::instance().setTarget(ap.ssid);
+                    g_ui.pushScreen(&OpenConnectScreen::instance());
                 }
             } else if (key == UiKey::Back) {
                 g_ui.popScreen();
@@ -202,7 +213,7 @@ void WardrivingScreen::draw(M5Canvas& gfx) {
 
             gfx.setTextColor(theme::GREY, theme::BG);
             gfx.setCursor(4, gfx.height() - 9);
-            gfx.print("TAB:loc A:al E:twn X:dth P:pmk DEL:bk");
+            gfx.print("TAB:loc A:al C:cn E:twn X:dth P:pmk");
             break;
         }
 

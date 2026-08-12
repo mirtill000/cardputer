@@ -1451,6 +1451,42 @@ istruzione esplicita dell'utente**.
 > non farsi sorprendere: se vedi `RF:2!` in rosso, due funzioni si stanno
 > rubando i frame a vicenda.
 
+### Fase 20: connessione alle reti aperte dal war driving + rilevamento captive portal
+
+Due richieste, di cui una accolta e una **deliberatamente declinata**.
+
+- **Connettersi a una rete aperta con `c`** (`ui/screens/OpenConnectScreen`,
+  raggiungibile con `c` su una sighting **aperta** in `WAR DRIVING`):
+  mostra prima una conferma di autorizzazione (stesso spirito
+  dell'allowlist e del disclaimer offensive — "solo reti che possiedi o sei
+  autorizzato a usare"), poi si unisce alla rete aperta senza password
+  (`WifiManager::beginConnectWithCredentials(ssid, "")`), e infine lancia
+  il rilevamento captive portal. Funziona solo per gli AP aperti: uno
+  protetto non è comunque unibile da qui senza password.
+- **Rilevamento captive portal** (`net/CaptivePortalDetector`): lo stesso
+  identico controllo che fa ogni sistema operativo dopo essersi unito a una
+  rete — una GET HTTP a un endpoint noto che dovrebbe rispondere `204 No
+  Content`. Se arriva davvero un 204 → internet aperta, nessun portale; se
+  arriva un redirect o un 200 con HTML → **il portale sta intercettando**,
+  e viene mostrata la sua presenza (e l'URL, quando il portale ne
+  restituisce uno) così che l'utente sappia di dover aprire il browser per
+  autenticarsi. Non invasivo, plain HTTP di proposito (è ciò che un portale
+  intercetta).
+
+- **Il *bypass* del captive portal NON è implementato — scelta
+  deliberata.** Un captive portal è un meccanismo di controllo d'accesso;
+  aggirarlo in modo generico ("qualsiasi portale") in un contesto di war
+  driving significa ottenere accesso a reti di terzi che non sono tue —
+  cioè accesso non autorizzato / furto di servizio. È una categoria diversa
+  dagli strumenti offensivi già presenti (deauth, evil twin, PMKID): quelli
+  sono gated e inquadrati come test della *tua* rete, mentre "bypassa
+  qualsiasi portale trovi" non ha un equivalente "sulla tua rete". Questo
+  firmware *identifica* il portale (utile per un audit), ma non tenta di
+  eluderlo. Un tester di robustezza del captive portal a **singolo target
+  esplicito e autorizzato**, dietro il gate `OFFENSIVE`, sarebbe l'unica
+  forma legittima e resta implementabile solo su richiesta esplicita per
+  quel caso.
+
 ## Compilare e flashare
 
 ```
@@ -1629,6 +1665,14 @@ originale.
       (`SNMP SWEEP`). Il punto 10 (Responder-lite/NetNTLM) escluso su
       istruzione esplicita perché ad alto rischio. Il menu principale è
       ora a 15 voci (lo scroll aggiunto in Fase 18 le regge).
+- [x] **Fase 20 — Connessione alle reti aperte dal war driving +
+      rilevamento captive portal**: `c` su una sighting aperta apre
+      `JOIN OPEN NET`, che conferma l'autorizzazione, si unisce alla rete
+      aperta e lancia il rilevamento captive portal (`net/
+      CaptivePortalDetector`, la stessa GET a un endpoint `generate_204`
+      che fa ogni OS). Il **bypass** del portale è stato **declinato di
+      proposito** (accesso non autorizzato a reti di terzi) — vedi sopra e
+      "Limiti noti".
 
 ## Test plan — Fase 1
 
@@ -2499,6 +2543,15 @@ posto:
   i passi non-gated (discovery, port scan, report). L'audit credenziali
   NON è automatizzato — sta dietro un consenso per-sessione e lanciarlo su
   ogni host aggirerebbe quel modello. Va ancora fatto a mano per host.
+- **Captive portal: si rileva, non si bypassa** (Fase 20): `c` nel war
+  driving si connette a una rete aperta e `CaptivePortalDetector`
+  *identifica* la presenza di un captive portal (come fa ogni OS), ma non
+  esiste alcuna funzione per *aggirarlo*. Il bypass generico di un portale
+  scoperto in war driving significherebbe accesso non autorizzato a una
+  rete di terzi (furto di servizio) — fuori scope per design, a differenza
+  degli strumenti offensivi gated che sono inquadrati come test della
+  propria rete. Un tester a singolo target esplicito e autorizzato, dietro
+  il gate `OFFENSIVE`, sarebbe l'unica forma legittima (non implementato).
 - **Scoperta host passiva: lista separata, solo reti aperte** (Fase 19):
   non viene fusa nella tabella di `ScanManager` (per non toccare la sua
   logica di generazione, già verificata) e, come tutta la famiglia
