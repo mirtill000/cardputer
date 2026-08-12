@@ -46,6 +46,10 @@ void DataStoreScreen::draw(M5Canvas& gfx) {
 
     drawFindings(gfx, 30);
 
+    if (g_dataStoreProbe.count() == 0 && !running) {
+        chrome::drawEmptyState(gfx, "no exposed stores found", "ENTER: sweep the LAN (needs a scan)");
+    }
+
     gfx.setTextColor(theme::MAGENTA, theme::BG);
     gfx.setCursor(6, gfx.height() - 20);
     gfx.print(running ? "probing hosts..." : "ENTER: sweep (redis/mongo/...)");

@@ -42,6 +42,7 @@ public:
     // field (including on early exit/cancel), or every other screen's
     // arrow-key navigation breaks — see UiManager::setTextEntryMode().
     void setTextEntryMode(bool enabled) { _textEntryMode = enabled; }
+    bool textEntryMode() const { return _textEntryMode; }
 
 private:
     static void taskEntry(void* arg);

@@ -62,10 +62,7 @@ void ServiceAuditScreen::draw(M5Canvas& gfx) {
     gfx.fillScreen(theme::BG);
 
     if (!_consented) {
-        gfx.setTextColor(theme::RED, theme::BG);
-        gfx.setCursor(4, 4);
-        gfx.print(">> AUTHORIZATION REQUIRED");
-        gfx.drawFastHLine(4, 15, gfx.width() - 8, theme::GREY);
+        chrome::drawAlertHeader(gfx, "AUTHORIZATION REQUIRED");
         gfx.setTextColor(theme::AMBER, theme::BG);
         drawWrapped(gfx, kDisclaimer, 6, 20, 10, 37);
         gfx.setTextColor(theme::MAGENTA, theme::BG);

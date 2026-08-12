@@ -111,15 +111,19 @@ void row(M5Canvas& gfx, int16_t y, const char* label, const String& value, uint1
 // background fill also cleans up any long field (e.g. VENDOR:) that
 // spilled into this area from the text rows above.
 void drawRadar(M5Canvas& gfx, const HostInfo& h) {
-    constexpr int16_t kPanelX = 150, kPanelY = 17, kPanelW = 90, kPanelH = 82;
+    // Shrunk to a small top-right badge (Fase 24 UX pass): it's decorative
+    // — devices have no real coordinates — so it no longer earns a big
+    // slab of prime space; the reclaimed area below shows the real open
+    // ports (see drawPortsPanel).
+    constexpr int16_t kPanelX = 182, kPanelY = 17, kPanelW = 54, kPanelH = 44;
     constexpr int16_t cx = kPanelX + kPanelW / 2;
     constexpr int16_t cy = kPanelY + kPanelH / 2;
-    constexpr int16_t kRMax = 30;
+    constexpr int16_t kRMax = 18;
 
     gfx.fillRect(kPanelX, kPanelY, kPanelW, kPanelH, theme::BG);
     gfx.drawRect(kPanelX, kPanelY, kPanelW, kPanelH, theme::GREY);
 
-    for (int16_t r = 10; r <= kRMax; r += 10) {
+    for (int16_t r = 6; r <= kRMax; r += 6) {
         gfx.drawCircle(cx, cy, r, theme::GREEN_DIM);
     }
     gfx.drawFastHLine(cx - kRMax, cy, kRMax * 2, theme::GREEN_DIM);
@@ -147,6 +151,44 @@ void drawRadar(M5Canvas& gfx, const HostInfo& h) {
     }
 
     gfx.fillCircle(cx, cy, 2, theme::GREEN_BRIGHT);  // "you are here"
+}
+
+// Real open-ports list in the space the shrunk radar freed up (right
+// column, below the badge). Complements the one-line PORTS summary on the
+// left with the actual port/service rows.
+void drawPortsPanel(M5Canvas& gfx, const HostInfo& h) {
+    constexpr int16_t px = 150, py = 66;
+    gfx.setTextColor(theme::MAGENTA, theme::BG);
+    gfx.setCursor(px, py);
+    gfx.print("OPEN PORTS");
+    gfx.drawFastHLine(px, py + 9, 86, theme::GREY);
+
+    if (h.ports.empty()) {
+        gfx.setTextColor(theme::GREY, theme::BG);
+        gfx.setCursor(px, py + 13);
+        gfx.print("none (TAB)");
+        return;
+    }
+
+    int shown = 0;
+    for (size_t i = 0; i < h.ports.size() && shown < 4; i++, shown++) {
+        int16_t y = py + 13 + (int16_t)shown * 9;
+        gfx.setTextColor(theme::CYAN, theme::BG);
+        gfx.setCursor(px, y);
+        gfx.print(h.ports[i].port);
+        gfx.setTextColor(theme::GREEN, theme::BG);
+        gfx.setCursor(px + 32, y);
+        String s = h.ports[i].service;
+        if (s.length() > 9) s = s.substring(0, 9);
+        gfx.print(s);
+    }
+    if (h.ports.size() > 4) {
+        gfx.setTextColor(theme::GREY, theme::BG);
+        gfx.setCursor(px, py + 13 + 4 * 9);
+        gfx.print("+");
+        gfx.print((unsigned)(h.ports.size() - 4));
+        gfx.print(" more");
+    }
 }
 }  // namespace
 
@@ -204,7 +246,9 @@ void HostDetailScreen::draw(M5Canvas& gfx) {
         gfx.print(note);
     }
 
+    gfx.fillRect(148, 16, 92, 95, theme::BG);  // clean the right column (spillover + old radar area)
     drawRadar(gfx, h);
+    drawPortsPanel(gfx, h);
 
     bool hasHttp = false, hasSmb = false;
     for (const auto& p : h.ports) {

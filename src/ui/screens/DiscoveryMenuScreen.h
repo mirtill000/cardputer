@@ -16,6 +16,11 @@ public:
     void onKey(UiKey key, char ch) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* title() const override { return "DISC"; }
+    const char* helpText() const override {
+        return "DISCOVERY\n\nAll network-discovery tools\nin one place.\nArrows: move   ENTER: open\nDEL: back to NETWORK SCAN\n\nSNMP/DATASTORE want a\nNETWORK SCAN run first.";
+    }
+
 private:
     size_t _selected = 0;
 };

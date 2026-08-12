@@ -1,8 +1,11 @@
 #include "UiManager.h"
 #include "Theme.h"
+#include "Chrome.h"
+#include "Sound.h"
 #include "screens/Screen.h"
 #include "../core/Config.h"
 #include <M5Cardputer.h>
+#include <cstring>
 
 UiManager g_ui;
 
@@ -66,8 +69,14 @@ void UiManager::begin(Screen* initialScreen) {
 
 void UiManager::activate(Screen* s) {
     _input.setTextEntryMode(false);  // safety net — see setTextEntryMode() in the header
+    _helpVisible = false;            // don't carry a help overlay across screens
     _canvas.fillScreen(theme::BG);   // wipe whatever the previous screen left behind
     s->onEnter();
+}
+
+const char* UiManager::parentTitle() const {
+    if (_stack.size() < 2) return nullptr;
+    return _stack[_stack.size() - 2]->title();
 }
 
 void UiManager::pushScreen(Screen* s) {
@@ -105,6 +114,10 @@ void UiManager::run() {
             handleKeyEvent(kev);
         }
         while (_scanQueue && xQueueReceive(_scanQueue, &sev, 0) == pdTRUE) {
+            // Completion feedback: a short non-blocking blip whenever any
+            // background scan finishes, so the user doesn't have to stare
+            // at the screen to know it's done (respects SOUND setting).
+            if (sev.type == ScanEventType::ScanFinished) sound::playDone();
             if (!_stack.empty()) _stack.back()->onScanEvent(sev);
         }
 
@@ -112,6 +125,7 @@ void UiManager::run() {
         if (top) {
             top->update(millis());
             top->draw(_canvas);
+            if (_helpVisible) drawHelpOverlay(top);
         }
 
         // Idle timeout dims the backlight - see kIdleTimeoutMs above.
@@ -138,5 +152,62 @@ void UiManager::run() {
 
 void UiManager::handleKeyEvent(const UiKeyEvent& ev) {
     _lastInputMs = millis();
+
+    // Global '?' help toggle, intercepted before the screen sees it — but
+    // NOT while a text field owns the keyboard (there '?' is a literal
+    // character the field needs). Any key while the overlay is up closes it.
+    if (_helpVisible) {
+        _helpVisible = false;
+        return;
+    }
+    if (ev.key == UiKey::Char && ev.ch == '?' && !_input.textEntryMode()) {
+        _helpVisible = true;
+        return;
+    }
+
     if (!_stack.empty()) _stack.back()->onKey(ev.key, ev.ch);
+}
+
+void UiManager::drawHelpOverlay(Screen* top) {
+    // Dim the screen, then a bordered panel with the active screen's
+    // help lines (or a generic hint if it doesn't provide any).
+    _canvas.fillRect(0, 0, _canvas.width(), _canvas.height(), theme::BG);
+    _canvas.drawRect(6, 6, _canvas.width() - 12, _canvas.height() - 12, theme::CYAN);
+
+    _canvas.setTextColor(theme::MAGENTA, theme::BG);
+    _canvas.setCursor(12, 12);
+    _canvas.print(">> HELP");
+
+    const char* help = top->helpText();
+    int16_t y = 26;
+    if (help && help[0]) {
+        // Render '\n'-separated lines.
+        const char* p = help;
+        char line[42];
+        while (*p && y < _canvas.height() - 22) {
+            size_t n = 0;
+            while (*p && *p != '\n' && n < sizeof(line) - 1) line[n++] = *p++;
+            line[n] = '\0';
+            if (*p == '\n') p++;
+            _canvas.setTextColor(theme::GREEN, theme::BG);
+            _canvas.setCursor(12, y);
+            _canvas.print(line);
+            y += 10;
+        }
+    } else {
+        _canvas.setTextColor(theme::GREY, theme::BG);
+        _canvas.setCursor(12, y);
+        _canvas.print("No screen-specific help.");
+        y += 12;
+        _canvas.setTextColor(theme::GREEN, theme::BG);
+        _canvas.setCursor(12, y);
+        _canvas.print("Arrows: move   ENTER: select");
+        y += 10;
+        _canvas.setCursor(12, y);
+        _canvas.print("DEL: back");
+    }
+
+    _canvas.setTextColor(theme::GREY, theme::BG);
+    _canvas.setCursor(12, _canvas.height() - 16);
+    _canvas.print("any key: close");
 }

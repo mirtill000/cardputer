@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Screen.h"
+#include "../../core/Types.h"
 #include <IPAddress.h>
 #include <vector>
 #include <cstddef>
@@ -21,13 +22,24 @@ public:
     void onScanEvent(const ScanNotification& ev) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* title() const override { return "NET"; }
+    const char* helpText() const override {
+        return "NETWORK SCAN\n\nENTER: host detail\nD: discovery tools\nF: cycle filter\nE: export json/csv\nR: html report\nW: wifi setup\narrows: move   DEL: back";
+    }
+
 private:
+    // Row filter cycled with 'F': all alive hosts, only "risky" ones
+    // (warning/critical/cred-vulnerable), or only hosts with open ports.
+    enum class Filter { All, Risky, WithPorts };
+
     void rebuildAliveList();
     void drawTable(M5Canvas& gfx, int16_t top);
     bool isNewHost(const IPAddress& ip) const;
     bool isNeverSeenBefore(const IPAddress& ip) const;
+    bool matchesFilter(const HostInfo& h) const;
 
     std::vector<size_t> _aliveIndices;
+    Filter _filter = Filter::All;
     size_t _selected = 0;
     String _statusLine;  // transient feedback, e.g. after an export (E)
     uint32_t _scanStartMs = 0;

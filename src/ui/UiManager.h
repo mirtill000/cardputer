@@ -47,11 +47,17 @@ public:
     // arrow-key navigation everywhere else in the app.
     void setTextEntryMode(bool enabled) { _input.setTextEntryMode(enabled); }
 
+    // Short title() of the screen directly below the active one (its
+    // navigation parent), or nullptr at the root — used by
+    // chrome::drawHeader for the breadcrumb prefix.
+    const char* parentTitle() const;
+
 private:
     static void taskEntry(void* arg);
     void run();
     void handleKeyEvent(const UiKeyEvent& ev);
     void activate(Screen* s);
+    void drawHelpOverlay(Screen* top);
 
     M5Canvas _canvas;
     InputManager _input;
@@ -67,6 +73,11 @@ private:
     // display went dim - this is purely a backlight/battery concern.
     uint32_t _lastInputMs = 0;
     bool _dimmed = false;
+
+    // Global '?' help overlay: toggled in handleKeyEvent (unless a text
+    // field owns the keyboard), drawn over the active screen, dismissed by
+    // any other key. Reset on every screen transition.
+    bool _helpVisible = false;
 };
 
 extern UiManager g_ui;

@@ -118,7 +118,9 @@ void WifiSetupScreen::onKey(UiKey key, char ch) {
             break;
 
         case State::PasswordEntry:
-            if (key == UiKey::Char) {
+            if (key == UiKey::Tab) {
+                _maskPassword = !_maskPassword;  // show/hide the password
+            } else if (key == UiKey::Char) {
                 if (_password.length() < kMaxPasswordLen) _password += ch;
             } else if (key == UiKey::Back) {
                 if (_password.length() > 0) {
@@ -260,14 +262,28 @@ void WifiSetupScreen::draw(M5Canvas& gfx) {
             gfx.setTextColor(theme::CYAN, theme::BG);
             gfx.setCursor(6, 38);
             gfx.print("password:");
+            // Text-entry mode indicator + mask hint, right-aligned.
+            gfx.setTextColor(theme::MAGENTA, theme::BG);
+            gfx.setCursor(gfx.width() - 18 * theme::GLYPH_W, 38);
+            gfx.print(_maskPassword ? "[TYPING] hidden" : "[TYPING] TAB:hide");
 
             gfx.fillRect(6, 48, gfx.width() - 12, 10, theme::PANEL_BG);
-            String shown = _password;
-            constexpr int kMaxVisible = 36;
+            String shown;
+            if (_maskPassword) {
+                for (size_t i = 0; i < _password.length(); i++) shown += '*';
+            } else {
+                shown = _password;
+            }
+            constexpr int kMaxVisible = 35;
             if (shown.length() > kMaxVisible) shown = shown.substring(shown.length() - kMaxVisible);
             gfx.setTextColor(theme::GREEN_BRIGHT, theme::PANEL_BG);
             gfx.setCursor(8, 49);
             gfx.print(shown);
+            // Blinking caret at the end of the field.
+            if ((millis() / 500) % 2 == 0) {
+                gfx.setCursor(8 + (int16_t)shown.length() * theme::GLYPH_W, 49);
+                gfx.print("_");
+            }
 
             gfx.setTextColor(theme::GREY, theme::BG);
             gfx.setCursor(6, 62);
@@ -275,7 +291,7 @@ void WifiSetupScreen::draw(M5Canvas& gfx) {
             gfx.print(" chars");
 
             gfx.setCursor(4, gfx.height() - 9);
-            gfx.print("ENTER:connect DEL:erase/back");
+            gfx.print("ENTER:connect TAB:hide DEL:erase");
             break;
         }
 

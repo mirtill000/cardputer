@@ -3,6 +3,7 @@
 #include "../TextWrap.h"
 #include "../UiManager.h"
 #include "../Theme.h"
+#include "../Chrome.h"
 #include "../../core/Config.h"
 
 namespace {
@@ -42,10 +43,7 @@ void CredDisclaimerScreen::onKey(UiKey key, char ch) {
 void CredDisclaimerScreen::draw(M5Canvas& gfx) {
     gfx.fillScreen(theme::BG);
 
-    gfx.setTextColor(theme::RED, theme::BG);
-    gfx.setCursor(4, 4);
-    gfx.print(">> AUTHORIZATION REQUIRED");
-    gfx.drawFastHLine(4, 15, gfx.width() - 8, theme::GREY);
+    chrome::drawAlertHeader(gfx, "AUTHORIZATION REQUIRED");
 
     gfx.setTextColor(theme::AMBER, theme::BG);
     drawWrapped(gfx, kDisclaimer, 6, 20, 10, 37);

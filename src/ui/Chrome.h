@@ -63,4 +63,24 @@ void drawWifiIcon(M5Canvas& gfx, int16_t x, int16_t y, uint16_t color);
 const char* securityLabel(wifi_auth_mode_t enc);
 uint16_t securityColor(wifi_auth_mode_t enc);
 
+// --- Shared status/feedback widgets (Fase 24 UX pass) ---
+
+// Horizontal progress bar: grey outline with a cyan fill proportional to
+// pct (0-100), and the percentage printed to its right.
+void drawProgressBar(M5Canvas& gfx, int16_t x, int16_t y, int16_t w, int16_t h, uint8_t pct);
+
+// A single spinning-character busy indicator at (x, y), animated off
+// nowMs. Use for indeterminate "working..." states.
+void drawSpinner(M5Canvas& gfx, int16_t x, int16_t y, uint32_t nowMs, uint16_t color);
+
+// Centred, consistent empty/first-run state: a dim title line and an
+// amber "what to do next" hint, vertically roughly centred in the body.
+void drawEmptyState(M5Canvas& gfx, const char* title, const char* hint);
+
+// Red "danger gate" header used by the authorization/disclaimer screens —
+// same layout as drawHeader but red, and no battery/breadcrumb (these are
+// modal gates, not part of normal navigation). Centralized so the three
+// consent screens share one definition.
+void drawAlertHeader(M5Canvas& gfx, const char* title);
+
 }  // namespace chrome

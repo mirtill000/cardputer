@@ -1,6 +1,7 @@
 #include "Chrome.h"
 #include "Theme.h"
 #include "ActivityStatus.h"
+#include "UiManager.h"
 #include "../net/WifiManager.h"
 #include <M5Unified.h>
 #include <cstdio>
@@ -150,10 +151,66 @@ uint16_t chrome::securityColor(wifi_auth_mode_t enc) {
     }
 }
 
-void chrome::drawHeader(M5Canvas& gfx, const char* title) {
-    gfx.setTextColor(theme::CYAN, theme::BG);
+void chrome::drawProgressBar(M5Canvas& gfx, int16_t x, int16_t y, int16_t w, int16_t h, uint8_t pct) {
+    if (pct > 100) pct = 100;
+    gfx.drawRect(x, y, w, h, theme::GREY);
+    int16_t fillW = (int16_t)((int32_t)(w - 2) * pct / 100);
+    if (fillW > 0) gfx.fillRect(x + 1, y + 1, fillW, h - 2, theme::CYAN);
+    char buf[6];
+    snprintf(buf, sizeof(buf), "%u%%", (unsigned)pct);
+    gfx.setTextColor(theme::GREY, theme::BG);
+    gfx.setCursor(x + w + 3, y + (h - 8) / 2);
+    gfx.print(buf);
+}
+
+void chrome::drawSpinner(M5Canvas& gfx, int16_t x, int16_t y, uint32_t nowMs, uint16_t color) {
+    static const char frames[] = {'|', '/', '-', '\\'};
+    char c = frames[(nowMs / 120) % 4];
+    gfx.setTextColor(color, theme::BG);
+    gfx.setCursor(x, y);
+    gfx.print(c);
+}
+
+void chrome::drawAlertHeader(M5Canvas& gfx, const char* title) {
+    gfx.setTextColor(theme::RED, theme::BG);
     gfx.setCursor(4, 4);
     gfx.print(">> ");
+    gfx.print(title);
+    gfx.setTextColor(theme::GREY, theme::BG);
+    gfx.drawFastHLine(4, 15, gfx.width() - 8, theme::GREY);
+}
+
+void chrome::drawEmptyState(M5Canvas& gfx, const char* title, const char* hint) {
+    gfx.setTextColor(theme::GREY, theme::BG);
+    int16_t tx = (gfx.width() - (int16_t)strlen(title) * theme::GLYPH_W) / 2;
+    if (tx < 4) tx = 4;
+    gfx.setCursor(tx, 52);
+    gfx.print(title);
+    if (hint && hint[0]) {
+        gfx.setTextColor(theme::AMBER, theme::BG);
+        int16_t hx = (gfx.width() - (int16_t)strlen(hint) * theme::GLYPH_W) / 2;
+        if (hx < 4) hx = 4;
+        gfx.setCursor(hx, 66);
+        gfx.print(hint);
+    }
+}
+
+void chrome::drawHeader(M5Canvas& gfx, const char* title) {
+    gfx.setCursor(4, 4);
+    gfx.setTextColor(theme::CYAN, theme::BG);
+    gfx.print(">> ");
+    // Breadcrumb prefix: if the screen below this one on the nav stack
+    // exposes a short title(), show "PARENT/" dim before this title so the
+    // user can see where they are after deep navigation (e.g. NET/DISCOVERY,
+    // DISC/SNMP SWEEP). Purely additive — screens with no parent title()
+    // render exactly as before.
+    const char* parent = g_ui.parentTitle();
+    if (parent && parent[0]) {
+        gfx.setTextColor(theme::GREY, theme::BG);
+        gfx.print(parent);
+        gfx.print("/");
+        gfx.setTextColor(theme::CYAN, theme::BG);
+    }
     gfx.print(title);
 
     // Right-aligned status: "W <battery%>". getBatteryLevel() returns

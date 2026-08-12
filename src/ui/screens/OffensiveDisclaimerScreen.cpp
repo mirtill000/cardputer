@@ -2,6 +2,7 @@
 #include "../TextWrap.h"
 #include "../UiManager.h"
 #include "../Theme.h"
+#include "../Chrome.h"
 #include "../../core/Config.h"
 
 namespace {
@@ -51,10 +52,7 @@ void OffensiveDisclaimerScreen::onKey(UiKey key, char ch) {
 void OffensiveDisclaimerScreen::draw(M5Canvas& gfx) {
     gfx.fillScreen(theme::BG);
 
-    gfx.setTextColor(theme::RED, theme::BG);
-    gfx.setCursor(4, 4);
-    gfx.print(">> ACTIVE OFFENSIVE TOOL");
-    gfx.drawFastHLine(4, 15, gfx.width() - 8, theme::GREY);
+    chrome::drawAlertHeader(gfx, "ACTIVE OFFENSIVE TOOL");
 
     gfx.setTextColor(theme::AMBER, theme::BG);
     drawWrapped(gfx, kDisclaimer, 6, 20, 9, 37);

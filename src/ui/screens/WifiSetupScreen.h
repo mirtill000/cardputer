@@ -43,4 +43,8 @@ private:
     // with the empty _password this path never fills in).
     bool _savingOnConnect = false;
     int16_t _pendingSavedIndex = -1;
+
+    // Password field: shown in clear by default (a fiddly thumb keyboard
+    // makes hidden entry error-prone), toggle to masked with TAB.
+    bool _maskPassword = false;
 };

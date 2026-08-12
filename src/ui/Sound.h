@@ -38,4 +38,10 @@ void playAlert();
 // No-op if uiSoundEnabled is off.
 void playCredAlert();
 
+// Single short high blip — a non-blocking "operation finished" cue,
+// distinct from playAlert(). Safe to call from the UI render task (fire-
+// and-forget, no delay). Played by UiManager whenever a background scan
+// posts a ScanFinished event. No-op if uiSoundEnabled is off.
+void playDone();
+
 }  // namespace sound

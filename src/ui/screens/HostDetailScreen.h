@@ -16,6 +16,10 @@ public:
     void onKey(UiKey key, char ch) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* helpText() const override {
+        return "HOST DETAIL\n\nTAB: port scan this host\nC: credential audit\nV: service audit (per-service)\nH: http path brute (if http)\nM: mitm audit\nS: smb negotiate (if smb)\nDEL: back";
+    }
+
 private:
     size_t _hostIndex = 0;
 };

@@ -1571,6 +1571,39 @@ sempre avviati in `setup()` come prima — è cambiata solo la navigazione,
 non la logica. Ogni strumento gestisce da sé i propri prerequisiti (es.
 SNMP/DATASTORE ricordano di lanciare prima un NETWORK SCAN).
 
+### Fase 24: passata UX/UI trasversale (10 aree)
+
+Dieci migliorie di usabilità, fatte in modo **additivo** (nessuna firma
+esistente di `chrome::drawHeader`/`Screen` cambiata, così nessuna schermata
+si rompe):
+
+1. **Help overlay `?`** — `Screen::helpText()` (virtuale, default vuoto);
+   `UiManager` intercetta `?` (fuori dai campi di testo) e mostra un
+   pannello con la legenda tasti della schermata; un tasto qualsiasi lo
+   chiude. Help scritto per menu, NETWORK SCAN, DISCOVERY, HOST DETAIL.
+2. **Header coerente** — le tre schermate di autorizzazione ora usano un
+   unico `chrome::drawAlertHeader` (mantiene il rosso "pericolo", ma
+   centralizzato) invece di disegnarlo a mano.
+3. **Breadcrumb** — `chrome::drawHeader` mostra il genitore di navigazione
+   (`Screen::title()`) come prefisso: es. `>> NET/DISCOVERY`,
+   `>> DISC/SNMP SWEEP`.
+4. **Filtro host list** — `F` cicla il filtro (tutti / risky / con porte);
+   l'indicatore compare accanto al conteggio.
+5. **Progress standard** — `chrome::drawProgressBar`/`drawSpinner`
+   condivisi; applicati a SNMP SWEEP (barra al posto del `%` testuale).
+6. **Legenda colori** — legenda del significato dei colori riga sullo
+   stato idle di NETWORK SCAN (rosso=never-seen, magenta=new, ecc.).
+7. **Empty-state coerente** — `chrome::drawEmptyState` (titolo + hint
+   "prossima azione"); applicato a DATASTORE/SNMP SWEEP.
+8. **HOST DETAIL: spazio ai dati reali** — il radar decorativo è stato
+   rimpicciolito a badge in alto a destra e lo spazio liberato mostra la
+   **lista porte aperte** reali.
+9. **Text-entry password** — caret lampeggiante, indicatore `[TYPING]`, e
+   toggle mostra/nascondi con `TAB`.
+10. **Feedback di completamento** — `UiManager` suona un breve blip
+    (`sound::playDone`, non bloccante) a ogni evento `ScanFinished`,
+    rispettando l'impostazione SOUND.
+
 ## Compilare e flashare
 
 ```

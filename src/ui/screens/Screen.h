@@ -25,4 +25,13 @@ public:
     virtual void update(uint32_t nowMs) { (void)nowMs; }
 
     virtual void draw(M5Canvas& gfx) = 0;
+
+    // Optional metadata used by UiManager/chrome, both defaulting to
+    // nullptr so no existing screen has to change:
+    //  - title(): a SHORT name (a few chars) used as the breadcrumb prefix
+    //    when this screen is the parent of another (see chrome::drawHeader).
+    //  - helpText(): '\n'-separated lines shown by the global '?' help
+    //    overlay (see UiManager). nullptr => a generic help panel.
+    virtual const char* title() const { return nullptr; }
+    virtual const char* helpText() const { return nullptr; }
 };

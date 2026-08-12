@@ -24,12 +24,20 @@ void HostListScreen::onEnter() {
     rebuildAliveList();
 }
 
+bool HostListScreen::matchesFilter(const HostInfo& h) const {
+    switch (_filter) {
+        case Filter::Risky: return h.risk != RiskLevel::Ok || h.credVulnerable;
+        case Filter::WithPorts: return !h.ports.empty();
+        default: return true;
+    }
+}
+
 void HostListScreen::rebuildAliveList() {
     _aliveIndices.clear();
     size_t n = g_scanManager.hostCount();
     HostInfo h;
     for (size_t i = 0; i < n; i++) {
-        if (g_scanManager.getHost(i, h) && h.alive) _aliveIndices.push_back(i);
+        if (g_scanManager.getHost(i, h) && h.alive && matchesFilter(h)) _aliveIndices.push_back(i);
     }
     if (_selected >= _aliveIndices.size()) {
         _selected = _aliveIndices.empty() ? 0 : _aliveIndices.size() - 1;
@@ -175,6 +183,12 @@ void HostListScreen::onKey(UiKey key, char ch) {
                 bool ok = ReportGenerator::generate(fs, "/report.html");
                 _statusLine = ok ? (String("report (") + sdcard::exportFsLabel() + ") /report.html")
                                  : "report FAILED (see serial log)";
+            } else if (ch == 'f' || ch == 'F') {
+                _filter = (_filter == Filter::All)     ? Filter::Risky
+                          : (_filter == Filter::Risky) ? Filter::WithPorts
+                                                       : Filter::All;
+                _selected = 0;
+                rebuildAliveList();
             }
             break;
         default:
@@ -224,9 +238,31 @@ void HostListScreen::draw(M5Canvas& gfx) {
         gfx.setCursor(6, 60);
         gfx.print("ENTER: start scan");
 
+        // Row-color legend (consistent semantics across the app): while
+        // there's room on the idle screen, spell out what the table colors
+        // mean so the populated view doesn't need to.
+        gfx.setCursor(6, 78);
+        gfx.setTextColor(theme::RED, theme::BG);
+        gfx.print("red");
+        gfx.setTextColor(theme::GREY, theme::BG);
+        gfx.print("=never-seen  ");
+        gfx.setTextColor(theme::MAGENTA, theme::BG);
+        gfx.print("mag");
+        gfx.setTextColor(theme::GREY, theme::BG);
+        gfx.print("=new");
+        gfx.setCursor(6, 88);
+        gfx.setTextColor(theme::AMBER, theme::BG);
+        gfx.print("amber");
+        gfx.setTextColor(theme::GREY, theme::BG);
+        gfx.print("=warning  ");
+        gfx.setTextColor(theme::GREEN, theme::BG);
+        gfx.print("green");
+        gfx.setTextColor(theme::GREY, theme::BG);
+        gfx.print("=ok");
+
         gfx.setTextColor(theme::GREY, theme::BG);
         gfx.setCursor(4, gfx.height() - 9);
-        gfx.print("ENTER:scan D:discovery W:wifi DEL:bk");
+        gfx.print("ENTER:scan D:discovery W:wifi ?:help");
         return;
     }
 
@@ -240,8 +276,13 @@ void HostListScreen::draw(M5Canvas& gfx) {
 
     gfx.setTextColor(running ? theme::CYAN : theme::GREEN, theme::BG);
     gfx.setCursor(4, 18);
-    gfx.print("HOSTS FOUND: ");
+    gfx.print("HOSTS: ");
     gfx.print((unsigned)_aliveIndices.size());
+    if (_filter != Filter::All) {
+        gfx.setTextColor(theme::MAGENTA, theme::BG);
+        gfx.print(_filter == Filter::Risky ? " [risky]" : " [ports]");
+        gfx.setTextColor(running ? theme::CYAN : theme::GREEN, theme::BG);
+    }
     if (!running) {
         // "+N" (magenta) = new since the immediately previous scan;
         // "!N" (red) = never seen in ANY past scan of this network -
@@ -277,7 +318,7 @@ void HostListScreen::draw(M5Canvas& gfx) {
 
     gfx.setTextColor(theme::GREY, theme::BG);
     gfx.setCursor(4, gfx.height() - 9);
-    gfx.print("ENTER:host D:disc E:exp R:rep W:wifi");
+    gfx.print("ENTER:host D:disc F:filt E:exp ?:help");
 }
 
 void HostListScreen::drawTable(M5Canvas& gfx, int16_t top) {

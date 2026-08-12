@@ -38,13 +38,17 @@ void SnmpScreen::draw(M5Canvas& gfx) {
     gfx.setCursor(6, 18);
     gfx.print("public: ");
     gfx.print((unsigned)g_snmpSweep.count());
+
     if (running) {
-        gfx.print("  ");
-        gfx.print((unsigned)g_snmpSweep.progressPct());
-        gfx.print("%");
+        // Standard progress bar (shared chrome helper) instead of a bare %.
+        chrome::drawProgressBar(gfx, 90, 18, 110, 8, g_snmpSweep.progressPct());
     }
 
     drawResponders(gfx, 30);
+
+    if (g_snmpSweep.count() == 0 && !running) {
+        chrome::drawEmptyState(gfx, "no SNMP 'public' responders", "ENTER: sweep (needs a scan first)");
+    }
 
     gfx.setTextColor(theme::MAGENTA, theme::BG);
     gfx.setCursor(6, gfx.height() - 20);

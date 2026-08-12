@@ -103,3 +103,8 @@ void sound::playCredAlert() {
     M5Cardputer.Speaker.tone(600, 260);
     delay(280);
 }
+
+void sound::playDone() {
+    if (!g_config.uiSoundEnabled) return;
+    M5Cardputer.Speaker.tone(2200, 90);  // async, non-blocking - safe on the UI task
+}

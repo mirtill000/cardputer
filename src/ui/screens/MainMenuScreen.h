@@ -21,6 +21,11 @@ public:
     void onKey(UiKey key, char ch) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* title() const override { return "MENU"; }
+    const char* helpText() const override {
+        return "MAIN MENU\n\nArrows: move selection\nENTER: open highlighted tool\n\nDiscovery tools live under\nNETWORK SCAN -> press D.";
+    }
+
 private:
     const MenuItem* _items = nullptr;
     uint8_t _count = 0;
