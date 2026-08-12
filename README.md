@@ -1561,9 +1561,12 @@ punto"): i sette strumenti di discovery che erano voci separate del menu
 principale — **LAN TOPOLOGY, UPNP DISCOVERY, SERVICE SCAN, PASSIVE HOSTS,
 ROGUE DHCP, SNMP SWEEP, DATASTORE SWEEP** — sono ora dietro un unico
 sotto-menu **DISCOVERY** (`ui/screens/DiscoveryMenuScreen`), raggiungibile
-con **`D` da NETWORK SCAN**. Il menu principale scende da 16 a **9 voci**
-(WIFI SCAN, NETWORK SCAN, AUTO ASSESS, THREATS, PORT SCANNER, CREDENTIAL
-AUDIT, SCAN HISTORY, WAR DRIVING, SETTINGS). I manager di background sono
+con **`D` da NETWORK SCAN**. Il menu principale scende a **7 voci**
+(WIFI SCAN, NETWORK SCAN, AUTO ASSESS, THREATS, SCAN HISTORY, WAR DRIVING,
+SETTINGS): `PORT SCANNER` e `CREDENTIAL AUDIT` sono stati tolti dal menu
+perché erano solo schermate informative (`PlaceholderScreen`) che non
+avviavano nulla — sono azioni per-host da HOST DETAIL (`TAB` per il port
+scan, `C` per l'audit credenziali). I manager di background sono
 sempre avviati in `setup()` come prima — è cambiata solo la navigazione,
 non la logica. Ogni strumento gestisce da sé i propri prerequisiti (es.
 SNMP/DATASTORE ricordano di lanciare prima un NETWORK SCAN).

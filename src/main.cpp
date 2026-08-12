@@ -6,7 +6,6 @@
 #include "ui/UiManager.h"
 #include "ui/screens/BootScreen.h"
 #include "ui/screens/MainMenuScreen.h"
-#include "ui/screens/PlaceholderScreen.h"
 #include "ui/screens/HostListScreen.h"
 #include "ui/screens/WifiSetupScreen.h"
 #include "ui/screens/SettingsScreen.h"
@@ -48,13 +47,7 @@
 namespace {
 BootScreen g_bootScreen;
 
-// Placeholder targets for modules that land in later development
-// phases (see README.md roadmap). Swapping a MenuItem's target to a
-// real screen is the only change needed once a module ships.
-PlaceholderScreen g_portScanScreen;
-PlaceholderScreen g_credAuditScreen;
-
-MenuItem g_menuItems[9];
+MenuItem g_menuItems[7];
 }  // namespace
 
 void setup() {
@@ -76,29 +69,21 @@ void setup() {
     g_ouiDb.begin();
     g_portServiceDb.begin();
 
-    g_portScanScreen.configure(
-        "PORT SCANNER",
-        "Port scanning targets one host at a time: run NETWORK SCAN, select a "
-        "discovered host, then press TAB on its detail screen.");
-    g_credAuditScreen.configure(
-        "CREDENTIAL AUDIT",
-        "Also per-host: from a host's detail screen, press C. You'll see an "
-        "authorization disclaimer the first time each session before anything "
-        "runs - this is a real credential-attack tool (built-in defaults plus "
-        "your own wordlists), not just a known-defaults check.");
-
+    // PORT SCANNER and CREDENTIAL AUDIT are NOT top-level menu entries:
+    // both are per-host actions reached from HOST DETAIL (TAB for a port
+    // scan, C for a credential audit). They used to be informational
+    // PlaceholderScreen items that just explained that — removed here since
+    // they started no activity of their own.
     g_menuItems[0] = {"WIFI SCAN", &WifiSetupScreen::instance()};
     g_menuItems[1] = {"NETWORK SCAN", &HostListScreen::instance()};
     g_menuItems[2] = {"AUTO ASSESS", &AssessmentScreen::instance()};
     g_menuItems[3] = {"THREATS", &ThreatsScreen::instance()};
-    g_menuItems[4] = {"PORT SCANNER", &g_portScanScreen};
-    g_menuItems[5] = {"CREDENTIAL AUDIT", &g_credAuditScreen};
-    g_menuItems[6] = {"SCAN HISTORY", &ScanHistoryScreen::instance()};
-    g_menuItems[7] = {"WAR DRIVING", &WardrivingScreen::instance()};
-    g_menuItems[8] = {"SETTINGS", &SettingsScreen::instance()};
+    g_menuItems[4] = {"SCAN HISTORY", &ScanHistoryScreen::instance()};
+    g_menuItems[5] = {"WAR DRIVING", &WardrivingScreen::instance()};
+    g_menuItems[6] = {"SETTINGS", &SettingsScreen::instance()};
     // The seven discovery tools moved under NETWORK SCAN -> 'D' (see
     // DiscoveryMenuScreen); their managers are still begin()'d below.
-    MainMenuScreen::instance().configure(g_menuItems, 9);
+    MainMenuScreen::instance().configure(g_menuItems, 7);
 
     // MainMenuScreen must already be configured by this point: once the
     // render task starts, BootScreen can transition straight to it on
