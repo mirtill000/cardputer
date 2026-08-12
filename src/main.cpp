@@ -29,6 +29,8 @@
 #include "scan/ServiceEnumerator.h"
 #include "scan/SnmpSweep.h"
 #include "scan/AssessmentRunner.h"
+#include "scan/DataStoreProbe.h"
+#include "scan/ServiceAuditManager.h"
 #include "net/WifiManager.h"
 #include "net/CaptivePortalDetector.h"
 #include "net/TimeSync.h"
@@ -43,6 +45,7 @@
 #include "ui/screens/SnmpScreen.h"
 #include "ui/screens/ThreatsScreen.h"
 #include "ui/screens/AssessmentScreen.h"
+#include "ui/screens/DataStoreScreen.h"
 
 namespace {
 BootScreen g_bootScreen;
@@ -53,7 +56,7 @@ BootScreen g_bootScreen;
 PlaceholderScreen g_portScanScreen;
 PlaceholderScreen g_credAuditScreen;
 
-MenuItem g_menuItems[15];
+MenuItem g_menuItems[16];
 }  // namespace
 
 void setup() {
@@ -100,8 +103,9 @@ void setup() {
     g_menuItems[11] = {"PASSIVE HOSTS", &PassiveHostScreen::instance()};
     g_menuItems[12] = {"ROGUE DHCP", &RogueDhcpScreen::instance()};
     g_menuItems[13] = {"SNMP SWEEP", &SnmpScreen::instance()};
-    g_menuItems[14] = {"SETTINGS", &SettingsScreen::instance()};
-    MainMenuScreen::instance().configure(g_menuItems, 15);
+    g_menuItems[14] = {"DATASTORE SWEEP", &DataStoreScreen::instance()};
+    g_menuItems[15] = {"SETTINGS", &SettingsScreen::instance()};
+    MainMenuScreen::instance().configure(g_menuItems, 16);
 
     // MainMenuScreen must already be configured by this point: once the
     // render task starts, BootScreen can transition straight to it on
@@ -127,6 +131,8 @@ void setup() {
     g_snmpSweep.begin(g_ui.scanQueue());
     g_assessmentRunner.begin(g_ui.scanQueue());
     g_captivePortalDetector.begin(g_ui.scanQueue());
+    g_dataStoreProbe.begin(g_ui.scanQueue());
+    g_serviceAuditManager.begin(g_ui.scanQueue());
 
     // Non-blocking: if a network was saved from a previous WIFI SCAN
     // run, this kicks the connection off immediately at boot instead of

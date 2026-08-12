@@ -1487,6 +1487,47 @@ Due richieste, di cui una accolta e una **deliberatamente declinata**.
   forma legittima e resta implementabile solo su richiesta esplicita per
   quel caso.
 
+### Fase 21: data-store esposti + audit servizi per-host (DB/VNC/FTP/SMB/HTTP)
+
+Cinque sviluppi offensive scelti dall'utente (1, 2, 4, 5, 8 di una lista
+di dieci), per un assessment autorizzato. La crypto necessaria usa
+**`mbedtls`** (già su ESP32: SHA1/MD5/DES) — libreria, non primitive
+scritte a mano, coerente col principio che aveva escluso SSH.
+
+- **DataStore sweep (item 1)** (`scan/DataStoreProbe`, voce di menu
+  `DATASTORE SWEEP`): sweep read-only sugli host vivi che cerca i data
+  store più spesso lasciati esposti senza autenticazione — **Redis**
+  (6379, `PING`/`INFO`), **Memcached** (11211, `version`),
+  **Elasticsearch** (9200, `GET /`), **MongoDB** (27017, `isMaster` +
+  `listDatabases`). Segnala in rosso quelli raggiungibili **senza auth**.
+  Non gated: è detection read-only, stessa fascia di SNMP `public`.
+- **Service audit per-host (item 2/4/5/8)** (`scan/ServiceAuditManager`,
+  tasto `V` da `HOST DETAIL`, dietro lo stesso gate del CREDENTIAL AUDIT):
+  dato un host già scansionato, guarda le sue porte aperte e lancia i
+  check pertinenti, raccogliendo i finding:
+  - **FTP (21)** — login **anonimo** + test di scrivibilità (item 5).
+  - **SMB (445)** — negotiate + **null session** SMB1 nel path
+    non-extended-security (item 5).
+  - **Redis (6379)** — no-auth + `AUTH` con password di default (item 2).
+  - **MySQL (3306)** — `mysql_native_password` con credenziali di default
+    (mbedtls SHA1) (item 2).
+  - **PostgreSQL (5432)** — trust/cleartext/MD5 di default (mbedtls MD5);
+    SCRAM rilevato e segnalato, non brute-forzato (item 2).
+  - **VNC (5900)** — no-auth + brute della challenge DES con password di
+    default (mbedtls DES) (item 4).
+  - **HTTP (80/8080/8000/8888)** — brute **basic-auth** con credenziali di
+    default (item 8).
+  Ogni brute usa un **set compatto di credenziali di default** (non l'intera
+  wordlist) per tenere bounded gli handshake sui protocolli binari.
+
+- **Scoping deliberato di questo batch** (vedi anche "Limiti noti"):
+  **MSSQL** (TDS), **NFS `showmount`** (RPC) e il **`NetShareEnum` SMB
+  completo** (DCE-RPC, già declinato in Fase 18) restano fuori.
+  **MySQL 8 `caching_sha2_password`** non è gestito (funziona contro
+  MySQL 5.7/MariaDB native). **PostgreSQL SCRAM** viene rilevato ma non
+  brute-forzato. Il **form-login brute HTTP** è rimandato (basic-auth è
+  pieno). Nulla di distruttivo: solo tentativi di login/anon, rate-limited.
+
 ## Compilare e flashare
 
 ```
@@ -1673,6 +1714,15 @@ originale.
       che fa ogni OS). Il **bypass** del portale è stato **declinato di
       proposito** (accesso non autorizzato a reti di terzi) — vedi sopra e
       "Limiti noti".
+- [x] **Fase 21 — Data-store esposti + audit servizi per-host**: cinque
+      sviluppi offensive (1,2,4,5,8 di una lista di dieci) per assessment
+      autorizzato — sweep `DATASTORE SWEEP` dei data store senza auth
+      (Redis/Memcached/Elasticsearch/MongoDB, read-only) e `SERVICE AUDIT`
+      per-host (`V` da HOST DETAIL, gated) con anon-access + default-creds
+      su FTP/SMB/Redis/MySQL/PostgreSQL/VNC/HTTP. Crypto via `mbedtls`
+      (SHA1/MD5/DES), non artigianale. MSSQL/NFS/SMB-NetShareEnum/MySQL-8
+      caching_sha2/PG-SCRAM/HTTP-form fuori scope — vedi sopra e "Limiti
+      noti".
 
 ## Test plan — Fase 1
 
@@ -2365,6 +2415,37 @@ di bilanciamento parentesi in locale. Da verificare su hardware:
    sysDescr. La barra di progresso avanza fino al 100%. Nessun host vivo →
    messaggio che invita a fare prima `NETWORK SCAN`.
 
+## Test plan — Fase 21 (data-store esposti + audit servizi per-host)
+
+Molto codice di protocollo nuovo e mai compilato — solo controllo parentesi
+in locale. Serve un lab di test **autorizzato** con i servizi accesi. Da
+verificare su hardware:
+
+1. **DATASTORE SWEEP**: con un Redis/Memcached/Elasticsearch/MongoDB senza
+   password sulla rete (dopo un `NETWORK SCAN`), `ENTER` deve elencarli con
+   la label **NO-AUTH** in rosso e la versione; un Redis con `requirepass`
+   deve apparire come "auth required" (ambra). La barra arriva al 100%.
+2. **SERVICE AUDIT gate**: `V` su `HOST DETAIL`. Se il CREDENTIAL AUDIT non
+   è mai stato autorizzato in sessione, deve comparire prima il disclaimer
+   (Y per procedere); una volta autorizzato, parte l'audit.
+3. **FTP anonimo**: su un FTP che consente `anonymous`, il finding deve
+   dire "anonymous login ALLOWED" (e "(WRITABLE)" se si riesce a fare MKD).
+4. **Redis default-pw**: Redis con `requirepass foobared` → finding
+   "default password 'foobared'".
+5. **MySQL/PostgreSQL**: contro MySQL 5.7/MariaDB con `root` a password
+   nota della lista, e Postgres con `postgres` trust/default, il finding
+   deve mostrare la coppia valida. MySQL 8 (caching_sha2) → finding "auth
+   plugin ... unsupported" (atteso, fuori scope). Postgres SCRAM → "SCRAM
+   (not brute-forced)".
+6. **VNC**: server VNC senza password → "NO authentication"; con una
+   password della lista → "default password '...'".
+7. **HTTP basic-auth**: pannello con realm Basic e credenziali di default
+   → finding con la coppia; senza realm Basic non deve comparire nulla
+   (il form-brute è fuori scope).
+8. **SMB null session**: contro un server che accetta la sessione anonima
+   (Samba mal configurato) → "anonymous (null) session ACCEPTED"; server
+   con extended security → "extended security (null session not tested)".
+
 ## Limiti noti e tagli di scope deliberati
 
 Riepilogo di quanto già menzionato nelle sezioni sopra, in un unico
@@ -2552,6 +2633,19 @@ posto:
   degli strumenti offensivi gated che sono inquadrati come test della
   propria rete. Un tester a singolo target esplicito e autorizzato, dietro
   il gate `OFFENSIVE`, sarebbe l'unica forma legittima (non implementato).
+- **Audit servizi/DB: scope contenuto e crypto di libreria** (Fase 21):
+  `ServiceAuditManager` copre FTP/SMB/Redis/MySQL/PostgreSQL/VNC/HTTP con
+  anon-access + credenziali di default, usando `mbedtls` (SHA1/MD5/DES),
+  **non** crypto artigianale. Fuori scope deliberatamente: **MSSQL** (TDS),
+  **NFS `showmount`** (RPC), **`NetShareEnum` SMB completo** (DCE-RPC, già
+  declinato in Fase 18), **MySQL 8 `caching_sha2_password`** (funziona su
+  5.7/MariaDB native), **PostgreSQL SCRAM** (rilevato, non brute-forzato) e
+  il **form-login brute HTTP** (basic-auth è pieno). I brute usano un set
+  compatto di credenziali di default, non l'intera wordlist. Nessuna
+  operazione distruttiva: solo tentativi di login/anonimi, rate-limited, e
+  dietro lo stesso gate di consenso del CREDENTIAL AUDIT. La detection dei
+  data-store esposti (`DataStoreProbe`) è read-only e non gated, come lo
+  sweep SNMP.
 - **Scoperta host passiva: lista separata, solo reti aperte** (Fase 19):
   non viene fusa nella tabella di `ScanManager` (per non toccare la sua
   logica di generazione, già verificata) e, come tutta la famiglia

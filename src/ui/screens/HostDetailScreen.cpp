@@ -4,6 +4,7 @@
 #include "CredDisclaimerScreen.h"
 #include "HttpBruteScreen.h"
 #include "SmbScreen.h"
+#include "ServiceAuditScreen.h"
 #include "MitmScreen.h"
 #include "OffensiveDisclaimerScreen.h"
 #include "../UiManager.h"
@@ -67,6 +68,15 @@ void HostDetailScreen::onKey(UiKey key, char ch) {
                 break;
             }
         }
+        return;
+    }
+    if (key == UiKey::Char && (ch == 'v' || ch == 'V')) {
+        HostInfo h;
+        if (!g_scanManager.getHost(_hostIndex, h)) return;
+        // Per-host service audit (anon access + default creds). The
+        // consent gate lives inside ServiceAuditScreen itself.
+        ServiceAuditScreen::instance().setTarget(h.ip);
+        g_ui.pushScreen(&ServiceAuditScreen::instance());
         return;
     }
     if (key == UiKey::Char && (ch == 'm' || ch == 'M')) {
@@ -211,5 +221,5 @@ void HostDetailScreen::draw(M5Canvas& gfx) {
 
     gfx.setTextColor(theme::GREY, theme::BG);
     gfx.setCursor(4, gfx.height() - 9);
-    gfx.print("TAB:ports  C:creds  DEL:back");
+    gfx.print("TAB:ports C:creds V:svc DEL:back");
 }
