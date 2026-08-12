@@ -1,6 +1,7 @@
 #pragma once
 
 #include <M5GFX.h>
+#include <WiFi.h>  // wifi_auth_mode_t for the security-label helpers
 
 // Shared screen chrome: every screen used to hand-roll its own ">> TITLE"
 // header + separator line. Centralizing it here (a) keeps that pixel-
@@ -43,5 +44,23 @@ void drawPerspectiveGrid(M5Canvas& gfx, int16_t top, int16_t bottom, uint16_t co
 // own background as part of printing, so text drawn afterward cleanly
 // erases any dots underneath it.
 void drawDigitalFog(M5Canvas& gfx, int16_t x, int16_t y, int16_t w, int16_t h);
+
+// --- Shared WiFi-list widgets (used by WIFI SCAN and WAR DRIVING so both
+// render RSSI/security identically). ---
+
+// Four-bar signal meter, ~18px wide, bars growing left-to-right, bottom
+// edge on baselineY. Filled bars up to the RSSI's strength level; the
+// rest drawn as empty grey outlines. Color: green (strong) / amber
+// (medium) / red (weak).
+void drawSignalBars(M5Canvas& gfx, int16_t x, int16_t baselineY, int32_t rssi);
+
+// Small (~7x7) stylised WiFi glyph (dot + two arcs) at top-left (x, y).
+void drawWifiIcon(M5Canvas& gfx, int16_t x, int16_t y, uint16_t color);
+
+// Short security label ("OPEN"/"WEP"/"WPA"/"WPA2"/"WPA2-ENT"/"WPA3") and
+// a matching color (weaker schemes lean red/amber, WPA2+/enterprise
+// green/cyan) for a scan result's encryption mode.
+const char* securityLabel(wifi_auth_mode_t enc);
+uint16_t securityColor(wifi_auth_mode_t enc);
 
 }  // namespace chrome

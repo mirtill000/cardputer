@@ -104,6 +104,52 @@ void chrome::drawDigitalFog(M5Canvas& gfx, int16_t x, int16_t y, int16_t w, int1
     }
 }
 
+void chrome::drawSignalBars(M5Canvas& gfx, int16_t x, int16_t baselineY, int32_t rssi) {
+    int level = (rssi >= -60) ? 4 : (rssi >= -68) ? 3 : (rssi >= -75) ? 2 : 1;
+    uint16_t col = (level >= 3) ? theme::GREEN : (level == 2) ? theme::AMBER : theme::RED;
+    for (int i = 0; i < 4; i++) {
+        int16_t h = (int16_t)(2 + i * 2);  // 2,4,6,8
+        int16_t bx = (int16_t)(x + i * 4);
+        int16_t by = (int16_t)(baselineY - h);
+        if (i < level)
+            gfx.fillRect(bx, by, 3, h, col);
+        else
+            gfx.drawRect(bx, by, 3, h, theme::GREY);
+    }
+}
+
+void chrome::drawWifiIcon(M5Canvas& gfx, int16_t x, int16_t y, uint16_t color) {
+    gfx.fillCircle(x + 3, y + 6, 1, color);          // base dot
+    gfx.drawLine(x + 1, y + 4, x + 3, y + 2, color);  // inner arc
+    gfx.drawLine(x + 3, y + 2, x + 5, y + 4, color);
+    gfx.drawLine(x, y + 3, x + 3, y, color);          // outer arc
+    gfx.drawLine(x + 3, y, x + 6, y + 3, color);
+}
+
+const char* chrome::securityLabel(wifi_auth_mode_t enc) {
+    switch (enc) {
+        case WIFI_AUTH_OPEN: return "OPEN";
+        case WIFI_AUTH_WEP: return "WEP";
+        case WIFI_AUTH_WPA_PSK: return "WPA";
+        case WIFI_AUTH_WPA2_PSK: return "WPA2";
+        case WIFI_AUTH_WPA_WPA2_PSK: return "WPA2";
+        case WIFI_AUTH_WPA2_ENTERPRISE: return "WPA2-ENT";
+        case WIFI_AUTH_WPA3_PSK: return "WPA3";
+        case WIFI_AUTH_WPA2_WPA3_PSK: return "WPA3";
+        default: return "WPA2";
+    }
+}
+
+uint16_t chrome::securityColor(wifi_auth_mode_t enc) {
+    switch (enc) {
+        case WIFI_AUTH_OPEN: return theme::AMBER;
+        case WIFI_AUTH_WEP: return theme::RED;
+        case WIFI_AUTH_WPA_PSK: return theme::AMBER;
+        case WIFI_AUTH_WPA2_ENTERPRISE: return theme::CYAN;
+        default: return theme::GREEN;
+    }
+}
+
 void chrome::drawHeader(M5Canvas& gfx, const char* title) {
     gfx.setTextColor(theme::CYAN, theme::BG);
     gfx.setCursor(4, 4);

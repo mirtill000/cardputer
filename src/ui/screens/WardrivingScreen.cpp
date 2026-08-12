@@ -11,6 +11,7 @@
 #include "../TextWrap.h"
 #include "../../core/Config.h"
 #include "../../scan/WardrivingManager.h"
+#include <cstdio>
 
 namespace {
 constexpr size_t kMaxAllowlistLen = 32;
@@ -28,6 +29,11 @@ void WardrivingScreen::onEnter() {
     // re-entering this screen needs to pick that back up.
     _state = g_wardrivingManager.isRunning() ? State::Running : State::Idle;
     _logCount = 0;
+    // Approximate the recording clock across screen re-entry: if we come
+    // back while a session is already running and haven't stamped a start
+    // yet, stamp it now (the manager runs in the background, so this is a
+    // UI-side timer, not the true session start).
+    if (_state == State::Running && _recordStartMs == 0) _recordStartMs = millis();
 }
 
 void WardrivingScreen::onExit() {
@@ -54,6 +60,7 @@ void WardrivingScreen::onKey(UiKey key, char ch) {
             if (key == UiKey::Enter) {
                 g_wardrivingManager.start();
                 _logCount = 0;
+                _recordStartMs = millis();
                 _state = State::Running;
             } else if (key == UiKey::Up) {
                 if (_sightingsSelected > 0) _sightingsSelected--;
@@ -191,26 +198,8 @@ void WardrivingScreen::draw(M5Canvas& gfx) {
 
     switch (_state) {
         case State::Idle: {
-            gfx.setTextColor(theme::GREEN, theme::BG);
-            gfx.setCursor(6, 18);
-            gfx.print("seen:");
-            gfx.print((unsigned)g_wardrivingManager.sightingCount());
-            gfx.print(" open:");
-            gfx.print((unsigned)g_wardrivingManager.openCount());
-            gfx.print(" disc:");
-            gfx.print((unsigned)g_wardrivingManager.discoveredCount());
-            if (g_wardrivingManager.suspiciousCount() > 0) {
-                gfx.setTextColor(theme::RED, theme::BG);
-                gfx.print(" evil:");
-                gfx.print((unsigned)g_wardrivingManager.suspiciousCount());
-            }
-
-            drawSightings(gfx, 30);
-
-            gfx.setTextColor(theme::MAGENTA, theme::BG);
-            gfx.setCursor(6, gfx.height() - 20);
-            gfx.print("ENTER: start passive scan");
-
+            drawStatusStrip(gfx, /*recording=*/false);
+            drawSightings(gfx, 56);
             gfx.setTextColor(theme::GREY, theme::BG);
             gfx.setCursor(4, gfx.height() - 9);
             gfx.print("TAB:loc A:al C:cn E:twn X:dth P:pmk");
@@ -218,34 +207,8 @@ void WardrivingScreen::draw(M5Canvas& gfx) {
         }
 
         case State::Running: {
-            gfx.setTextColor(theme::CYAN, theme::BG);
-            gfx.setCursor(6, 18);
-            gfx.print("seen:");
-            gfx.print((unsigned)g_wardrivingManager.sightingCount());
-            gfx.print(" open:");
-            gfx.print((unsigned)g_wardrivingManager.openCount());
-            gfx.print(" disc:");
-            gfx.print((unsigned)g_wardrivingManager.discoveredCount());
-            if (g_wardrivingManager.suspiciousCount() > 0) {
-                gfx.setTextColor(theme::RED, theme::BG);
-                gfx.print(" evil:");
-                gfx.print((unsigned)g_wardrivingManager.suspiciousCount());
-            }
-
-            gfx.setTextColor(theme::GREY, theme::BG);
-            gfx.drawFastHLine(4, 29, gfx.width() - 8, theme::GREY);
-
-            for (uint8_t i = 0; i < _logCount; i++) {
-                int16_t y = 32 + i * 9;
-                bool isEvilTwin = _log[i].indexOf("evil twin") >= 0;
-                bool isOpen = _log[i].indexOf("(OPEN)") >= 0;
-                gfx.setTextColor(isEvilTwin ? theme::RED : (isOpen ? theme::AMBER : theme::GREEN), theme::BG);
-                gfx.setCursor(6, y);
-                String line = _log[i];
-                if (line.length() > 37) line = line.substring(0, 37);
-                gfx.print(line);
-            }
-
+            drawStatusStrip(gfx, /*recording=*/true);
+            drawSightings(gfx, 56);
             gfx.setTextColor(theme::GREY, theme::BG);
             gfx.setCursor(4, gfx.height() - 9);
             gfx.print("ENTER:stop A:allowlist DEL:back(bg)");
@@ -323,15 +286,65 @@ void WardrivingScreen::drawAllowlist(M5Canvas& gfx, int16_t top) {
     }
 }
 
+void WardrivingScreen::drawStatusStrip(M5Canvas& gfx, bool recording) {
+    // Status box: STATUS + session TIME.
+    gfx.drawRect(4, 18, gfx.width() - 8, 13, theme::CYAN);
+    gfx.setTextColor(theme::GREY, theme::BG);
+    gfx.setCursor(8, 20);
+    gfx.print("STATUS: ");
+    gfx.setTextColor(recording ? theme::GREEN : theme::AMBER, theme::BG);
+    gfx.print(recording ? "RECORDING" : "STANDBY");
+
+    uint32_t sec = recording ? (millis() - _recordStartMs) / 1000 : 0;
+    char t[12];
+    snprintf(t, sizeof(t), "%02u:%02u:%02u", (unsigned)(sec / 3600), (unsigned)((sec / 60) % 60),
+             (unsigned)(sec % 60));
+    gfx.setTextColor(theme::GREY, theme::BG);
+    gfx.setCursor(150, 20);
+    gfx.print("TIME ");
+    gfx.setTextColor(theme::CYAN, theme::BG);
+    gfx.print(t);
+
+    // Four real-metric stat boxes (no GPS/SPEED on this hardware — see
+    // README "Limiti noti"): APs seen, open, discovered, evil-twin.
+    struct Box {
+        const char* label;
+        uint32_t value;
+        uint16_t color;
+    };
+    uint32_t evil = g_wardrivingManager.suspiciousCount();
+    Box boxes[4] = {
+        {"SEEN", (uint32_t)g_wardrivingManager.sightingCount(), theme::CYAN},
+        {"OPEN", g_wardrivingManager.openCount(), theme::AMBER},
+        {"DISC", g_wardrivingManager.discoveredCount(), theme::MAGENTA},
+        {"EVIL", evil, evil ? theme::RED : theme::GREEN},
+    };
+    const int16_t bx[4] = {4, 60, 116, 172};
+    for (int i = 0; i < 4; i++) {
+        gfx.drawRect(bx[i], 34, 54, 20, theme::MAGENTA);
+        gfx.setTextColor(theme::GREY, theme::BG);
+        gfx.setCursor(bx[i] + 4, 37);
+        gfx.print(boxes[i].label);
+        gfx.setTextColor(boxes[i].color, theme::BG);
+        gfx.setCursor(bx[i] + 4, 46);
+        gfx.print((unsigned)boxes[i].value);
+    }
+}
+
 void WardrivingScreen::drawSightings(M5Canvas& gfx, int16_t top) {
     size_t count = g_wardrivingManager.sightingCount();
-    if (count == 0) return;
+    if (count == 0) {
+        gfx.setTextColor(theme::GREY, theme::BG);
+        gfx.setCursor(6, top + 6);
+        gfx.print(g_wardrivingManager.isRunning() ? "scanning for APs..." : "no APs logged yet");
+        return;
+    }
 
     gfx.setTextColor(theme::GREY, theme::BG);
     gfx.drawFastHLine(4, top, gfx.width() - 8, theme::GREY);
 
     constexpr int16_t kRowH = 10;
-    constexpr size_t kMaxRows = 8;
+    constexpr size_t kMaxRows = 6;
 
     size_t first = 0;
     if (_sightingsSelected >= kMaxRows) first = _sightingsSelected - kMaxRows + 1;
@@ -342,29 +355,42 @@ void WardrivingScreen::drawSightings(M5Canvas& gfx, int16_t top) {
         if (i >= count) break;
         if (!g_wardrivingManager.getSighting(i, ap)) continue;
 
-        int16_t y = top + 2 + (int16_t)row * kRowH;
+        int16_t y = top + 3 + (int16_t)row * kRowH;
         bool sel = (i == _sightingsSelected);
         uint16_t rowBg = sel ? theme::PANEL_BG : theme::BG;
-        if (sel) gfx.fillRect(0, y, gfx.width(), kRowH, rowBg);
+        if (sel) gfx.fillRect(0, y - 1, gfx.width(), kRowH, rowBg);
 
-        // Priority: possible evil twin outranks everything else here -
-        // it's a stronger, more specific claim than "discovered" or
-        // merely "open".
+        // Priority: possible evil twin outranks discovered, which outranks
+        // merely-open, which outranks a normal secured AP.
         uint16_t color = sel ? theme::CYAN
-                              : (ap.suspicious ? theme::RED
-                                                : (ap.discovered ? theme::MAGENTA
-                                                                  : (ap.open ? theme::AMBER : theme::GREEN)));
+                             : (ap.suspicious ? theme::RED
+                                              : (ap.discovered ? theme::MAGENTA
+                                                               : (ap.open ? theme::AMBER : theme::GREEN)));
+        if (sel) {
+            gfx.setTextColor(theme::CYAN, rowBg);
+            gfx.setCursor(1, y);
+            gfx.print(">");
+        }
         gfx.setTextColor(color, rowBg);
-        gfx.setCursor(6, y);
-
+        gfx.setCursor(8, y);
         String ssid = ap.ssid;
-        if (ssid.length() > 20) ssid = ssid.substring(0, 20);
+        if (ssid.length() > 15) ssid = ssid.substring(0, 15);
         gfx.print(ssid);
 
-        gfx.setCursor(160, y);
-        gfx.print(ap.rssi);
+        gfx.setTextColor(sel ? theme::CYAN : theme::GREY, rowBg);
+        gfx.setCursor(104, y);
+        gfx.print(ap.channel);
 
-        gfx.setCursor(190, y);
-        gfx.print(ap.suspicious ? "!EVIL" : (ap.open ? "OPEN" : ""));
+        chrome::drawSignalBars(gfx, 126, y + 8, ap.rssi);
+
+        gfx.setTextColor(sel ? theme::CYAN : chrome::securityColor(ap.encryption), rowBg);
+        gfx.setCursor(150, y);
+        gfx.print(chrome::securityLabel(ap.encryption));
+
+        if (ap.suspicious) {
+            gfx.setTextColor(theme::RED, rowBg);
+            gfx.setCursor(212, y);
+            gfx.print("!");
+        }
     }
 }

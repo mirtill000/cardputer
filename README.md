@@ -1531,6 +1531,29 @@ scritte a mano, coerente col principio che aveva escluso SSH.
   brute-forzato. Il **form-login brute HTTP** è rimandato (basic-auth è
   pieno). Nulla di distruttivo: solo tentativi di login/anon, rate-limited.
 
+### Fase 22: restyle GUI di WIFI SCAN e WAR DRIVING (da mockup)
+
+Restyle delle due schermate su mockup forniti dall'utente, restando dentro
+il tema esistente (stessi colori/font, `chrome::drawHeader` invariato per
+non divergere dalle altre ~20 schermate).
+
+- **Widget condivisi** (`ui/Chrome`): `drawSignalBars` (meter a 4 barre
+  colorato verde/ambra/rosso per RSSI), `drawWifiIcon`, `securityLabel`/
+  `securityColor` (OPEN/WEP/WPA/WPA2/WPA2-ENT/WPA3) — così WIFI SCAN e
+  WAR DRIVING rendono RSSI e sicurezza in modo identico.
+- **WIFI SCAN**: la lista reti è ora una tabella `SSID · CH · RSSI · SEC`
+  con intestazioni magenta, icona wifi, chevron di selezione, barre di
+  segnale e riga "... N more networks" — tutti dati reali dallo scan.
+- **WAR DRIVING**: box di stato `STATUS: RECORDING/STANDBY` + `TIME`
+  (timer di sessione lato UI), strip di 4 riquadri e lista AP con le
+  stesse barre/sicurezza.
+- **Niente GPS inventato**: il mockup War Driving mostrava `GPS 3D FIX`,
+  `SPEED` e una mappa stradale con percorso. Il Cardputer ADV **non ha
+  GPS** (vedi "Limiti noti"), quindi quei riquadri sono stati sostituiti
+  con metriche **reali** (SEEN/OPEN/DISC/EVIL) e al posto della mappa
+  geografica c'è la lista reale degli AP. Come per il radar dell'host
+  detail, questo firmware non mostra dati sensore fabbricati.
+
 ## Compilare e flashare
 
 ```

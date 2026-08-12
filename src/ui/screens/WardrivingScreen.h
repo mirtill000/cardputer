@@ -26,6 +26,7 @@ private:
     void pushLog(const String& line);
     void drawAllowlist(M5Canvas& gfx, int16_t top);
     void drawSightings(M5Canvas& gfx, int16_t top);
+    void drawStatusStrip(M5Canvas& gfx, bool recording);
 
     State _state = State::Idle;
     String _log[kLogLines];
@@ -33,4 +34,5 @@ private:
     size_t _allowlistSelected = 0;
     size_t _sightingsSelected = 0;
     String _newSsid;
+    uint32_t _recordStartMs = 0;  // when the current recording session began (for the TIME readout)
 };

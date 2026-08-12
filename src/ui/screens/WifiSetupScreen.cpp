@@ -238,10 +238,10 @@ void WifiSetupScreen::draw(M5Canvas& gfx) {
             break;
 
         case State::NetworkList:
-            drawNetworkList(gfx, 20);
+            drawNetworkList(gfx, 0);
             gfx.setTextColor(theme::GREY, theme::BG);
             gfx.setCursor(4, gfx.height() - 9);
-            gfx.print("ENTER:select R:rescan DEL:back");
+            gfx.print("ENTER:connect R:rescan DEL:back");
             break;
 
         case State::SavedList:
@@ -337,41 +337,84 @@ void WifiSetupScreen::drawSavedList(M5Canvas& gfx, int16_t top) {
     }
 }
 
-void WifiSetupScreen::drawNetworkList(M5Canvas& gfx, int16_t top) {
+void WifiSetupScreen::drawNetworkList(M5Canvas& gfx, int16_t /*top*/) {
+    // Subtitle count line, matching the mockup's "NETWORKS FOUND: N".
+    gfx.setTextColor(theme::CYAN, theme::BG);
+    gfx.setCursor(6, 18);
+    gfx.print("NETWORKS FOUND: ");
+    gfx.print((unsigned)_networks.size());
+
     if (_networks.empty()) {
         gfx.setTextColor(theme::AMBER, theme::BG);
-        gfx.setCursor(6, top + 4);
+        gfx.setCursor(6, 40);
         gfx.print("no networks found");
         return;
     }
 
+    // Column header row (SSID / CH / RSSI / SEC) between two rules.
+    constexpr int16_t kColSsid = 18, kColCh = 120, kColRssi = 142, kColSec = 168;
+    gfx.drawFastHLine(4, 27, gfx.width() - 8, theme::GREY);
+    gfx.setTextColor(theme::MAGENTA, theme::BG);
+    gfx.setCursor(kColSsid, 29);
+    gfx.print("SSID");
+    gfx.setCursor(kColCh, 29);
+    gfx.print("CH");
+    gfx.setCursor(kColRssi, 29);
+    gfx.print("RSSI");
+    gfx.setCursor(kColSec, 29);
+    gfx.print("SEC");
+    gfx.drawFastHLine(4, 39, gfx.width() - 8, theme::GREY);
+
     constexpr int16_t kRowH = 10;
-    constexpr int16_t kMaxRows = 9;  // top(20) + 9*10 = 110, clears the footer hint row
+    constexpr size_t kMaxRows = 6;
+    constexpr int16_t kRowsTop = 42;
 
     size_t first = 0;
     if (_selected >= kMaxRows) first = _selected - kMaxRows + 1;
 
+    size_t drawn = 0;
     for (size_t row = 0; row < kMaxRows; row++) {
         size_t i = first + row;
         if (i >= _networks.size()) break;
         const auto& n = _networks[i];
 
-        int16_t y = top + (int16_t)row * kRowH;
+        int16_t y = kRowsTop + (int16_t)row * kRowH;
         bool sel = (i == _selected);
-        uint16_t rowBg = sel ? theme::GREEN_DIM : theme::BG;
-        if (sel) gfx.fillRect(0, y, gfx.width(), kRowH, rowBg);
+        uint16_t rowBg = sel ? theme::PANEL_BG : theme::BG;
+        if (sel) gfx.fillRect(0, y - 1, gfx.width(), kRowH, rowBg);
 
-        bool open = (n.encryption == WIFI_AUTH_OPEN);
-        // Green = secured (safe default), amber = open — reuses the
-        // same "amber means pay attention" convention as the risk
-        // colors elsewhere in the app, not a security judgement call.
-        uint16_t color = sel ? theme::GREEN_BRIGHT : (open ? theme::AMBER : theme::GREEN);
-        gfx.setTextColor(color, rowBg);
-        gfx.setCursor(2, y + 1);
-        gfx.print(open ? "o " : "* ");
+        uint16_t nameCol = sel ? theme::CYAN : theme::GREEN;
+        if (sel) {
+            gfx.setTextColor(theme::CYAN, rowBg);
+            gfx.setCursor(1, y);
+            gfx.print(">");
+        }
+        chrome::drawWifiIcon(gfx, 8, y, nameCol);
 
+        gfx.setTextColor(nameCol, rowBg);
+        gfx.setCursor(kColSsid, y);
         String ssid = n.ssid;
-        if (ssid.length() > 30) ssid = ssid.substring(0, 30);
+        if (ssid.length() > 16) ssid = ssid.substring(0, 16);
         gfx.print(ssid);
+
+        gfx.setTextColor(sel ? theme::CYAN : theme::GREY, rowBg);
+        gfx.setCursor(kColCh, y);
+        gfx.print(n.channel);
+
+        chrome::drawSignalBars(gfx, kColRssi, y + 8, n.rssi);
+
+        gfx.setTextColor(chrome::securityColor(n.encryption), rowBg);
+        gfx.setCursor(kColSec, y);
+        gfx.print(chrome::securityLabel(n.encryption));
+        drawn++;
+    }
+
+    size_t shownEnd = first + drawn;
+    if (shownEnd < _networks.size()) {
+        gfx.setTextColor(theme::CYAN, theme::BG);
+        gfx.setCursor(kColSsid, kRowsTop + (int16_t)kMaxRows * kRowH + 1);
+        gfx.print("... ");
+        gfx.print((unsigned)(_networks.size() - shownEnd));
+        gfx.print(" more networks");
     }
 }
