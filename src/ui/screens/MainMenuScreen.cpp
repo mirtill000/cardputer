@@ -42,15 +42,24 @@ void MainMenuScreen::draw(M5Canvas& gfx) {
     gfx.fillScreen(theme::BG);
     chrome::drawHeader(gfx, "NETRUNNER");
 
-    // kRowH sized for up to 7 items (WAR DRIVING made it 7 - see
-    // main.cpp) without the last row's box running into the status bar
-    // below: kTop + 7*kRowH = 22 + 98 = 120, status bar sits at
-    // height-9 = 126, leaving a 6px gap.
+    // kRowH sized so a full window of rows never runs into the status
+    // bar below: kTop + 7*kRowH = 22 + 98 = 120, status bar sits at
+    // height-9 = 126, leaving a 6px gap. The menu grew past 7 entries
+    // (Fase 18 added LAN TOPOLOGY / UPNP DISCOVERY / ROGUE DHCP - see
+    // main.cpp), so it now scrolls: only kVisibleRows are drawn at a
+    // time, following _selected, with ^/v markers when more exist off-
+    // screen.
     constexpr int16_t kRowH = 14;
     constexpr int16_t kTop = 22;
+    constexpr uint8_t kVisibleRows = 7;
 
-    for (uint8_t i = 0; i < _count; i++) {
-        int16_t y = kTop + i * kRowH;
+    uint8_t first = 0;
+    if (_selected >= kVisibleRows) first = (uint8_t)(_selected - kVisibleRows + 1);
+
+    for (uint8_t row = 0; row < kVisibleRows; row++) {
+        uint8_t i = (uint8_t)(first + row);
+        if (i >= _count) break;
+        int16_t y = kTop + row * kRowH;
         bool sel = (i == _selected);
         uint16_t rowBg = sel ? theme::PANEL_BG : theme::BG;
         gfx.drawRect(4, y, gfx.width() - 8, kRowH - 2, sel ? theme::CYAN : theme::GREY);
@@ -61,6 +70,19 @@ void MainMenuScreen::draw(M5Canvas& gfx) {
         gfx.print(sel ? "> " : "  ");
         gfx.setTextColor(sel ? theme::CYAN : theme::GREEN, rowBg);
         gfx.print(_items[i].label);
+
+        // Scroll markers on the row's right edge (share the row's bg so
+        // they read cleanly whether or not the row is selected).
+        if (row == 0 && first > 0) {
+            gfx.setTextColor(theme::CYAN, rowBg);
+            gfx.setCursor(gfx.width() - 14, y + 2);
+            gfx.print("^");
+        }
+        if (row == kVisibleRows - 1 && (first + kVisibleRows) < _count) {
+            gfx.setTextColor(theme::CYAN, rowBg);
+            gfx.setCursor(gfx.width() - 14, y + 2);
+            gfx.print("v");
+        }
     }
 
     // Bottom status bar: wall-clock time (UTC) once NTP has synced (see

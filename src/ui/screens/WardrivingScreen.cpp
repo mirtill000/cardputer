@@ -2,6 +2,7 @@
 #include "SignalFinderScreen.h"
 #include "EvilTwinScreen.h"
 #include "DeauthScreen.h"
+#include "PmkidScreen.h"
 #include "OffensiveDisclaimerScreen.h"
 #include "../UiManager.h"
 #include "../Theme.h"
@@ -85,6 +86,17 @@ void WardrivingScreen::onKey(UiKey key, char ch) {
                         g_ui.pushScreen(&DeauthScreen::instance());
                     } else {
                         OffensiveDisclaimerScreen::instance().setPendingTargetScreen(&DeauthScreen::instance());
+                        g_ui.pushScreen(&OffensiveDisclaimerScreen::instance());
+                    }
+                }
+            } else if (key == UiKey::Char && (ch == 'p' || ch == 'P')) {
+                WardrivingManager::ApSighting ap;
+                if (g_wardrivingManager.getSighting(_sightingsSelected, ap)) {
+                    PmkidScreen::instance().setTarget(ap.ssid, ap.bssid, ap.channel);
+                    if (g_config.offensiveEnabled) {
+                        g_ui.pushScreen(&PmkidScreen::instance());
+                    } else {
+                        OffensiveDisclaimerScreen::instance().setPendingTargetScreen(&PmkidScreen::instance());
                         g_ui.pushScreen(&OffensiveDisclaimerScreen::instance());
                     }
                 }
@@ -190,7 +202,7 @@ void WardrivingScreen::draw(M5Canvas& gfx) {
 
             gfx.setTextColor(theme::GREY, theme::BG);
             gfx.setCursor(4, gfx.height() - 9);
-            gfx.print("TAB:loc A:al E:twin X:deauth DEL:bk");
+            gfx.print("TAB:loc A:al E:twn X:dth P:pmk DEL:bk");
             break;
         }
 

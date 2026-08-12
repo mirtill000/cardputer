@@ -4,6 +4,7 @@
 #include "ScanManager.h"
 #include "../net/RawFrame.h"
 #include "../net/DnsWire.h"
+#include "../net/Ieee80211Frame.h"
 #include "../net/WifiManager.h"
 #include "../core/Config.h"
 #include <WiFi.h>
@@ -284,57 +285,32 @@ void ArpSpoofManager::promiscuousRxTrampoline(void* buf, wifi_promiscuous_pkt_ty
 }
 
 void ArpSpoofManager::onPromiscuousFrame(const uint8_t* p, uint16_t len) {
-    // Hand-parsed 802.11 MAC header — see the RISK block in the header
-    // for why every step below fails closed (bounds-checked, silently
-    // returns on anything unexpected) instead of assuming success.
-    if (len < 24) return;
+    // 802.11 MAC header parsing lives in net/Ieee80211Frame.h now,
+    // shared with CdpLldpSniffer/PmkidManager/RogueDhcpDetector — see
+    // its header for why this whole class of parsing fails closed
+    // (bounds-checked, silently returns on anything unexpected) instead
+    // of assuming success.
+    ieee80211::ParsedDataFrame frame;
+    if (!ieee80211::parseDataFrame(p, len, frame)) return;
 
-    uint8_t fc0 = p[0], fc1 = p[1];
-    uint8_t type = (fc0 >> 2) & 0x3;
-    uint8_t subtype = (fc0 >> 4) & 0xF;
-    if (type != 2) return;  // not a Data frame (skip mgmt/ctrl - beacons, probes, etc.)
-
-    bool toDS = (fc1 & 0x01) != 0;
-    bool fromDS = (fc1 & 0x02) != 0;
-    if (toDS && fromDS) return;  // 4-address WDS frame - rare, deliberately not handled
-    bool protectedFrame = (fc1 & 0x40) != 0;
-
-    bool isQos = (subtype & 0x08) != 0;
-    uint16_t hdrLen = 24 + (isQos ? 2 : 0);
-    if (len <= (uint16_t)(hdrLen + 8)) return;  // too short for LLC/SNAP + anything
-
-    const uint8_t* addr1 = p + 4;   // RA/DA
-    const uint8_t* addr2 = p + 10;  // TA/SA
-    const uint8_t* addr3 = p + 16;  // BSSID (usually)
-
-    uint8_t srcMac[6];
-    if (toDS && !fromDS) {
-        memcpy(srcMac, addr2, 6);  // STA -> AP uplink: addr2 is the sender STA
-    } else if (!toDS && fromDS) {
-        memcpy(srcMac, addr3, 6);  // AP -> STA downlink: addr3 is the original sender
-    } else {
-        memcpy(srcMac, addr2, 6);  // IBSS/ad-hoc case
-    }
-    (void)addr1;
-
-    if (protectedFrame) {
+    if (frame.protectedFrame) {
         // Encrypted (WPA2/WPA3) content - nothing readable here without
         // the session key. Still worth a log line if this looks like it
         // came from our poisoned target, as evidence the poisoning
         // reached it at the 802.11 layer even though we can't read it.
-        if (_running && memcmp(srcMac, _targetMac, 6) == 0) {
+        if (_running && memcmp(frame.srcMac, _targetMac, 6) == 0) {
             log("target->\"gateway\" frame seen (encrypted, network is WPA2/3 - content not readable)");
         }
         return;
     }
 
-    uint16_t llcOffset = hdrLen;
-    if (p[llcOffset] != 0xAA || p[llcOffset + 1] != 0xAA || p[llcOffset + 2] != 0x03) return;  // not standard SNAP
-    uint16_t ethertype = ((uint16_t)p[llcOffset + 6] << 8) | p[llcOffset + 7];
-    if (ethertype != kEtherIpv4) return;  // only IPv4 handled - no ARP/IPv6 content analysis here
+    uint8_t oui[3];
+    uint16_t protocolId, payloadOffset;
+    if (!ieee80211::parseSnap(p, len, frame.payloadOffset, oui, protocolId, payloadOffset)) return;
+    bool standardOui = (oui[0] == 0 && oui[1] == 0 && oui[2] == 0);
+    if (!standardOui || protocolId != kEtherIpv4) return;  // only IPv4 handled - no ARP/IPv6 content analysis here
 
-    uint16_t ipOffset = llcOffset + 8;
-    analyzeFrame(p, ipOffset, len, srcMac);
+    analyzeFrame(p, payloadOffset, len, frame.srcMac);
 }
 
 void ArpSpoofManager::analyzeFrame(const uint8_t* p, uint16_t ipOffset, uint16_t len, const uint8_t srcMac[6]) {

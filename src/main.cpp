@@ -20,11 +20,19 @@
 #include "scan/DeauthManager.h"
 #include "scan/EvilTwinManager.h"
 #include "scan/HttpPathBruteforcer.h"
+#include "scan/PmkidManager.h"
+#include "scan/CdpLldpSniffer.h"
+#include "scan/SsdpDiscovery.h"
+#include "scan/RogueDhcpDetector.h"
+#include "scan/SmbNegotiateCheck.h"
 #include "net/WifiManager.h"
 #include "net/TimeSync.h"
 #include "storage/SdCard.h"
 #include "ui/screens/ScanHistoryScreen.h"
 #include "ui/screens/WardrivingScreen.h"
+#include "ui/screens/CdpLldpScreen.h"
+#include "ui/screens/SsdpScreen.h"
+#include "ui/screens/RogueDhcpScreen.h"
 
 namespace {
 BootScreen g_bootScreen;
@@ -35,7 +43,7 @@ BootScreen g_bootScreen;
 PlaceholderScreen g_portScanScreen;
 PlaceholderScreen g_credAuditScreen;
 
-MenuItem g_menuItems[7];
+MenuItem g_menuItems[10];
 }  // namespace
 
 void setup() {
@@ -74,8 +82,11 @@ void setup() {
     g_menuItems[3] = {"CREDENTIAL AUDIT", &g_credAuditScreen};
     g_menuItems[4] = {"SCAN HISTORY", &ScanHistoryScreen::instance()};
     g_menuItems[5] = {"WAR DRIVING", &WardrivingScreen::instance()};
-    g_menuItems[6] = {"SETTINGS", &SettingsScreen::instance()};
-    MainMenuScreen::instance().configure(g_menuItems, 7);
+    g_menuItems[6] = {"LAN TOPOLOGY", &CdpLldpScreen::instance()};
+    g_menuItems[7] = {"UPNP DISCOVERY", &SsdpScreen::instance()};
+    g_menuItems[8] = {"ROGUE DHCP", &RogueDhcpScreen::instance()};
+    g_menuItems[9] = {"SETTINGS", &SettingsScreen::instance()};
+    MainMenuScreen::instance().configure(g_menuItems, 10);
 
     // MainMenuScreen must already be configured by this point: once the
     // render task starts, BootScreen can transition straight to it on
@@ -91,6 +102,11 @@ void setup() {
     g_deauthManager.begin(g_ui.scanQueue());
     g_evilTwinManager.begin(g_ui.scanQueue());
     g_httpBruteforcer.begin(g_ui.scanQueue());
+    g_pmkidManager.begin(g_ui.scanQueue());
+    g_cdpLldpSniffer.begin(g_ui.scanQueue());
+    g_ssdpDiscovery.begin(g_ui.scanQueue());
+    g_rogueDhcpDetector.begin(g_ui.scanQueue());
+    g_smbCheck.begin(g_ui.scanQueue());
 
     // Non-blocking: if a network was saved from a previous WIFI SCAN
     // run, this kicks the connection off immediately at boot instead of

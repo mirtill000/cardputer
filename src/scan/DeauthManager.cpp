@@ -1,5 +1,6 @@
 #include "DeauthManager.h"
 #include "../storage/SdCard.h"
+#include "../storage/PcapWriter.h"
 #include <WiFi.h>
 #include <esp_wifi.h>
 #if __has_include(<esp_private/wifi.h>)
@@ -21,41 +22,6 @@ bool parseMacString(const String& s, uint8_t out[6]) {
     }
     return true;
 }
-
-namespace {
-
-// pcap global header — see the pcap-savefile format (well-documented,
-// fixed 24 bytes). LINKTYPE_IEEE802_11 = 105: raw frames go in exactly
-// as captured, undecoded, so downstream tools (Wireshark/aircrack-ng)
-// do the actual 802.11/EAPOL parsing this firmware deliberately never
-// attempts itself.
-void writePcapGlobalHeader(File& f) {
-    uint8_t hdr[24] = {
-        0xD4, 0xC3, 0xB2, 0xA1,  // magic (LE reader marker)
-        0x02, 0x00,               // version major = 2
-        0x04, 0x00,               // version minor = 4
-        0x00, 0x00, 0x00, 0x00,  // thiszone
-        0x00, 0x00, 0x00, 0x00,  // sigfigs
-        0xFF, 0xFF, 0x00, 0x00,  // snaplen = 65535
-        0x69, 0x00, 0x00, 0x00,  // network = 105 (IEEE 802.11)
-    };
-    f.write(hdr, sizeof(hdr));
-}
-
-void writePcapRecord(File& f, const uint8_t* data, uint16_t capturedLen, uint16_t originalLen) {
-    uint32_t sec = (uint32_t)(millis() / 1000);
-    uint32_t usec = (uint32_t)((millis() % 1000) * 1000);
-    uint8_t hdr[16];
-    memcpy(hdr + 0, &sec, 4);
-    memcpy(hdr + 4, &usec, 4);
-    uint32_t incl = capturedLen, orig = originalLen;
-    memcpy(hdr + 8, &incl, 4);
-    memcpy(hdr + 12, &orig, 4);
-    f.write(hdr, sizeof(hdr));
-    f.write(data, capturedLen);
-}
-
-}  // namespace
 
 void DeauthManager::begin(QueueHandle_t outQueue) {
     _outQueue = outQueue;
@@ -114,14 +80,14 @@ void DeauthManager::run() {
     fs::FS& fs = sdcard::exportFs();
     File f = fs.open(_pcapPath, "w");
     bool haveFile = (bool)f;
-    if (haveFile) writePcapGlobalHeader(f);
+    if (haveFile) pcap::writeGlobalHeader(f);
 
     uint32_t start = millis();
     CapturedFrame frame;
     while (_running && (millis() - start) < kCaptureWindowMs) {
         if (xQueueReceive(_captureQueue, &frame, pdMS_TO_TICKS(50)) == pdTRUE) {
             _captured++;
-            if (haveFile) writePcapRecord(f, frame.data, frame.capturedLen, frame.originalLen);
+            if (haveFile) pcap::writeRecord(f, frame.data, frame.capturedLen, frame.originalLen);
         }
     }
 

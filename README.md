@@ -1284,6 +1284,105 @@ che torna alla tonica grave prima che il loop ricominci — l'atmosfera
 evocata attraverso la tecnica compositiva, non la melodia vera e propria
 citata. Loop di ~10s.
 
+### Fase 18: discovery passiva, negotiate SMB e report kill-chain
+
+Sei funzionalità nuove orientate a **discovery** e a esporre la superficie
+d'attacco, tenute deliberatamente sul lato *difensivo/benigno*: su
+richiesta esplicita dell'utente per questo batch — *"non implementare
+funzionalità rischiose"* — nessuna di queste agisce su dispositivi di
+terze parti come fanno gli strumenti della Fase 16. Ascoltano, interrogano
+in modo standard, o rielaborano dati già raccolti. L'unica funzione
+offensiva richiesta in origine per questo giro (la cattura PMKID) è stata
+mantenuta ma resta dietro lo stesso gate `OffensiveDisclaimerScreen` degli
+strumenti Fase 16, non tra le voci qui sotto.
+
+- **Cattura PMKID senza deauth** (`scan/PmkidManager`, schermata
+  `PMKID CAPTURE` da una sighting di `WAR DRIVING` con `P`, dietro il gate
+  offensive): l'alternativa **più gentile** al deauth della Fase 16. Si
+  associa all'AP bersaglio con una password volutamente sbagliata; molti
+  AP WPA2-PSK mandano il PMKID nel primo messaggio EAPOL *prima* di
+  validare la password. Quel traffico grezzo viene catturato in modalità
+  promiscua in un `.pcap` (stesso formato/`storage/PcapWriter` condiviso
+  con il deauth) da craccare offline (hashcat mode 22000). **Non manda mai
+  un frame di deauth**: nessun client di terze parti viene disconnesso —
+  è proprio per questo che l'abbiamo scelta, essendo la dirompenza del
+  deauth già la cosa più invasiva del firmware. È gated perché l'*intento*
+  (raccogliere materiale WPA per il cracking offline) è lo stesso, a
+  prescindere dalla gentilezza della tecnica.
+- **Sniffing passivo CDP/LLDP** (`scan/CdpLldpSniffer`, schermata
+  `LAN TOPOLOGY` dal menu principale): ascolta in modalità promiscua gli
+  annunci che switch e router mandano periodicamente — CDP (Cisco,
+  incapsulamento SNAP con OUI `00:00:0C`) e LLDP (standard, ethertype
+  `0x88CC`) — e ricostruisce i vicini di rete (device ID + port ID) senza
+  inviare **nulla**. Puramente passivo. **Limite reale**: si vede qualcosa
+  solo se l'AP fa da bridge dei MAC multicast di CDP/LLDP sul segmento
+  wireless (molti non lo fanno) e solo su reti **aperte** (i frame WPA
+  cifrati non sono leggibili) — documentato in cima a `CdpLldpSniffer.h`.
+- **Discovery attiva UPnP/SSDP** (`scan/SsdpDiscovery`, schermata
+  `UPNP DISCOVERY` dal menu): manda una M-SEARCH standard al gruppo
+  multicast `239.255.255.250:1900` e ascolta le risposte unicast — smart
+  TV, NAS, router, IoT si annunciano da soli. È **UDP normale** su un
+  `WiFiUDP`, niente promiscua, niente parsing di frame grezzi: rischio
+  basso, stessa categoria non-invasiva del `NETWORK SCAN`. Le risposte
+  sono testo HTTP-like (header `SERVER:`/`LOCATION:`/`USN:`), niente
+  formato binario da sbagliare.
+- **Rilevamento passivo di rogue DHCP** (`scan/RogueDhcpDetector`,
+  schermata `ROGUE DHCP` dal menu): ascolta i `DHCPOFFER`/`DHCPACK` sul
+  filo e segnala **in rosso** ogni server DHCP il cui IP è diverso dal
+  gateway che questo device sta effettivamente usando — il classico segno
+  di un secondo server DHCP che corre contro quello legittimo (spesso per
+  spacciarsi come gateway/DNS in un MITM). È **difensivo**: non risponde
+  mai al DHCP, non fa niente oltre a segnalare. Riusa il parsing 802.11
+  condiviso (`net/Ieee80211Frame`) e un piccolo parser IPv4/UDP/BOOTP
+  self-contained (RFC 2131, `op`/`yiaddr`/magic cookie/opzione 53), tutto
+  bounds-checked. Stesso limite "solo reti aperte" della famiglia
+  promiscua.
+- **Check SMB1 Negotiate** (`scan/SmbNegotiateCheck`, schermata
+  `SMB NEGOTIATE` da `HOST DETAIL` con `S`, mostrata solo se una porta
+  smb/netbios è aperta): manda **un solo** `SMB_COM_NEGOTIATE` — lo stesso
+  primo messaggio che manda qualunque client Windows/Samba — e legge il
+  *Security Mode* annunciato dal server: sicurezza a livello utente vs
+  l'antico share-level, password in chiaro vs challenge/response, SMB
+  signing. **Scope volutamente ridotto**: NON è enumerazione di share o
+  utenti — niente Session Setup, niente login a credenziali nulle, niente
+  Tree Connect o NetShareEnum/DCE-RPC (lavoro di protocollo giudicato di
+  rischio comparabile al login SSH che avevamo declinato in Fase 16). È
+  l'equivalente SMB di un banner grab, niente di più intrusivo.
+- **Report HTML "kill chain"** (`storage/ReportGenerator`, tasto `R` su
+  `NETWORK SCAN` accanto all'export `E`): genera su SD un singolo file
+  `report.html` autocontenuto (CSS inline, nessuna risorsa esterna, si
+  apre offline) con stile cyberpunk coerente con l'UI del device. Riporta
+  un riepilogo, una sezione **ATTACK SURFACE** che ordina i finding più
+  interessanti (credenziali deboli → servizi in chiaro telnet/ftp → banner
+  con firma vulnerabile nota → SMB esposto), e l'inventario completo degli
+  host. Attinge dalla tabella host live di `ScanManager` più il contesto
+  WiFi corrente, e **referenzia** (senza ri-aggregarli) gli artifact che
+  gli altri moduli scrivono già sulla card (`export.json/.csv`,
+  `wardrive.csv`, `eviltwin/associations.csv`, `handshakes/`), elencando
+  solo quelli effettivamente presenti.
+
+- **Refactor condiviso** (a supporto di questo batch): la parte di parsing
+  più a rischio, già isolata in Fase 16, è ora fattorizzata in due moduli
+  condivisi — `net/Ieee80211Frame` (`parseDataFrame`/`parseSnap`, estratti
+  verbatim da `ArpSpoofManager`) e `storage/PcapWriter`
+  (`writeGlobalHeader`/`writeRecord`, estratti da `DeauthManager`) — così
+  i cinque consumatori promiscui (ArpSpoof, Deauth, PMKID, CDP/LLDP, rogue
+  DHCP) verificano quel codice difficile una volta sola, in un posto solo,
+  invece di riderivarlo ciascuno (era esattamente lì che la prima build
+  vera aveva trovato il bug del numero magico `WIFI_PKT_DATA`). Il parsing
+  IPv4/UDP di basso rischio è invece rimasto duplicato di proposito tra
+  `ArpSpoofManager` (verificato su hardware) e `RogueDhcpDetector`: ~20
+  righe ben capite, duplicarle è più sicuro che rischiare una regressione
+  nel percorso già testato per amore del DRY.
+
+> **Radio condivisa — il limite si allarga a cinque**: `esp_wifi` accetta
+> **una sola** callback promiscua alla volta. Far girare
+> contemporaneamente due delle funzioni che la usano — ARP/MITM, deauth,
+> PMKID, CDP/LLDP, rogue DHCP — fa sì che l'ultima avviata "rubi" i frame
+> alle altre, silenziosamente. È lo stesso limite di radio condivisa già
+> documentato per WAR DRIVING vs NETWORK SCAN: accettato, non un bug. Usa
+> una funzione promiscua alla volta.
+
 ## Compilare e flashare
 
 ```
@@ -1437,6 +1536,19 @@ originale.
       sopra) che suona finché non si entra in `MAIN MENU`, più un
       leggero effetto di nebbia/statica puntinata sullo sfondo dello
       splash.
+- [x] **Fase 18 — Discovery passiva, negotiate SMB e report kill-chain**:
+      sei funzionalità scelte dall'utente (2,3,4,5,7,10 di una lista di
+      dieci) tenute sul lato difensivo/benigno su richiesta esplicita
+      *"non implementare funzionalità rischiose"* — cattura PMKID senza
+      deauth (dietro il gate offensive, unica offensiva del giro),
+      sniffing passivo CDP/LLDP (`LAN TOPOLOGY`), discovery UPnP/SSDP
+      (`UPNP DISCOVERY`), rilevamento passivo di rogue DHCP (`ROGUE
+      DHCP`), check SMB1 Negotiate (solo Security Mode, non enumeration —
+      `S` su `HOST DETAIL`) e report HTML kill-chain su SD (`R` su
+      `NETWORK SCAN`). Più il refactor condiviso `net/Ieee80211Frame` +
+      `storage/PcapWriter` per i cinque consumatori promiscui — vedi
+      sopra per il dettaglio e per il limite della radio condivisa che
+      ora vale per cinque funzioni.
 
 ## Test plan — Fase 1
 
@@ -2044,6 +2156,55 @@ laboratorio isolato) — non in giro per strada con reti di sconosciuti.
    prima che il giro ricominci. Deve evocare l'atmosfera, non suonare
    come una citazione riconoscibile della melodia vera del brano.
 
+## Test plan — Fase 18 (discovery passiva, negotiate SMB, report kill-chain)
+
+Nessuna di queste è ancora passata da una build reale al momento della
+scrittura — tutti i file hanno superato solo il controllo di bilanciamento
+parentesi in locale. Da verificare su hardware:
+
+1. **Menu con scroll**: `MAIN MENU` ha ora 10 voci (WIFI SCAN … WAR
+   DRIVING, LAN TOPOLOGY, UPNP DISCOVERY, ROGUE DHCP, SETTINGS). La lista
+   ne mostra 7 alla volta: scendendo oltre la settima deve scrollare, con
+   un marcatore `^`/`v` a destra quando ci sono voci fuori schermo. Il
+   wraparound su/giù deve continuare a funzionare.
+2. **UPNP DISCOVERY**: connesso a una rete con almeno una smart TV/NAS/
+   router UPnP, `ENTER` avvia la M-SEARCH; entro qualche secondo la lista
+   deve popolarsi con IP + header `SERVER`, e la seconda riga con l'`USN`.
+   Zero dispositivi non è di per sé un errore (dipende dalla rete).
+3. **LAN TOPOLOGY**: `ENTER` avvia l'ascolto passivo (indicatore
+   `[listening]`); su una rete con switch/router che emettono CDP/LLDP
+   *e* un AP che fa bridge di quei multicast, i vicini devono comparire
+   (ambra = CDP, verde = LLDP). Su molte reti domestiche non comparirà
+   nulla: è il limite documentato, non un bug.
+4. **ROGUE DHCP**: `ENTER` avvia la sorveglianza passiva. Su una rete
+   **aperta** con un solo server DHCP, quando un client rinnova il lease
+   il server deve comparire in verde. Introducendo un secondo server DHCP
+   (test controllato) il suo IP deve comparire in **rosso** (diverso dal
+   gateway). Su rete WPA cifrata non si vede nulla (limite atteso).
+5. **SMB NEGOTIATE**: su un host con porta 445/139 aperta (scoperta prima
+   con `TAB`), il footer di `HOST DETAIL` mostra `S:smb-neg`; premendo `S`
+   e poi `ENTER`, entro pochi secondi devono comparire le tre righe
+   Security Mode (user-level/share-level, plaintext/challenge-response,
+   signing). Le condizioni legacy deboli (share-level, plaintext) in
+   rosso. Un server SMB2-only deve dare "response not SMB1", non un crash.
+6. **PMKID CAPTURE**: da una sighting di `WAR DRIVING`, `P` porta al gate
+   `OffensiveDisclaimerScreen` (prima volta della sessione), poi alla
+   schermata; `ENTER` tenta l'associazione con password errata e cattura.
+   Verifica che al termine la connettività WiFi normale del device venga
+   ripristinata (autoConnect) e che, se catturato qualcosa, esista un
+   `.pcap` in `/handshakes/`. **Non** deve mai disconnettere altri client.
+7. **Report kill-chain**: dopo un `NETWORK SCAN` (meglio con qualche host
+   port-scansionato e magari un audit credenziali), `R` su `NETWORK SCAN`
+   deve scrivere `/report.html` su SD (o LittleFS in fallback) e mostrare
+   la riga di stato. Aprendo il file su un PC: layout cyberpunk leggibile,
+   sezione ATTACK SURFACE che elenca i finding, tabella host completa, e
+   la lista COMPANION ARTIFACTS che referenzia solo i file davvero
+   presenti sulla card.
+8. **Radio condivisa**: avviando due funzioni promiscue insieme (es. LAN
+   TOPOLOGY e ROGUE DHCP) ci si aspetta che solo l'ultima avviata riceva
+   frame — comportamento atteso e documentato, non un bug. Usare una
+   funzione promiscua alla volta.
+
 ## Limiti noti e tagli di scope deliberati
 
 Riepilogo di quanto già menzionato nelle sezioni sopra, in un unico
@@ -2174,6 +2335,43 @@ posto:
   successo, ma la build reale resta l'unico modo per sapere se gli
   offset sono davvero giusti. Vedi il commento in cima a
   `ArpSpoofManager.h`.
+- **Fase 18 tenuta sul lato difensivo/benigno, su richiesta esplicita**
+  (*"non implementare funzionalità rischiose"*): delle sei funzioni di
+  questo batch, cinque non agiscono su terze parti (CDP/LLDP e rogue DHCP
+  ascoltano soltanto; UPnP/SSDP è discovery standard non invasiva; SMB
+  Negotiate è un banner grab; il report rielabora dati già raccolti). La
+  sola offensiva richiesta, la cattura PMKID, resta ma dietro lo stesso
+  gate `OffensiveDisclaimerScreen` degli strumenti Fase 16.
+- **CDP/LLDP: si vede qualcosa solo se l'AP fa da bridge dei multicast, e
+  solo su reti aperte** (Fase 18): limite reale della modalità promiscua
+  su WiFi, non del parser — molti AP domestici non inoltrano i frame
+  CDP/LLDP sul segmento wireless, e i frame WPA cifrati non sono comunque
+  leggibili. Su molte reti la schermata `LAN TOPOLOGY` resterà vuota: è
+  atteso.
+- **Rogue DHCP: rilevamento passivo, solo su reti aperte, euristica
+  "diverso dal gateway"** (Fase 18): non risponde mai al DHCP, si limita a
+  segnalare. Il flag "sospetto" scatta quando l'IP del server DHCP è
+  diverso dal gateway in uso — un segnale, non una prova (alcune reti
+  fanno girare legittimamente il DHCP su un host separato dal gateway).
+  Come tutta la famiglia promiscua, non vede nulla su rete WPA cifrata.
+- **SMB: solo Negotiate, non enumeration** (Fase 18): il check legge il
+  Security Mode annunciato dal server con un singolo `SMB_COM_NEGOTIATE`
+  e si ferma lì — niente Session Setup, login a credenziali nulle, Tree
+  Connect o NetShareEnum/DCE-RPC. Enumerare share/utenti è lavoro di
+  protocollo giudicato di rischio comparabile al login SSH declinato in
+  Fase 16; qui si è scelto l'equivalente SMB di un banner grab.
+- **Report kill-chain: indice descrittivo, non uno scanner di
+  vulnerabilità** (Fase 18): la sezione ATTACK SURFACE ordina finding
+  euristici già presenti nella tabella host (credenziali deboli, servizi
+  in chiaro, banner con firma nota, SMB esposto) e referenzia gli artifact
+  degli altri moduli — non esegue nuovi test né assegna punteggi CVSS.
+  "Nessun finding" non significa "rete sicura", solo "niente ha fatto
+  scattare le euristiche".
+- **Radio promiscua condivisa: il limite ora vale per cinque funzioni**
+  (Fase 18): `esp_wifi` accetta una sola callback promiscua alla volta —
+  ARP/MITM, deauth, PMKID, CDP/LLDP e rogue DHCP non vanno usate in
+  parallelo (l'ultima avviata ruba i frame alle altre). Stesso genere di
+  limite già accettato per WAR DRIVING vs NETWORK SCAN.
 - **Nessuna build reale eseguita**: vale per ogni fase di questo
   progetto — il sandbox di sviluppo non ha accesso al registry
   PlatformIO. Tutto il codice è stato scritto con attenzione e, dove

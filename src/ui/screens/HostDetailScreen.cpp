@@ -3,6 +3,7 @@
 #include "CredAuditScreen.h"
 #include "CredDisclaimerScreen.h"
 #include "HttpBruteScreen.h"
+#include "SmbScreen.h"
 #include "MitmScreen.h"
 #include "OffensiveDisclaimerScreen.h"
 #include "../UiManager.h"
@@ -51,6 +52,18 @@ void HostDetailScreen::onKey(UiKey key, char ch) {
             if (p.service == "http") {
                 HttpBruteScreen::instance().setTarget(h.ip, p.port);
                 g_ui.pushScreen(&HttpBruteScreen::instance());
+                break;
+            }
+        }
+        return;
+    }
+    if (key == UiKey::Char && (ch == 's' || ch == 'S')) {
+        HostInfo h;
+        if (!g_scanManager.getHost(_hostIndex, h)) return;
+        for (const auto& p : h.ports) {
+            if (p.service == "smb" || p.service == "netbios-ssn") {
+                SmbScreen::instance().setTarget(h.ip, p.port);
+                g_ui.pushScreen(&SmbScreen::instance());
                 break;
             }
         }
@@ -183,16 +196,18 @@ void HostDetailScreen::draw(M5Canvas& gfx) {
 
     drawRadar(gfx, h);
 
-    bool hasHttp = false;
+    bool hasHttp = false, hasSmb = false;
     for (const auto& p : h.ports) {
-        if (p.service == "http") {
-            hasHttp = true;
-            break;
-        }
+        if (p.service == "http") hasHttp = true;
+        if (p.service == "smb" || p.service == "netbios-ssn") hasSmb = true;
     }
+    String actionHint;
+    if (hasHttp) actionHint += "H:http-brute  ";
+    actionHint += "M:mitm-audit";
+    if (hasSmb) actionHint += "  S:smb-neg";
     gfx.setTextColor(theme::AMBER, theme::BG);
     gfx.setCursor(6, 116);
-    gfx.print(hasHttp ? "H:http-brute  M:mitm-audit" : "M:mitm-audit");
+    gfx.print(actionHint);
 
     gfx.setTextColor(theme::GREY, theme::BG);
     gfx.setCursor(4, gfx.height() - 9);

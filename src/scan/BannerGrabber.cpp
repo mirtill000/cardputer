@@ -86,10 +86,13 @@ void BannerGrabber::grab(WiFiClient& client, uint16_t port, uint16_t timeoutMs, 
     }
 
     if (port == 139 || port == 445) {
-        // SMB doesn't hand out a plaintext banner on connect, and a real
-        // negotiate-protocol handshake is protocol work out of scope
-        // here — open-port evidence alone is still useful (it's already
-        // what bumps a host's risk to Warning, see ScanManager::setHostPorts).
+        // SMB doesn't hand out a plaintext banner on connect. The open
+        // port alone is still useful (it's what bumps a host's risk to
+        // Warning, see ScanManager::setHostPorts); for the server's
+        // advertised Security Mode there's an on-demand SMB1 negotiate
+        // probe reachable with 'S' on the host detail screen (see
+        // scan/SmbNegotiateCheck.h) — kept out of the passive banner grab
+        // so it only runs when the user explicitly asks.
         return;
     }
 

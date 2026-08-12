@@ -9,6 +9,7 @@
 #include "../../net/WifiManager.h"
 #include "../../scan/ScanManager.h"
 #include "../../storage/ResultStore.h"
+#include "../../storage/ReportGenerator.h"
 #include "../../storage/ScanHistory.h"
 #include "../../storage/SdCard.h"
 #include <cstdio>
@@ -161,6 +162,11 @@ void HostListScreen::onKey(UiKey key, char ch) {
                 bool okCsv = ResultStore::exportCsv(fs, "/export.csv");
                 _statusLine = (okJson && okCsv) ? (String("exported (") + sdcard::exportFsLabel() + ") /export.json + .csv")
                                                  : "export FAILED (see serial log)";
+            } else if (ch == 'r' || ch == 'R') {
+                fs::FS& fs = sdcard::exportFs();
+                bool ok = ReportGenerator::generate(fs, "/report.html");
+                _statusLine = ok ? (String("report (") + sdcard::exportFsLabel() + ") /report.html")
+                                 : "report FAILED (see serial log)";
             }
             break;
         default:
@@ -263,7 +269,7 @@ void HostListScreen::draw(M5Canvas& gfx) {
 
     gfx.setTextColor(theme::GREY, theme::BG);
     gfx.setCursor(4, gfx.height() - 9);
-    gfx.print("ENTER:detail E:export W:wifi DEL:back");
+    gfx.print("ENTER:detail E:exp R:rep W:wifi DEL:bk");
 }
 
 void HostListScreen::drawTable(M5Canvas& gfx, int16_t top) {
