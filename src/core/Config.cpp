@@ -29,6 +29,7 @@ void AppConfig::load() {
     offensiveAcknowledged = prefs.getBool("offAck", offensiveAcknowledged);
     // offensiveEnabled likewise never persisted - see its declaration.
     uiSoundEnabled = prefs.getUChar("sound", uiSoundEnabled);
+    lowPowerMode = prefs.getUChar("lowpow", lowPowerMode);
 
     prefs.end();
 }
@@ -48,6 +49,7 @@ void AppConfig::save() const {
     prefs.putBool("credAck", credAuditAcknowledged);
     prefs.putBool("offAck", offensiveAcknowledged);
     prefs.putUChar("sound", uiSoundEnabled);
+    prefs.putUChar("lowpow", lowPowerMode);
 
     prefs.end();
 }

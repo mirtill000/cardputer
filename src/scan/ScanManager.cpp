@@ -24,13 +24,21 @@ void ScanManager::startDiscoveryScan() {
         return;
     }
 
-    uint32_t total = g_wifi.hostCount();
+    // Custom range overrides the DHCP-derived subnet when set (see
+    // setScanRange); otherwise scan the connected /24.
+    uint32_t total;
+    IPAddress network;
+    if (_customCount > 0) {
+        total = _customCount;
+        network = _customBase;
+    } else {
+        total = g_wifi.hostCount();
+        network = g_wifi.networkAddress();
+    }
     if (total == 0) {
         notify(ScanEventType::LogLine, -1, 0, "subnet too small/large to scan");
         return;
     }
-
-    IPAddress network = g_wifi.networkAddress();
 
     if (xSemaphoreTake(_mutex, portMAX_DELAY) == pdTRUE) {
         _hosts.clear();
@@ -62,6 +70,15 @@ void ScanManager::startDiscoveryScan() {
         xTaskCreatePinnedToCore(&ScanManager::workerTaskEntry, "scanw", 6144, args, 1, nullptr, 0);
     }
 }
+
+void ScanManager::setScanRange(const IPAddress& base, uint32_t count) {
+    if (count > 512) count = 512;  // same ceiling as WifiManager::kMaxScanHosts
+    if (count == 0) count = 1;
+    _customBase = base;
+    _customCount = count;
+}
+
+void ScanManager::clearScanRange() { _customCount = 0; }
 
 size_t ScanManager::hostCount() const {
     if (!_mutex || xSemaphoreTake(_mutex, pdMS_TO_TICKS(100)) != pdTRUE) return 0;

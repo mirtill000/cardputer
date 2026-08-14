@@ -2,6 +2,9 @@
 #include "HostDetailScreen.h"
 #include "WifiSetupScreen.h"
 #include "DiscoveryMenuScreen.h"
+#include "SearchScreen.h"
+#include "TargetRangeScreen.h"
+#include "QrShareScreen.h"
 #include "../UiManager.h"
 #include "../Theme.h"
 #include "../Chrome.h"
@@ -135,6 +138,18 @@ void HostListScreen::onKey(UiKey key, char ch) {
     // tool handles its own prerequisites like "needs a scan first").
     if (key == UiKey::Char && (ch == 'd' || ch == 'D')) {
         g_ui.pushScreen(&DiscoveryMenuScreen::instance());
+        return;
+    }
+    if (key == UiKey::Char && (ch == 's' || ch == 'S')) {
+        g_ui.pushScreen(&SearchScreen::instance());
+        return;
+    }
+    if (key == UiKey::Char && (ch == 't' || ch == 'T')) {
+        g_ui.pushScreen(&TargetRangeScreen::instance());
+        return;
+    }
+    if (key == UiKey::Char && (ch == 'q' || ch == 'Q')) {
+        g_ui.pushScreen(&QrShareScreen::instance());
         return;
     }
 

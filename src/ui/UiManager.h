@@ -74,6 +74,10 @@ private:
     uint32_t _lastInputMs = 0;
     bool _dimmed = false;
 
+    // Low-battery one-shot alert (with hysteresis) - see run().
+    bool _lowBattWarned = false;
+    uint32_t _lastBattCheckMs = 0;
+
     // Global '?' help overlay: toggled in handleKeyEvent (unless a text
     // field owns the keyboard), drawn over the active screen, dismissed by
     // any other key. Reset on every screen transition.

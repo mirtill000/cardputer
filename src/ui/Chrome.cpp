@@ -235,7 +235,13 @@ void chrome::drawHeader(M5Canvas& gfx, const char* title) {
     gfx.setCursor(x, 4);
     gfx.print("W ");
 
-    gfx.setTextColor(theme::GREEN, theme::BG);
+    // Battery color by level: red < 15%, amber < 30%, green otherwise
+    // (grey when the gauge can't report a value).
+    uint16_t battColor = (batt < 0)    ? theme::GREY
+                         : (batt < 15) ? theme::RED
+                         : (batt < 30) ? theme::AMBER
+                                       : theme::GREEN;
+    gfx.setTextColor(battColor, theme::BG);
     gfx.print(battBuf);
     gfx.print('%');
 

@@ -1,5 +1,7 @@
 #include "SettingsScreen.h"
 #include "OtaScreen.h"
+#include "FileManagerScreen.h"
+#include "DiagnosticsScreen.h"
 #include "../UiManager.h"
 #include "../Theme.h"
 #include "../Chrome.h"
@@ -60,6 +62,9 @@ void SettingsScreen::adjust(int direction) {
         case 6:  // sound toggle - gates sound::startBootLoop()/playAlert()/playCredAlert()
             g_config.uiSoundEnabled = g_config.uiSoundEnabled ? 0 : 1;
             break;
+        case 7:  // low-power mode toggle - faster backlight dim (see UiManager)
+            g_config.lowPowerMode = g_config.lowPowerMode ? 0 : 1;
+            break;
         default:
             break;
     }
@@ -106,6 +111,12 @@ void SettingsScreen::onKey(UiKey key, char ch) {
                 } else {
                     _statusLine = ConfigBackup::restore(SD, kBackupPath) ? "restored from SD" : "restore FAILED (see serial log)";
                 }
+            } else if (ch == 'f' || ch == 'F') {
+                g_config.save();
+                g_ui.pushScreen(&FileManagerScreen::instance());
+            } else if (ch == 'd' || ch == 'D') {
+                g_config.save();
+                g_ui.pushScreen(&DiagnosticsScreen::instance());
             }
             break;
         default:
@@ -118,17 +129,22 @@ void SettingsScreen::draw(M5Canvas& gfx) {
     chrome::drawHeader(gfx, "SETTINGS");
 
     const char* labels[kFieldCount] = {
-        "TIMEOUT (ms)", "THREADS", "PROBE DELAY (ms)", "PORT START", "PORT END", "AUTO-EXPORT", "SOUND",
+        "TIMEOUT (ms)", "THREADS",     "PROBE DELAY (ms)", "PORT START",
+        "PORT END",     "AUTO-EXPORT", "SOUND",            "LOW-POWER",
     };
     String values[kFieldCount] = {
-        String(g_config.scanTimeoutMs),   String(g_config.maxConcurrentProbes),
-        String(g_config.interProbeDelayMs), String(g_config.portRangeStart),
-        String(g_config.portRangeEnd),    g_config.autoExportOnScanFinish ? String("ON") : String("OFF"),
+        String(g_config.scanTimeoutMs),
+        String(g_config.maxConcurrentProbes),
+        String(g_config.interProbeDelayMs),
+        String(g_config.portRangeStart),
+        String(g_config.portRangeEnd),
+        g_config.autoExportOnScanFinish ? String("ON") : String("OFF"),
         g_config.uiSoundEnabled ? String("ON") : String("OFF"),
+        g_config.lowPowerMode ? String("ON") : String("OFF"),
     };
 
-    constexpr int16_t kRowH = 14;
-    constexpr int16_t kTop = 20;
+    constexpr int16_t kRowH = 13;  // 8 fields now - a touch tighter to fit
+    constexpr int16_t kTop = 18;
 
     for (uint8_t i = 0; i < kFieldCount; i++) {
         int16_t y = kTop + i * kRowH;
@@ -155,5 +171,5 @@ void SettingsScreen::draw(M5Canvas& gfx) {
 
     gfx.setTextColor(theme::GREY, theme::BG);
     gfx.setCursor(4, gfx.height() - 9);
-    gfx.print("</>:adj ENTER:exit O:ota B:bak R:rst");
+    gfx.print("</>adj O:ota F:files D:diag ?:help");
 }

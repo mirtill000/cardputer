@@ -41,6 +41,9 @@ struct AppConfig {
 
     // ui
     uint8_t uiSoundEnabled = 1;
+    // Low-power mode: dims the backlight faster (see UiManager) for long
+    // unattended sessions (wardriving/monitoring). Persisted.
+    uint8_t lowPowerMode = 0;
 
     void load();
     void save() const;

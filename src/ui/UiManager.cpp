@@ -21,6 +21,7 @@ constexpr UBaseType_t kScanQueueLen = 24;
 // changes. 12/255 is dim but not zero: a scan/war-driving session left
 // running unattended is still glanceable, not fully dark.
 constexpr uint32_t kIdleTimeoutMs = 30000;
+constexpr uint32_t kLowPowerTimeoutMs = 8000;  // faster dim when lowPowerMode is on
 constexpr uint8_t kDimBrightness = 12;
 constexpr uint8_t kFullBrightness = 255;
 }  // namespace
@@ -128,11 +129,27 @@ void UiManager::run() {
             if (_helpVisible) drawHelpOverlay(top);
         }
 
+        // Low-battery one-shot alert (checked every ~5s, not per frame):
+        // beep once when it first drops below 15%, re-arm above 20% so it
+        // doesn't nag continuously around the threshold. Header shows the
+        // level in red regardless (see chrome::drawHeader).
+        if (millis() - _lastBattCheckMs > 5000) {
+            _lastBattCheckMs = millis();
+            int32_t b = M5.Power.getBatteryLevel();
+            if (b >= 0 && b < 15 && !_lowBattWarned) {
+                _lowBattWarned = true;
+                sound::playAlert();
+            } else if (b >= 20) {
+                _lowBattWarned = false;
+            }
+        }
+
         // Idle timeout dims the backlight - see kIdleTimeoutMs above.
         // Toggled only on the edge (not every frame) since
         // setBrightness() talks to the display over SPI and there's no
         // reason to repeat that 30x/sec while nothing has changed.
-        bool idle = (millis() - _lastInputMs) > kIdleTimeoutMs;
+        uint32_t idleTimeout = g_config.lowPowerMode ? kLowPowerTimeoutMs : kIdleTimeoutMs;
+        bool idle = (millis() - _lastInputMs) > idleTimeout;
         if (idle != _dimmed) {
             M5Cardputer.Display.setBrightness(idle ? kDimBrightness : kFullBrightness);
             _dimmed = idle;

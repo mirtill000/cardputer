@@ -1625,6 +1625,35 @@ di `AUTO ASSESS`: guida i manager esistenti via le loro API pubbliche, non
 reimplementa nulla, e rispetta il vincolo della radio condivisa che tutto
 il firmware tiene documentato.
 
+### Fase 26: QR handoff, file manager, ricerca, range custom, diagnostica, energia
+
+Sei funzionalità scelte dall'utente (1, 3, 4, 7, 9, 10), additive:
+
+- **#1 Share via QR** (`ui/screens/QrShareScreen`, `Q` da NETWORK SCAN):
+  QR con un riepilogo compatto dell'assessment (rete, conteggi host, IP
+  critici) renderizzato con `M5GFX::qrcode()` — si scansiona col telefono
+  per portarsi via il risultato senza SD.
+- **#3 File manager** (`FileManagerScreen`, `F` da SETTINGS): sfoglia
+  file/cartelle del filesystem di export (SD o LittleFS), entra nelle
+  directory ed elimina file (con conferma).
+- **#4 Ricerca** (`SearchScreen`, `S` da NETWORK SCAN): ricerca testuale
+  live sugli host correnti per IP/MAC/vendor/hostname; `ENTER` passa a
+  navigare i match e aprirne il dettaglio.
+- **#7 Range/target custom** (`TargetRangeScreen`, `T` da NETWORK SCAN +
+  `ScanManager::setScanRange`): scansiona un `/24` diverso da quello DHCP
+  digitando l'IP di base; `C` per tornare alla subnet connessa. (MAC/vendor
+  solo sulla subnet locale; altre subnet via ping L3 instradato.)
+- **#9 Diagnostica** (`DiagnosticsScreen`, `D` da SETTINGS): self-test di
+  SD, WiFi, batteria, **IMU** (BMI270), tastiera, speaker (`S`), uptime,
+  RAM libera.
+- **#10 Gestione energia**: la `%` batteria in header ora è colorata
+  (rosso <15%, ambra <30%), un **alert una-tantum** suona sotto il 15%, e
+  un toggle **LOW-POWER** in SETTINGS accorcia il dimming del backlight per
+  le sessioni lunghe non presidiate.
+
+Nessuna di queste è una nuova *tipologia di scansione*, quindi niente da
+agganciare al `RUN ALL` (la #7 modifica il NETWORK SCAN esistente).
+
 ## Compilare e flashare
 
 ```

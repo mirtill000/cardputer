@@ -28,6 +28,17 @@ public:
     // No-op if a scan is already running, or if WiFi isn't connected.
     void startDiscoveryScan();
 
+    // Optional custom target range: overrides the DHCP-derived subnet with
+    // an explicit base network address + host count (base+1 .. base+count).
+    // Cleared with clearScanRange() to return to the connected /24. Note:
+    // ARP/MAC resolution only works for the local subnet, so a range on a
+    // different subnet relies on L3 ping via the gateway and won't get MACs.
+    void setScanRange(const IPAddress& base, uint32_t count);
+    void clearScanRange();
+    bool hasCustomRange() const { return _customCount > 0; }
+    IPAddress customBase() const { return _customBase; }
+    uint32_t customCount() const { return _customCount; }
+
     bool isRunning() const { return _running; }
     uint8_t progressPct() const { return _progressPct; }
 
@@ -77,6 +88,11 @@ private:
     std::atomic<uint32_t> _scanGeneration{0};  // bumped per scan; lets stale workers from a previous run notice and bail
 
     IPAddress _gateway;
+
+    // Custom range override (see setScanRange). _customCount == 0 means
+    // "use the DHCP-derived subnet".
+    IPAddress _customBase;
+    std::atomic<uint32_t> _customCount{0};
 };
 
 extern ScanManager g_scanManager;

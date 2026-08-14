@@ -24,7 +24,7 @@ public:
 
     const char* title() const override { return "NET"; }
     const char* helpText() const override {
-        return "NETWORK SCAN\n\nENTER: host detail\nD: discovery tools\nF: cycle filter\nE: export json/csv\nR: html report\nW: wifi setup\narrows: move   DEL: back";
+        return "NETWORK SCAN\n\nENTER: host detail   D: discovery\nS: search   F: filter\nT: target range   Q: share (QR)\nE: export   R: report   W: wifi\narrows: move   DEL: back";
     }
 
 private:
