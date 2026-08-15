@@ -2080,16 +2080,62 @@ esecuzione insieme finché resta attiva:
   nel pcap è comunque utile (chi parla, quanto, quando: header MAC
   sempre leggibili in modalità promiscua indipendentemente dalla
   cifratura), analizzabile offline con Wireshark/tshark, mai un modo per
-  leggere il contenuto reale di qualcosa. Nessuna rotazione né limite di
-  dimensione: il file cresce per tutta la sessione, un uso prolungato su
-  una rete trafficata può occupare spazio SD non trascurabile — vedi
-  "Limiti noti".
+  leggere il contenuto reale di qualcosa. (Fase 35 aggiunge la rotazione
+  automatica per file, vedi sotto — resta comunque senza tetto sul
+  numero totale di parti in una sessione, vedi "Limiti noti".)
 
 Nessuna delle due parti tocca dispositivi di terzi in modo diverso da
 quanto fanno già `NETWORK SCAN`/`CDP LLDP`/`ROGUE DHCP`: solo ascolto e
 scansione della propria rete già connessa, mai nulla inviato a un
 dispositivo che non abbia già scelto di essere su quella rete. Nessun
 gate offensive richiesto per lo stesso motivo.
+
+### Fase 35: SENTINEL MODE si evolve — dispositivi scomparsi, deauth flood integrato, rotazione pcap, riepilogo di sessione
+
+Su richiesta esplicita dell'utente, quattro delle cinque funzionalità
+aggiuntive proposte per SENTINEL MODE dopo la Fase 34 (punti 1, 2, 3, 5
+— la 4, whitelist dispositivi fidati indipendente dalla cronologia, resta
+non implementata):
+
+- **Rilevamento "dispositivo scomparso"** — il simmetrico di
+  "dispositivo nuovo": `SentinelManager` ora tiene traccia (`_tracked`,
+  solo in memoria per la sessione) di ogni host visto vivo durante i
+  propri cicli, non solo di quelli marcati "nuovi". Un host tracciato
+  che manca per `kMissedCyclesThreshold`=2 cicli consecutivi (~60s)
+  genera un evento `DeviceGone` — stesso bip sonoro di un dispositivo
+  nuovo, così "la stampante si è spenta inaspettatamente" è visibile
+  quanto "un telefono nuovo si è unito alla rete". Non esiste un evento
+  di "ritorno": lo stato si azzera silenziosamente quando il dispositivo
+  ricompare — vedi "Limiti noti" per il ragionamento.
+- **Rilevamento flood deauth/disassoc integrato** — invece di dover
+  scegliere fra GUARD MODE e SENTINEL MODE (che condividerebbero comunque
+  lo stesso, unico, callback promiscuo e si ruberebbero i frame a
+  vicenda), la stessa logica a finestra scorrevole di `DeauthWatcher`
+  (10s, 15 frame/finestra per BSSID) è ora richiamata direttamente dentro
+  `SentinelManager::onCapturedFrame`, sullo stream di frame già in
+  ricezione per il dump del traffico — nessuna sessione promiscua
+  aggiuntiva necessaria. Un evento `DeauthFlood` genera lo stesso
+  allarme sonoro degli altri due tipi di evento. `GUARD MODE` resta
+  comunque disponibile come strumento a sé per chi vuole solo il
+  rilevamento flood senza il resto.
+- **Rotazione automatica del pcap** — ogni file `.pcap` di sessione è
+  ora limitato a `kMaxPcapBytes`=5MB; oltre quella soglia se ne apre uno
+  nuovo con lo stesso nome base (timestamp+SSID) e un suffisso
+  progressivo `_p1.pcap`, `_p2.pcap`, ecc. — nessun singolo file può più
+  crescere senza limite, anche se il totale su una sessione lunghissima
+  ancora non ha un tetto (vedi "Limiti noti").
+- **Riepilogo di fine sessione** — quando SENTINEL MODE si ferma
+  (`ENTER` o uscita dal firmware), `SentinelManager::writeSummary()`
+  scrive `<stesso base>_summary.txt` sotto `/netrunner`: durata sessione,
+  cicli eseguiti, frame catturati, elenco delle parti pcap prodotte, e
+  ogni evento (nuovo/scomparso/flood) con IP/MAC/hostname/vendor o BSSID
+  a seconda del tipo — un riepilogo leggibile senza dover essere rimasti
+  a guardare lo schermo in tempo reale durante la sessione.
+
+Nel frattempo la schermata `SENTINEL MODE` è stata aggiornata da una
+semplice lista "nuovi dispositivi" a un log eventi unificato (`I` per il
+dettaglio di ciascuno), con un'etichetta e un colore diversi per NEW
+(magenta), GONE (ambra) e FLOOD (rosso).
 
 ## Compilare e flashare
 
@@ -2347,6 +2393,14 @@ originale.
       più un dump continuo del traffico 802.11 (management+data, header
       sempre leggibili, payload mai decriptato) su `.pcap` sotto
       `/netrunner`.
+- [x] **Fase 35 — SENTINEL MODE si evolve**: rilevamento "dispositivo
+      scomparso" (simmetrico al "dispositivo nuovo", 2 cicli mancati
+      consecutivi), rilevamento flood deauth/disassoc integrato
+      direttamente (stessa logica di GUARD MODE, nessuna sessione
+      promiscua separata), rotazione automatica del pcap ogni 5MB per
+      parte, riepilogo di sessione (`_summary.txt`) scritto allo stop
+      con ogni evento nuovo/scomparso/flood. Schermata aggiornata a un
+      log eventi unificato con colore per tipo.
 
 ## Test plan — Fase 1
 
@@ -3329,7 +3383,7 @@ altrui:
    non deve ricomparire come "nuovo" in un ciclo successivo nella stessa
    sessione.
 5. **Dump pcap**: dopo qualche minuto di esecuzione, fermare con `ENTER`
-   e verificare su SD/LittleFS che `/netrunner/<timestamp>_<ssid>.pcap`
+   e verificare su SD/LittleFS che `/netrunner/<timestamp>_<ssid>_p1.pcap`
    esista, abbia dimensione > 0 e si apra correttamente in Wireshark
    (frame leggibili come 802.11 anche se il payload dati resta cifrato
    su una rete WPA2/WPA3).
@@ -3341,6 +3395,39 @@ altrui:
 7. **DEL mantiene la sessione**: uscire con `DEL` e rientrare più tardi
    — Sentinel deve essere ancora in esecuzione, con cicli/dispositivi/
    frame accumulati nel frattempo.
+
+## Test plan — Fase 35 (dispositivo scomparso, flood integrato, rotazione pcap, riepilogo)
+
+1. **Dispositivo scomparso**: con Sentinel attivo e almeno un dispositivo
+   già rilevato (nuovo o presente al primo ciclo), spegnere/disconnettere
+   quel dispositivo — dopo ~2 cicli (~60s) deve comparire un evento
+   `GONE` in ambra con bip sonoro, consultabile per esteso con `I`.
+2. **Nessun evento GONE prematuro**: un dispositivo che manca per un
+   solo ciclo (es. un timeout ARP occasionale) non deve generare un
+   evento — solo dopo 2 mancati consecutivi.
+3. **Ritorno silenzioso**: far ricomparire un dispositivo già segnalato
+   `GONE` — non deve generare alcun evento di "ritorno"; se sparisce di
+   nuovo in seguito, deve poter essere ri-segnalato normalmente.
+4. **Deauth flood rilevato senza GUARD MODE**: con solo `SENTINEL MODE`
+   attivo (non `GUARD MODE`), generare un vero flood di deauth contro un
+   AP di test (SOLO sulla propria rete) — entro la finestra di 10s deve
+   comparire un evento `FLOOD` in rosso con allarme sonoro, stesso
+   comportamento di GUARD MODE ma senza doverlo avviare separatamente.
+5. **Rotazione pcap**: forzare (o attendere, su una rete molto
+   trafficata) il superamento dei 5MB sul file corrente — deve comparire
+   un nuovo file `..._p2.pcap` e il contatore "parts" nella schermata
+   deve salire a 2; il file `_p1.pcap` precedente deve restare valido e
+   apribile (chiuso correttamente, non troncato a metà record).
+6. **Riepilogo di sessione**: fermare Sentinel dopo aver accumulato
+   almeno un evento di ciascun tipo — verificare che
+   `..._summary.txt` esista sotto `/netrunner` e contenga durata, cicli,
+   frame totali, elenco delle parti pcap, e ogni evento con i suoi dati
+   (IP/MAC/hostname/vendor per new/gone, BSSID per flood).
+7. **Log eventi unificato nella UI**: con eventi di più tipi presenti,
+   verificare che ogni riga mostri l'etichetta corretta (NEW/GONE/FLOOD)
+   col colore giusto (magenta/ambra/rosso) e che `I` mostri il dettaglio
+   pertinente al tipo (BSSID per FLOOD, IP/MAC/hostname/vendor per gli
+   altri due).
 
 ## Limiti noti e tagli di scope deliberati
 
@@ -3625,21 +3712,42 @@ posto:
   classificato `"http"` dal port scan — endpoint NTLM su `"https"` (molto
   comuni: OWA/Exchange, portali IIS interni) restano fuori scope finché
   questo firmware non ha un client TLS.
-- **SENTINEL MODE: pcap senza rotazione né limite di dimensione, mai
-  decripta nulla** (Fase 34): il file di dump cresce per tutta la durata
-  della sessione — una sessione lunga su una rete trafficata può
-  occupare parecchio spazio SD, e non c'è un tetto automatico né una
-  suddivisione in più file; fermare manualmente è l'unico modo di
-  limitarlo per ora. La baseline "dispositivo mai visto" viene caricata
-  una volta sola all'avvio dalla cronologia già salvata da scan
-  precedenti di quella rete (`ScanHistory`, fino a 20 voci) e poi tenuta
-  solo in memoria per il resto della sessione — non scrive nuovi
-  snapshot nella cronologia condivisa a ogni ciclo (vedi la sezione
-  "Fase 34" sopra per il perché), quindi le proprie osservazioni non
-  arricchiscono quella baseline per sessioni Sentinel future, solo per
-  quella in corso. Come ogni cattura promiscua in questo firmware, il
-  payload dei frame dati resta cifrato esattamente come lo era sull'aria
-  su una rete WPA2/WPA3 — nessun tentativo di decifrarlo, mai.
+- **SENTINEL MODE: pcap ruota per file, ma senza limite sul totale della
+  sessione; mai decripta nulla** (Fase 34, rotazione aggiunta in Fase
+  35): ogni singolo file `.pcap` è ora limitato a 5MB (`kMaxPcapBytes`),
+  oltre i quali se ne apre uno nuovo con lo stesso nome base e un
+  suffisso `_pN` — ma non c'è ancora un tetto sul NUMERO di parti: una
+  sessione lasciata attiva per giorni su una rete trafficata continua a
+  produrre file aggiuntivi senza limite; fermare manualmente resta
+  l'unico modo di limitare lo spazio totale occupato. La baseline
+  "dispositivo mai visto" viene caricata una volta sola all'avvio dalla
+  cronologia già salvata da scan precedenti di quella rete
+  (`ScanHistory`, fino a 20 voci) e poi tenuta solo in memoria per il
+  resto della sessione — non scrive nuovi snapshot nella cronologia
+  condivisa a ogni ciclo (vedi la sezione "Fase 34" sopra per il
+  perché), quindi le proprie osservazioni non arricchiscono quella
+  baseline per sessioni Sentinel future, solo per quella in corso. Come
+  ogni cattura promiscua in questo firmware, il payload dei frame dati
+  resta cifrato esattamente come lo era sull'aria su una rete WPA2/WPA3
+  — nessun tentativo di decifrarlo, mai.
+- **SENTINEL MODE: "dispositivo scomparso" richiede due cicli mancati
+  (~60s), nessun evento di "ritorno"** (Fase 35): la soglia
+  `kMissedCyclesThreshold=2` evita falsi allarmi da un singolo sweep
+  ARP/ping fallito per motivi transitori, ma significa che un
+  dispositivo che sparisce e ritorna in meno di un minuto non genera mai
+  un evento. Quando un dispositivo già segnalato "gone" ricompare, lo
+  stato si azzera silenziosamente — non esiste un evento "device back"
+  dedicato, scelta deliberata per non raddoppiare gli allarmi su
+  qualcosa che di per sé non è una scoperta nuova; se sparisce di nuovo
+  in seguito, viene ri-segnalato normalmente.
+- **SENTINEL MODE: la fusione con GUARD MODE è logica duplicata, non
+  codice condiviso** (Fase 35): `SentinelManager::checkDeauthFlood`
+  reimplementa la stessa finestra scorrevole/soglia di
+  `DeauthWatcher::onManagementFrame` (10s, 15 frame/finestra) invece di
+  richiamare quella classe — le due classi restano indipendenti (GUARD
+  MODE resta utile da solo se si vuole solo il rilevamento flood senza
+  discovery/traffic dump), a costo di dover mantenere la stessa logica
+  in due punti se la soglia cambierà in futuro.
 - **Nessuna build reale eseguita**: vale per ogni fase di questo
   progetto — il sandbox di sviluppo non ha accesso al registry
   PlatformIO. Tutto il codice è stato scritto con attenzione e, dove
