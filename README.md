@@ -1755,6 +1755,45 @@ sia questa fase sia il fatto che il browser mDNS/DNS-SD completo era già
 descritto correttamente solo dalla Fase 19 in poi (la vecchia voce
 "solo fallback a NBNS" era ormai obsoleta anche prima di questa fase).
 
+### Fase 28: ogni report di scansione salvato su SD sotto /netrunner, un file per run
+
+Prima di questa fase, l'export JSON/CSV di `NETWORK SCAN` (`E`) e il
+report HTML (`R` da `NETWORK SCAN`, o quello generato in automatico da
+`AUTO ASSESS`) scrivevano sempre sugli stessi tre nomi fissi
+(`/export.json`, `/export.csv`, `/report.html`), sovrascritti a ogni
+run — niente storico, e impossibile distinguere due assessment fatti su
+reti diverse (o sulla stessa rete in momenti diversi) senza rinominare
+i file a mano prima del run successivo.
+
+- **`storage/NetrunnerPaths`** (nuovo, piccolo modulo condiviso): crea
+  `/netrunner` se non esiste e restituisce una base
+  `/netrunner/<TIMESTAMP>_<SSID corrente>` — senza estensione, stesso
+  pattern già usato da `WardrivingManager::handleOpenAllowlistedAp` per
+  i propri export per-AP (`base + ".json"`, `base + ".csv"`, ...): un
+  'unico timestamp condiviso per l'intero trio JSON/CSV/HTML di un run,
+  non tre timestamp leggermente diversi se calcolati separatamente.
+  `TIMESTAMP` usa il nuovo `TimeSync::nowFilenameString()`
+  (`YYYYMMDD-HHMMSS`, filesystem-safe, niente `:`/spazi) quando l'ora è
+  sincronizzata — spesso vera fin dal boot ora che la Fase 27 ha
+  aggiunto il supporto RTC — altrimenti un fallback `uptime-<secondi>`,
+  stessa convenzione già usata dal log CSV del war driving. Il nome
+  rete viene sanificato (`/`, `\`, `:`, spazio → `_`).
+- **Tre punti di scrittura aggiornati**: l'export manuale e quello
+  automatico a fine scan in `HostListScreen` (entrambi in `NETWORK
+  SCAN`), il report HTML manuale (`R`) e quello di `AssessmentRunner`
+  (`AUTO ASSESS`). `ReportGenerator`'s **COMPANION ARTIFACTS** (l'indice
+  degli artefatti trovati sulla card, in fondo a ogni report HTML) non
+  cerca più i vecchi nomi fissi ma elenca `/netrunner/` come cartella
+  (stesso trattamento già riservato a `/handshakes/`, dato che il nome
+  file esatto ora varia per ogni run).
+- **Deliberatamente NON toccato**: l'export per-AP del war driving
+  (`/wardrive/scans/<ssid>_<bssid>.json/.csv`) resta nel proprio
+  namespace separato, come già era — vedi il commento in
+  `WardrivingManager.cpp` sul perché è tenuto distinto dallo storico di
+  `NETWORK SCAN`. `ScanHistory` (i suoi snapshot interni per il diff
+  "nuovo host mai visto") resta anch'esso un meccanismo separato, non un
+  report pensato per l'utente.
+
 ## Compilare e flashare
 
 ```
@@ -1962,6 +2001,12 @@ originale.
       nulla; supporto RTC a batteria (unità Grove tipo M5Stack RTC Unit)
       per un orario reale disponibile da subito al boot, senza aspettare
       il WiFi — vedi sopra e "Limiti noti".
+- [x] **Fase 28 — Ogni report di scansione su SD sotto `/netrunner`**:
+      l'export JSON/CSV e il report HTML di `NETWORK SCAN`/`AUTO ASSESS`
+      non sovrascrivono più tre nomi fissi (`/export.json`, `/export.csv`,
+      `/report.html`) ma finiscono uno per run in `/netrunner/`, col nome
+      `<timestamp>_<SSID>.<ext>` (`storage/NetrunnerPaths`) — storico
+      completo invece di un solo snapshot sempre sovrascritto.
 
 ## Test plan — Fase 1
 
@@ -2731,6 +2776,29 @@ verificare su hardware, in un ambiente **autorizzato**:
    connessione. Con WiFi disponibile, dopo qualche minuto scollegare
    l'RTC, riavviare e verificare che l'ultimo orario NTP scritto sia
    stato effettivamente persistito (l'RTC riparte da lì, non da zero).
+
+## Test plan — Fase 28 (report su /netrunner)
+
+1. **Export manuale**: da `NETWORK SCAN` dopo uno scan, `E` deve creare
+   `/netrunner/<timestamp>_<SSID>.json` e `.csv` su SD (o LittleFS se
+   nessuna SD); ripetere l'export sulla stessa rete deve produrre un
+   NUOVO file (timestamp diverso), non sovrascrivere il precedente.
+2. **Export automatico**: con `AUTO-EXPORT` attivo in `SETTINGS`, ogni
+   scan completato deve produrre la stessa coppia di file in
+   `/netrunner`, senza intervento dell'utente.
+3. **Report HTML manuale e da AUTO ASSESS**: `R` da `NETWORK SCAN` e un
+   run completo di `AUTO ASSESS` devono entrambi produrre un
+   `/netrunner/<timestamp>_<SSID>.html` che si apre correttamente in un
+   browser, con la sezione COMPANION ARTIFACTS che elenca `/netrunner/`
+   (non i vecchi nomi fissi) quando ce ne sono già altri sulla card.
+4. **SSID con caratteri problematici**: connettersi a una rete con SSID
+   contenente `/`, spazi o `:` e verificare che l'export non fallisca e
+   il nome file sia sanificato (niente sottocartelle spurie create per
+   sbaglio da uno `/` non sanificato).
+5. **Nessun WiFi/ora non sincronizzata**: non dovrebbe essere raggiungibile
+   in pratica (l'export richiede una rete scansionata), ma verificare
+   comunque che senza sync l'export usi il fallback `uptime-<secondi>`
+   invece di fallire o produrre un nome vuoto.
 
 ## Limiti noti e tagli di scope deliberati
 

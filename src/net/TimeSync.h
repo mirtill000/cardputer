@@ -75,4 +75,12 @@ String nowString();
 // synced yet.
 String nowTimeString();
 
+// "YYYYMMDD-HHMMSS" (UTC) - filesystem-safe (no ':'/' ' the way
+// nowString()'s human-readable form has), for building timestamped
+// filenames (see storage/NetrunnerPaths.h). "" if not synced yet, same
+// convention as nowString()/nowTimeString() - callers fall back to an
+// uptime-based stamp themselves, same as WardrivingManager's CSV log
+// already does for its own timestamp column.
+String nowFilenameString();
+
 }  // namespace TimeSync

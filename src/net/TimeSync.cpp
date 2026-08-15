@@ -110,3 +110,14 @@ String TimeSync::nowTimeString() {
     snprintf(buf, sizeof(buf), "%02d:%02d:%02d", tmInfo.tm_hour, tmInfo.tm_min, tmInfo.tm_sec);
     return String(buf);
 }
+
+String TimeSync::nowFilenameString() {
+    if (!isSynced()) return "";
+    time_t now = time(nullptr);
+    struct tm tmInfo;
+    gmtime_r(&now, &tmInfo);
+    char buf[20];
+    snprintf(buf, sizeof(buf), "%04d%02d%02d-%02d%02d%02d", tmInfo.tm_year + 1900, tmInfo.tm_mon + 1, tmInfo.tm_mday,
+             tmInfo.tm_hour, tmInfo.tm_min, tmInfo.tm_sec);
+    return String(buf);
+}

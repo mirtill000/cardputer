@@ -242,7 +242,7 @@ bool ReportGenerator::generate(fs::FS& fs, const char* path) {
     // --- Companion artifacts actually present on this card ---
     f.print("<h2>COMPANION ARTIFACTS</h2>");
     const char* artifacts[] = {
-        "/export.json", "/export.csv", "/wardrive/wardrive.csv", "/eviltwin/associations.csv",
+        "/wardrive/wardrive.csv", "/eviltwin/associations.csv",
     };
     bool anyArtifact = false;
     f.print("<ul>");
@@ -253,6 +253,16 @@ bool ReportGenerator::generate(fs::FS& fs, const char* path) {
             f.print(a);
             f.print("</code></li>");
         }
+    }
+    // /netrunner/ - every NETWORK SCAN export (JSON/CSV) and HTML report
+    // (this one included, and every earlier one), one timestamped file
+    // per run - see storage/NetrunnerPaths.h. Listed as a directory, not
+    // individual filenames, same as /handshakes/ below: the exact
+    // filename varies per run (timestamp+SSID), unlike the fixed-name
+    // artifacts above.
+    if (fs.exists("/netrunner")) {
+        anyArtifact = true;
+        f.print("<li><code>/netrunner/</code> &mdash; every scan export/report, one timestamped file per run</li>");
     }
     if (fs.exists("/handshakes")) {
         anyArtifact = true;
