@@ -21,8 +21,9 @@
 // SSID is on that allowlist gets automatically joined, discovery- and
 // port-scanned (reusing ScanManager/PortScanManager — the exact same
 // modules NETWORK SCAN/PORT SCANNER already drive), the results saved
-// under /wardrive/scans/, then the device disconnects and reconnects to
-// whatever network it had saved before.
+// under /netrunner/ (see storage/NetrunnerPaths.h) alongside every other
+// scan report this firmware produces, then the device disconnects and
+// reconnects to whatever network it had saved before.
 //
 // This is deliberately NOT "every open network encountered" the way it
 // might first sound like war-driving should work: scanning a stranger's

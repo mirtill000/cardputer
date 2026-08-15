@@ -16,6 +16,7 @@
 #include "../../storage/ReportGenerator.h"
 #include "../../storage/ScanHistory.h"
 #include "../../storage/SdCard.h"
+#include "../../storage/NetrunnerPaths.h"
 #include <cstdio>
 
 HostListScreen& HostListScreen::instance() {
@@ -97,10 +98,11 @@ void HostListScreen::onScanEvent(const ScanNotification& ev) {
             ScanHistory::diffNewHosts(fs, _newHostIps);
 
             if (g_config.autoExportOnScanFinish) {
-                bool okJson = ResultStore::exportJson(fs, "/export.json");
-                bool okCsv = ResultStore::exportCsv(fs, "/export.csv");
+                String base = netrunner::reportBase(fs, g_wifi.currentSsid());
+                bool okJson = ResultStore::exportJson(fs, (base + ".json").c_str());
+                bool okCsv = ResultStore::exportCsv(fs, (base + ".csv").c_str());
                 _statusLine = (okJson && okCsv)
-                                  ? (String("auto-exported (") + sdcard::exportFsLabel() + ") /export.json + .csv")
+                                  ? (String("auto-exported to /netrunner (") + sdcard::exportFsLabel() + ")")
                                   : "auto-export FAILED (see serial log)";
             }
             break;
@@ -189,14 +191,16 @@ void HostListScreen::onKey(UiKey key, char ch) {
         case UiKey::Char:
             if (ch == 'e' || ch == 'E') {
                 fs::FS& fs = sdcard::exportFs();
-                bool okJson = ResultStore::exportJson(fs, "/export.json");
-                bool okCsv = ResultStore::exportCsv(fs, "/export.csv");
-                _statusLine = (okJson && okCsv) ? (String("exported (") + sdcard::exportFsLabel() + ") /export.json + .csv")
+                String base = netrunner::reportBase(fs, g_wifi.currentSsid());
+                bool okJson = ResultStore::exportJson(fs, (base + ".json").c_str());
+                bool okCsv = ResultStore::exportCsv(fs, (base + ".csv").c_str());
+                _statusLine = (okJson && okCsv) ? (String("exported to /netrunner (") + sdcard::exportFsLabel() + ")")
                                                  : "export FAILED (see serial log)";
             } else if (ch == 'r' || ch == 'R') {
                 fs::FS& fs = sdcard::exportFs();
-                bool ok = ReportGenerator::generate(fs, "/report.html");
-                _statusLine = ok ? (String("report (") + sdcard::exportFsLabel() + ") /report.html")
+                String path = netrunner::reportBase(fs, g_wifi.currentSsid()) + ".html";
+                bool ok = ReportGenerator::generate(fs, path.c_str());
+                _statusLine = ok ? (String("report saved to /netrunner (") + sdcard::exportFsLabel() + ")")
                                  : "report FAILED (see serial log)";
             } else if (ch == 'f' || ch == 'F') {
                 _filter = (_filter == Filter::All)     ? Filter::Risky

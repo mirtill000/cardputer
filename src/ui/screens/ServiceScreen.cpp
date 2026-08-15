@@ -3,6 +3,7 @@
 #include "../Theme.h"
 #include "../Chrome.h"
 #include "../../scan/ServiceEnumerator.h"
+#include "../../scan/ScanManager.h"
 
 ServiceScreen& ServiceScreen::instance() {
     static ServiceScreen s;
@@ -14,7 +15,19 @@ void ServiceScreen::onEnter() {
 }
 
 void ServiceScreen::onScanEvent(const ScanNotification& ev) {
-    (void)ev;  // list pulled live from the enumerator each draw
+    if (ev.source != ScanSource::ServiceEnum) return;  // list itself is pulled live from the enumerator each draw
+    if (ev.type != ScanEventType::ScanFinished) return;
+
+    // Correlate this browse's results into the discovery host table (see
+    // ScanManager::mergeMdnsService) - same call DiscoveryRunner makes
+    // after its own mDNS phase, needed here too since SERVICE SCAN can be
+    // run standalone from the DISCOVERY submenu, not just via RUN ALL.
+    ServiceEnumerator::Service svc;
+    for (size_t i = 0; i < g_serviceEnumerator.count(); i++) {
+        if (g_serviceEnumerator.get(i, svc)) {
+            g_scanManager.mergeMdnsService(svc.fromIp, svc.type, svc.instance, svc.port);
+        }
+    }
 }
 
 void ServiceScreen::onKey(UiKey key, char /*ch*/) {

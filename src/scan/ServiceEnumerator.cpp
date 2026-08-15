@@ -146,6 +146,7 @@ void ServiceEnumerator::run() {
                              s.type = trimLocal(type);
                              s.instance = instanceLabel(inst);
                              s.port = 0;
+                             s.fromIp = udp.remoteIP();  // best-effort - see the header comment
                              fullNames.push_back(inst);
                              local.push_back(s);
                          } else if (rtype == kTypeSrv && rdlen >= 6) {

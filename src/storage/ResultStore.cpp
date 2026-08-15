@@ -89,6 +89,12 @@ bool ResultStore::exportJson(fs::FS& fs, const char* path) {
         writeJsonEscaped(f, h.credNote);
         f.print(",\"vulnNote\":");
         writeJsonEscaped(f, h.vulnNote);
+        f.print(",\"mdnsServices\":[");
+        for (size_t s = 0; s < h.mdnsServices.size(); s++) {
+            if (s) f.print(',');
+            writeJsonEscaped(f, h.mdnsServices[s]);
+        }
+        f.print(']');
         f.print(",\"ports\":[");
         for (size_t p = 0; p < h.ports.size(); p++) {
             if (p) f.print(',');
@@ -120,7 +126,7 @@ bool ResultStore::exportCsv(fs::FS& fs, const char* path) {
     File f = fs.open(path, "w");
     if (!f) return false;
 
-    f.println("ip,mac,hostname,vendor,class,risk,cred_audited,cred_vulnerable,cred_note,vuln_note,open_ports");
+    f.println("ip,mac,hostname,vendor,class,risk,cred_audited,cred_vulnerable,cred_note,vuln_note,mdns_services,open_ports");
 
     size_t n = g_scanManager.hostCount();
     HostInfo h;
@@ -136,6 +142,12 @@ bool ResultStore::exportCsv(fs::FS& fs, const char* path) {
                 openPorts += '/';
                 openPorts += h.ports[p].service;
             }
+        }
+
+        String mdnsServices;
+        for (size_t s = 0; s < h.mdnsServices.size(); s++) {
+            if (s) mdnsServices += ';';
+            mdnsServices += h.mdnsServices[s];
         }
 
         String row;
@@ -158,6 +170,8 @@ bool ResultStore::exportCsv(fs::FS& fs, const char* path) {
         csvAppendEscaped(h.credNote, row);
         row += ',';
         csvAppendEscaped(h.vulnNote, row);
+        row += ',';
+        csvAppendEscaped(mdnsServices, row);
         row += ',';
         csvAppendEscaped(openPorts, row);
 

@@ -5,6 +5,7 @@
 #include "../net/WifiManager.h"
 #include "../storage/ReportGenerator.h"
 #include "../storage/SdCard.h"
+#include "../storage/NetrunnerPaths.h"
 #include <vector>
 
 AssessmentRunner g_assessmentRunner;
@@ -84,10 +85,12 @@ void AssessmentRunner::run() {
 
     // --- Phase 3: report (90-100%) ---
     setPhase(Phase::Report, "generating report...");
-    bool ok = ReportGenerator::generate(sdcard::exportFs(), "/report.html");
+    fs::FS& fs = sdcard::exportFs();
+    String path = netrunner::reportBase(fs, g_wifi.currentSsid()) + ".html";
+    bool ok = ReportGenerator::generate(fs, path.c_str());
     _reportOk = ok;
     if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
-        _reportPath = ok ? (String("(") + sdcard::exportFsLabel() + ") /report.html") : String("report FAILED");
+        _reportPath = ok ? (String("(") + sdcard::exportFsLabel() + ") " + path) : String("report FAILED");
         xSemaphoreGive(_mutex);
     }
     _progressPct = 100;

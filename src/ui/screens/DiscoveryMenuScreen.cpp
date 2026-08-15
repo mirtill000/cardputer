@@ -7,6 +7,7 @@
 #include "RogueDhcpScreen.h"
 #include "SnmpScreen.h"
 #include "DataStoreScreen.h"
+#include "BeaconProbeScreen.h"
 #include "../UiManager.h"
 #include "../Theme.h"
 #include "../Chrome.h"
@@ -26,11 +27,12 @@ Screen* gPassive() { return &PassiveHostScreen::instance(); }
 Screen* gRogue() { return &RogueDhcpScreen::instance(); }
 Screen* gSnmp() { return &SnmpScreen::instance(); }
 Screen* gData() { return &DataStoreScreen::instance(); }
+Screen* gBeaconProbe() { return &BeaconProbeScreen::instance(); }
 
 const DItem kItems[] = {
-    {"RUN ALL DISCOVERY", gRunAll}, {"LAN TOPOLOGY", gCdp},   {"UPNP DISCOVERY", gSsdp},
-    {"SERVICE SCAN", gSvc},         {"PASSIVE HOSTS", gPassive}, {"ROGUE DHCP", gRogue},
-    {"SNMP SWEEP", gSnmp},          {"DATASTORE SWEEP", gData},
+    {"RUN ALL DISCOVERY", gRunAll}, {"LAN TOPOLOGY", gCdp},       {"UPNP DISCOVERY", gSsdp},
+    {"SERVICE SCAN", gSvc},         {"PASSIVE HOSTS", gPassive},  {"ROGUE DHCP", gRogue},
+    {"SNMP SWEEP", gSnmp},          {"DATASTORE SWEEP", gData},   {"BEACON/PROBE INTEL", gBeaconProbe},
 };
 constexpr size_t kCount = sizeof(kItems) / sizeof(kItems[0]);
 }  // namespace
@@ -67,7 +69,7 @@ void DiscoveryMenuScreen::draw(M5Canvas& gfx) {
     gfx.fillScreen(theme::BG);
     chrome::drawHeader(gfx, "DISCOVERY");
 
-    constexpr int16_t kRowH = 13;  // 8 items now (RUN ALL added) - tighter rows to fit
+    constexpr int16_t kRowH = 11;  // 9 items now (BEACON/PROBE INTEL added) - tighter rows to fit
     constexpr int16_t kTop = 18;
     for (size_t i = 0; i < kCount; i++) {
         int16_t y = kTop + (int16_t)i * kRowH;

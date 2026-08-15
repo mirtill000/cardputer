@@ -216,6 +216,17 @@ void HostDetailScreen::draw(M5Canvas& gfx) {
     row(gfx, 70, "RISK:", h.risk == RiskLevel::Ok ? String("ok") : (h.risk == RiskLevel::Warning ? String("warning") : String("critical")),
         theme::riskColor(h.risk));
 
+    // mDNS/DNS-SD services best-effort correlated to this host - see
+    // ScanManager::mergeMdnsService (populated after SERVICE SCAN/RUN ALL
+    // DISCOVERY, not by NETWORK SCAN alone).
+    String mdnsVal = "-";
+    if (!h.mdnsServices.empty()) {
+        mdnsVal = h.mdnsServices[0];
+        if (h.mdnsServices.size() > 1) mdnsVal += " +" + String((unsigned)(h.mdnsServices.size() - 1));
+        if (mdnsVal.length() > 24) mdnsVal = mdnsVal.substring(0, 24) + "...";
+    }
+    row(gfx, 79, "MDNS:", mdnsVal, theme::GREEN);
+
     gfx.setTextColor(theme::GREY, theme::BG);
     gfx.setCursor(6, 86);
     if (h.ports.empty()) {

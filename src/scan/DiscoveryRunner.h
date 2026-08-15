@@ -33,6 +33,7 @@ public:
         LanTopology,
         PassiveHosts,
         RogueDhcp,
+        BeaconProbe,
         Done,
         Failed,
     };

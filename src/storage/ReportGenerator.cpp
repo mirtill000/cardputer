@@ -241,8 +241,11 @@ bool ReportGenerator::generate(fs::FS& fs, const char* path) {
 
     // --- Companion artifacts actually present on this card ---
     f.print("<h2>COMPANION ARTIFACTS</h2>");
+    // wardrive.csv moved under /netrunner/ in Fase 29 - covered by the
+    // generic /netrunner/ directory check below now, not a fixed path
+    // here anymore.
     const char* artifacts[] = {
-        "/export.json", "/export.csv", "/wardrive/wardrive.csv", "/eviltwin/associations.csv",
+        "/eviltwin/associations.csv",
     };
     bool anyArtifact = false;
     f.print("<ul>");
@@ -253,6 +256,19 @@ bool ReportGenerator::generate(fs::FS& fs, const char* path) {
             f.print(a);
             f.print("</code></li>");
         }
+    }
+    // /netrunner/ - every NETWORK SCAN export (JSON/CSV) and HTML report
+    // (this one included, and every earlier one), one timestamped file
+    // per run (see storage/NetrunnerPaths.h), plus WardrivingManager's
+    // continuous wardrive.csv sighting log and its own per-AP excursion
+    // exports (Fase 29). Listed as a directory, not individual
+    // filenames, same as /handshakes/ below: the exact filename varies
+    // per run/AP, unlike the fixed-name artifacts above.
+    if (fs.exists("/netrunner")) {
+        anyArtifact = true;
+        f.print(
+            "<li><code>/netrunner/</code> &mdash; every scan export/report and the war-driving log, one file per "
+            "run</li>");
     }
     if (fs.exists("/handshakes")) {
         anyArtifact = true;

@@ -7,6 +7,7 @@
 #include "../net/WifiManager.h"
 #include "../storage/ResultStore.h"
 #include "../storage/SdCard.h"
+#include "../storage/NetrunnerPaths.h"
 #include "../ui/Sound.h"
 #include <Preferences.h>
 #include <cstdio>
@@ -210,10 +211,17 @@ void WardrivingManager::runScanCycle() {
 
 void WardrivingManager::logSighting(const ApSighting& ap) {
     fs::FS& fs = sdcard::exportFs();
-    fs.mkdir("/wardrive");
+    // Continuous, ever-growing (append mode, never truncated) sighting
+    // log across the device's whole lifetime, not a per-run report -
+    // unlike everything netrunner::reportBase() builds, this is one
+    // single file, not one per scan/excursion. Still lives under
+    // /netrunner (Fase 29 - previously its own /wardrive/ namespace) so
+    // every artifact a user would want to pull off the card lands in one
+    // shared folder.
+    fs.mkdir("/netrunner");
 
-    bool isNewFile = !fs.exists("/wardrive/wardrive.csv");
-    File f = fs.open("/wardrive/wardrive.csv", "a");
+    bool isNewFile = !fs.exists("/netrunner/wardrive.csv");
+    File f = fs.open("/netrunner/wardrive.csv", "a");
     if (!f) return;
     if (isNewFile) f.println("time,ssid,bssid,rssi,channel,encryption,vendor,open,allowlisted,suspicious");
 
@@ -290,18 +298,17 @@ void WardrivingManager::handleOpenAllowlistedAp(const ApSighting& ap) {
         portScanned++;
     }
 
-    // Own namespace, separate from the user's own SCAN HISTORY, keyed
-    // by SSID+BSSID so results from different sessions at the same AP
-    // don't clobber each other.
+    // Under /netrunner (Fase 29) alongside every other scan report, but
+    // labeled explicitly with THIS excursion's ssid+bssid rather than
+    // netrunner::reportBase()'s usual "whatever WiFi is currently
+    // connected to" - by the time export runs below, this device may
+    // already be reconnecting back to its own saved network (see the
+    // loop above), so relying on the live SSID here would be fragile.
+    // ssid+bssid (not ssid alone) still disambiguates two different APs
+    // sharing the same name - the exact evil-twin scenario this module
+    // itself flags elsewhere (see ApSighting::suspicious).
     fs::FS& fs = sdcard::exportFs();
-    fs.mkdir("/wardrive");
-    fs.mkdir("/wardrive/scans");
-    String safeSsid = ap.ssid;
-    safeSsid.replace('/', '_');
-    safeSsid.replace(' ', '_');
-    String safeBssid = ap.bssid;
-    safeBssid.replace(':', '-');
-    String base = "/wardrive/scans/" + safeSsid + "_" + safeBssid;
+    String base = netrunner::reportBase(fs, ap.ssid + "_" + ap.bssid);
     ResultStore::exportJson(fs, (base + ".json").c_str());
     ResultStore::exportCsv(fs, (base + ".csv").c_str());
 

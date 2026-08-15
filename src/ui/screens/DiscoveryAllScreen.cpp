@@ -50,6 +50,7 @@ const char* phaseLabel(DiscoveryRunner::Phase p) {
         case DiscoveryRunner::Phase::LanTopology: return "LAN TOPOLOGY";
         case DiscoveryRunner::Phase::PassiveHosts: return "PASSIVE HOSTS";
         case DiscoveryRunner::Phase::RogueDhcp: return "ROGUE DHCP";
+        case DiscoveryRunner::Phase::BeaconProbe: return "BEACON/PROBE";
         case DiscoveryRunner::Phase::Done: return "DONE";
         case DiscoveryRunner::Phase::Failed: return "FAILED";
         default: return "IDLE";

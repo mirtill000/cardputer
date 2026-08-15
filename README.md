@@ -758,7 +758,9 @@ la 10 — non sono state richieste dall'utente e non sono state fatte).
   distinti), fa il lookup vendor sull'OUI del BSSID riusando
   `OuiDatabase` già esistente, e appende ogni AP mai visto prima come
   riga CSV su `/wardrive/wardrive.csv` (SD se presente, altrimenti
-  LittleFS — riusa `sdcard::exportFs()` della Fase 10). Per un AP aperto
+  LittleFS — riusa `sdcard::exportFs()` della Fase 10; **path spostato in
+  `/netrunner/wardrive.csv` dalla Fase 29** — vedi quella sezione). Per
+  un AP aperto
   E in allowlist E non ancora scoperto in questa sessione: si
   disconnette da dove si trovava, si collega alla rete aperta (mai
   salvata tra le reti WiFi — non deve mai spodestare le reti vere
@@ -768,8 +770,10 @@ la 10 — non sono state richieste dall'utente e non sono state fatte).
   moduli usati da `NETWORK SCAN`/`PORT SCANNER`**, nessuna logica di
   scansione duplicata — poi esporta i risultati con `ResultStore` sotto
   `/wardrive/scans/<ssid>_<bssid>.json|csv` (namespace separato dalla
-  cronologia scan dell'utente, per non mischiare le due cose) e infine
-  richiama `WifiManager::autoConnect()` per tornare alla propria rete.
+  cronologia scan dell'utente, per non mischiare le due cose; **path
+  spostato in `/netrunner/<timestamp>_<ssid>_<bssid>.json|csv` dalla
+  Fase 29**) e infine richiama `WifiManager::autoConnect()` per tornare
+  alla propria rete.
 - **Allowlist NVS-backed**: `scan/WardrivingManager` gestisce un proprio
   namespace NVS (`wardrive_al`, fino a 10 SSID, stesso pattern di
   storage MRU-semplice già usato da `WifiManager` per le reti salvate).
@@ -1654,6 +1658,178 @@ Sei funzionalità scelte dall'utente (1, 3, 4, 7, 9, 10), additive:
 Nessuna di queste è una nuova *tipologia di scansione*, quindi niente da
 agganciare al `RUN ALL` (la #7 modifica il NETWORK SCAN esistente).
 
+### Fase 27: beacon/probe intelligence + PNL harvesting, mDNS/DNS-SD correlato agli host, RTC a batteria
+
+Tre evoluzioni scelte dall'utente da una lista di dieci proposte in fase
+di analisi del progetto:
+
+- **Beacon/Probe intelligence + PNL harvesting client** (`scan/
+  BeaconProbeSniffer`, `BEACON/PROBE INTEL` nel sotto-menu DISCOVERY, ora
+  anche ultima fase di `RUN ALL DISCOVERY`): sniffer passivo di frame
+  MANAGEMENT 802.11 (mai un frame trasmesso da questo dispositivo) che
+  fa channel-hopping su tutti i 13 canali 2.4GHz mentre è attivo. Due
+  raccolte separate:
+  - **AP intel** da Beacon/Probe-Response: SSID, BSSID, canale (dal DS
+    Parameter Set IE, o il canale in ascolto se assente), cifratura
+    ricostruita dai bit reali (capability info + RSN/vendor-WPA IE, non
+    dal riassunto che dà `WiFi.scanNetworks()`), vendor OUI, e un
+    **reveal di SSID nascosti**: se un BSSID già visto con SSID vuoto
+    (rete "hidden") compare più tardi in un frame con l'SSID valorizzato
+    (tipicamente una probe-response a un client che lo chiede per nome),
+    viene segnalato — la controprova pratica del perché nascondere
+    l'SSID non è mai stata una vera misura di sicurezza.
+  - **Client PNL harvesting** da Probe-Request: ogni client non associato
+    trasmette periodicamente probe request; quelle *dirette* (con un SSID
+    non vuoto) rivelano una rete che quel dispositivo ha già conosciuto —
+    la sua "Preferred Network List". Il MAC sorgente viene controllato
+    per il bit locally-administered (randomizzazione MAC, ormai lo
+    standard su iOS/Android moderni quando non associati): se impostato,
+    niente lookup vendor (l'OUI di un MAC randomizzato non significa
+    nulla) e il dispositivo non è tracciabile a lungo tramite quello
+    stesso MAC.
+  - **Nessun gate/disclaimer**: è ricezione pura, mai un frame trasmesso
+    — stesso principio già applicato al war-driving passivo (Fase 11).
+    A differenza del war-driving però tocca anche l'identità dei
+    *client* (MAC + reti probate), non solo le AP — vedi il commento
+    esteso in `BeaconProbeSniffer.h` sul perché questo resta comunque
+    legittimo (stesso dato che Kismet/Wireshark già mostrano gratis in
+    monitor mode) ma va trattato con cura in ogni export. Dati solo in
+    RAM per la sessione, nessun CSV automatico (a differenza del log
+    sempre-attivo del war-driving) — stesso stile "session-only" di
+    `CdpLldpSniffer`/`PassiveHostDiscovery`.
+  - **Effetto collaterale accettato**: il channel-hopping rompe
+    necessariamente la connessione WiFi propria di questo dispositivo
+    per tutta la durata dell'ascolto (un solo radio non può restare
+    associato su un canale e saltare su tutti gli altri insieme) — stesso
+    compromesso già accettato da `DeauthManager`/`PmkidManager`, con la
+    stessa riconnessione automatica (`WifiManager::autoConnect()`) allo
+    stop. Essendo un effetto solo su *questo* dispositivo (non su terzi),
+    non richiede il gate "offensive" — vedi il commento in `core/
+    Config.h` sul criterio "third-party-affecting" usato per quel gate.
+  - Condivide con `ArpSpoofManager`/`DeauthManager`/`PmkidManager`/
+    `CdpLldpSniffer`/`RogueDhcpDetector`/`PassiveHostDiscovery` l'unico
+    callback promiscuo di `esp_wifi` — vedi `ActivityStatus` per
+    l'indicatore `RF:BCN` in header.
+- **mDNS/DNS-SD correlato agli host + hostname migliorato**
+  (`ServiceEnumerator`, `ScanManager::mergeMdnsService`): il browser
+  DNS-SD completo esisteva già dalla Fase 19 (tipo+istanza+porta), ma
+  restava una lista slegata da qualunque host — non c'era modo di sapere
+  *quale* dispositivo offriva un dato servizio. Ora ogni `Service`
+  registra anche l'IP sorgente della risposta mDNS che l'ha annunciato
+  (`fromIp`, letto gratis da `udp.remoteIP()` — nessuna query aggiuntiva,
+  stesso trucco già usato da `SsdpDiscovery::Device::fromIp`), e sia
+  `DiscoveryRunner` (fine fase Services) sia `ServiceScreen` (uso standalone
+  da SERVICE SCAN, fuori da RUN ALL) richiamano
+  `ScanManager::mergeMdnsService` per ogni servizio trovato: se `fromIp`
+  combacia con un host già nella tabella di NETWORK SCAN, gli viene
+  appesa una riga di riepilogo (`HostInfo::mdnsServices`, mostrata in
+  HOST DETAIL) e — solo se l'host non ha ancora un hostname da
+  NBNS/reverse-PTR — il nome istanza DNS-SD viene adottato come hostname
+  (spesso è il nome assegnato dall'utente al dispositivo, "Living Room
+  speaker", una fonte migliore della reverse-PTR generica che molti
+  dispositivi ignorano). Esportato anche in JSON/CSV (`ResultStore`).
+- **RTC a batteria** (`net/TimeSync`, unità Grove tipo M5Stack RTC Unit/
+  Mini RTC, chip BM8563): il Cardputer/Cardputer ADV non ha un RTC a
+  bordo (a differenza di Core2/CoreS3), quindi `main.cpp` ora imposta
+  `cfg.external_rtc = true` prima di `M5Cardputer.begin()` — dice a
+  M5Unified di sondare anche il bus I2C della porta Grove per un chip
+  RTC noto, non solo quello interno (di default `false`, quindi senza
+  questa riga un'unità fisicamente collegata resterebbe comunque "non
+  rilevata"). Se rilevata (`TimeSync::rtcAvailable()`), `TimeSync::begin()`
+  semina l'orologio di sistema dall'RTC **prima** di armare NTP — ora
+  reale disponibile da subito al boot, senza aspettare il WiFi — e ogni
+  sync NTP viene poi riscritto sull'RTC (`TimeSync::syncRtcIfNeeded()`,
+  richiamato ogni ~5s dal loop di `UiManager` insieme al check batteria:
+  un'attesa di grazia di 90s dopo il primo sync per lasciare che sia
+  quello NTP, non l'eco del seed appena letto, poi ogni 30 minuti) così
+  l'RTC resta accurato tra una sessione e l'altra anche senza WiFi al
+  boot successivo. `DIAGNOSTICS` mostra presenza RTC e batteria
+  scarica (`getVoltLow()`). **RISK**: l'API M5Unified usata
+  (`M5.Rtc.isEnabled()`/`setSystemTimeFromRtc()`/`getDateTime()`/
+  `setDateTime()`/`getVoltLow()`) è stata verificata leggendo i sorgenti
+  reali di M5Unified (non solo la documentazione), ma senza un'unità RTC
+  fisica in mano per un build reale — su ogni scheda senza RTC collegato
+  (il caso comune) tutto questo blocco è no-op per costruzione
+  (`isEnabled()` false), quindi il comportamento esistente non cambia.
+
+Nessuna di queste tre è gated da un disclaimer — nessuna attacca
+attivamente terzi (il beacon/probe sniffer non trasmette mai nulla) né
+tratta credenziali. Aggiornati i "Limiti noti" più sotto per riflettere
+sia questa fase sia il fatto che il browser mDNS/DNS-SD completo era già
+descritto correttamente solo dalla Fase 19 in poi (la vecchia voce
+"solo fallback a NBNS" era ormai obsoleta anche prima di questa fase).
+
+### Fase 28: ogni report di scansione salvato su SD sotto /netrunner, un file per run
+
+Prima di questa fase, l'export JSON/CSV di `NETWORK SCAN` (`E`) e il
+report HTML (`R` da `NETWORK SCAN`, o quello generato in automatico da
+`AUTO ASSESS`) scrivevano sempre sugli stessi tre nomi fissi
+(`/export.json`, `/export.csv`, `/report.html`), sovrascritti a ogni
+run — niente storico, e impossibile distinguere due assessment fatti su
+reti diverse (o sulla stessa rete in momenti diversi) senza rinominare
+i file a mano prima del run successivo.
+
+- **`storage/NetrunnerPaths`** (nuovo, piccolo modulo condiviso): crea
+  `/netrunner` se non esiste e restituisce una base
+  `/netrunner/<TIMESTAMP>_<SSID corrente>` — senza estensione, stesso
+  pattern già usato da `WardrivingManager::handleOpenAllowlistedAp` per
+  i propri export per-AP (`base + ".json"`, `base + ".csv"`, ...): un
+  'unico timestamp condiviso per l'intero trio JSON/CSV/HTML di un run,
+  non tre timestamp leggermente diversi se calcolati separatamente.
+  `TIMESTAMP` usa il nuovo `TimeSync::nowFilenameString()`
+  (`YYYYMMDD-HHMMSS`, filesystem-safe, niente `:`/spazi) quando l'ora è
+  sincronizzata — spesso vera fin dal boot ora che la Fase 27 ha
+  aggiunto il supporto RTC — altrimenti un fallback `uptime-<secondi>`,
+  stessa convenzione già usata dal log CSV del war driving. Il nome
+  rete viene sanificato (`/`, `\`, `:`, spazio → `_`).
+- **Tre punti di scrittura aggiornati**: l'export manuale e quello
+  automatico a fine scan in `HostListScreen` (entrambi in `NETWORK
+  SCAN`), il report HTML manuale (`R`) e quello di `AssessmentRunner`
+  (`AUTO ASSESS`). `ReportGenerator`'s **COMPANION ARTIFACTS** (l'indice
+  degli artefatti trovati sulla card, in fondo a ogni report HTML) non
+  cerca più i vecchi nomi fissi ma elenca `/netrunner/` come cartella
+  (stesso trattamento già riservato a `/handshakes/`, dato che il nome
+  file esatto ora varia per ogni run).
+- **Deliberatamente NON toccato in questa fase (poi spostato in Fase
+  29 su richiesta esplicita)**: l'export per-AP del war driving restava
+  inizialmente nel proprio namespace separato (`/wardrive/scans/`) — vedi
+  la sezione "Fase 29" sotto per il ripensamento. `ScanHistory` (i suoi
+  snapshot interni per il diff "nuovo host mai visto") resta invece un
+  meccanismo separato, non un report pensato per l'utente — quello non è
+  cambiato.
+
+### Fase 29: anche i file del war driving sotto /netrunner
+
+Su richiesta esplicita dell'utente, la separazione decisa in Fase 28 tra
+i report di `NETWORK SCAN`/`AUTO ASSESS` e quelli di `WardrivingManager`
+è stata rimossa: ora tutto vive sotto `/netrunner`.
+
+- **`storage/NetrunnerPaths::reportBase` ora prende un `label` esplicito**
+  invece di leggere sempre `g_wifi.currentSsid()` al suo interno: i
+  chiamanti di `NETWORK SCAN`/`AUTO ASSESS` passano `g_wifi.currentSsid()`
+  loro stessi (comportamento identico a prima), mentre
+  `WardrivingManager::handleOpenAllowlistedAp` passa esplicitamente
+  `ap.ssid + "_" + ap.bssid` — non può affidarsi al SSID "corrente" del
+  WiFi perché nel momento in cui l'export parte il dispositivo potrebbe
+  già essere in fase di riconnessione alla propria rete salvata. Il
+  suffisso BSSID (non solo SSID) resta per continuare a distinguere due
+  AP con lo stesso nome — lo stesso scenario di evil twin che questo
+  modulo già segnala altrove (`ApSighting::suspicious`).
+- **`wardrive.csv`** (il log continuo, sempre in append, di ogni AP
+  incontrato in sessione) si sposta da `/wardrive/wardrive.csv` a
+  `/netrunner/wardrive.csv` — stesso file, stesso comportamento
+  (accumula per tutta la vita del dispositivo, non un file per run),
+  solo cartella diversa.
+- **Gli export per-AP** (discovery + port scan su un AP aperto in
+  allowlist) si spostano da `/wardrive/scans/<ssid>_<bssid>.json/.csv` a
+  `/netrunner/<timestamp>_<ssid>_<bssid>.json/.csv` — ora con timestamp
+  come ogni altro report, invece di essere tenuti a un solo file per AP
+  (una seconda incursione sullo stesso AP non sovrascrive più la prima).
+- **`ReportGenerator`**: rimossa la voce fissa `/wardrive/wardrive.csv`
+  da COMPANION ARTIFACTS (non esiste più a quel path) — già coperta dalla
+  voce generica `/netrunner/` aggiunta in Fase 28, il cui testo ora
+  menziona esplicitamente anche il log di war driving.
+
 ## Compilare e flashare
 
 ```
@@ -1849,6 +2025,30 @@ originale.
       (SHA1/MD5/DES), non artigianale. MSSQL/NFS/SMB-NetShareEnum/MySQL-8
       caching_sha2/PG-SCRAM/HTTP-form fuori scope — vedi sopra e "Limiti
       noti".
+- [x] **Fase 27 — Beacon/probe intelligence + PNL harvesting, mDNS/DNS-SD
+      correlato agli host, RTC a batteria**: tre evoluzioni scelte da una
+      lista di dieci proposte in fase di analisi — sniffer passivo di
+      Beacon/Probe-Request/Response (`BEACON/PROBE INTEL`, mai un frame
+      trasmesso, channel-hopping su tutti i canali 2.4GHz, reveal SSID
+      nascosti + PNL dei client con rilevamento MAC randomizzato);
+      correlazione del browser DNS-SD (già completo dalla Fase 19) agli
+      host scoperti via l'IP sorgente della risposta mDNS, con hostname
+      derivato dal nome istanza quando NBNS/reverse-PTR non trovano
+      nulla; supporto RTC a batteria (unità Grove tipo M5Stack RTC Unit)
+      per un orario reale disponibile da subito al boot, senza aspettare
+      il WiFi — vedi sopra e "Limiti noti".
+- [x] **Fase 28 — Ogni report di scansione su SD sotto `/netrunner`**:
+      l'export JSON/CSV e il report HTML di `NETWORK SCAN`/`AUTO ASSESS`
+      non sovrascrivono più tre nomi fissi (`/export.json`, `/export.csv`,
+      `/report.html`) ma finiscono uno per run in `/netrunner/`, col nome
+      `<timestamp>_<SSID>.<ext>` (`storage/NetrunnerPaths`) — storico
+      completo invece di un solo snapshot sempre sovrascritto.
+- [x] **Fase 29 — Anche i file del war driving sotto `/netrunner`**: su
+      richiesta esplicita, il log continuo `wardrive.csv` e gli export
+      per-AP di `WardrivingManager` (prima in `/wardrive/`) si spostano
+      anch'essi sotto `/netrunner/` — un solo posto per ogni artefatto di
+      scansione. Gli export per-AP guadagnano anche un timestamp, che
+      prima non avevano.
 
 ## Test plan — Fase 1
 
@@ -2244,8 +2444,9 @@ laboratorio isolato) — non in giro per strada con reti di sconosciuti.
 1. **War driving passivo**: da `WAR DRIVING`, `ENTER` per avviare — i
    contatori `seen`/`open` devono crescere man mano che vengono trovati
    AP nei dintorni, e la tabella sotto deve popolarsi (verde = cifrata,
-   ambra = aperta). Verificare che compaia `/wardrive/wardrive.csv` su
-   SD/LittleFS con una riga per AP.
+   ambra = aperta). Verificare che compaia `/netrunner/wardrive.csv`
+   (path dalla Fase 29 — era `/wardrive/wardrive.csv`) su SD/LittleFS
+   con una riga per AP.
 2. **Nessuna connessione senza allowlist**: con la allowlist vuota,
    lasciare il war driving attivo vicino a una rete aperta di test — deve
    comparire nella tabella (ambra) ma il device non deve mai risultare
@@ -2259,9 +2460,10 @@ laboratorio isolato) — non in giro per strada con reti di sconosciuti.
    e aperto, riavviare il war driving — il log deve mostrare
    "connecting to allow-listed AP", poi "discovered N host(s)", poi
    "reconnecting to your own network"; verificare che
-   `/wardrive/scans/<ssid>_<bssid>.json` e `.csv` compaiano su SD, e che
-   al termine il device sia di nuovo connesso alla rete di sempre (non a
-   quella di test).
+   `/netrunner/<timestamp>_<ssid>_<bssid>.json` e `.csv` compaiano su SD
+   (path dalla Fase 29 — era `/wardrive/scans/<ssid>_<bssid>.json|csv`),
+   e che al termine il device sia di nuovo connesso alla rete di sempre
+   (non a quella di test).
 5. **`MAIN MENU` a 7 voci**: verificare che tutte e 7 le voci (inclusa
    `WAR DRIVING`) siano leggibili senza sovrapporsi alla status bar in
    fondo.
@@ -2572,6 +2774,92 @@ verificare su hardware:
    (Samba mal configurato) → "anonymous (null) session ACCEPTED"; server
    con extended security → "extended security (null session not tested)".
 
+## Test plan — Fase 27 (beacon/probe intel, mDNS→host, RTC)
+
+Codice di parsing 802.11 management e integrazione RTC mai compilati né
+provati su hardware reale — solo controllo parentesi/tipi in locale. Da
+verificare su hardware, in un ambiente **autorizzato**:
+
+1. **BEACON/PROBE INTEL — AP**: `ENTER` da `BEACON/PROBE INTEL` deve far
+   comparire, entro pochi secondi, le AP note nei dintorni con SSID,
+   cifratura e canale corretti (confrontare con `WIFI SCAN`); l'header
+   deve mostrare `ch<N>` che cambia visibilmente nel tempo (hopping) e
+   `RF:BCN` nello status bar condiviso.
+2. **BEACON/PROBE INTEL — hidden reveal**: con un AP di test configurato
+   SSID nascosto, un client reale che si connette ad esso durante
+   l'ascolto deve far comparire l'SSID vero al posto di `<hidden>`,
+   evidenziato in magenta.
+3. **BEACON/PROBE INTEL — PNL client**: con un telefono/laptop di test
+   con WiFi attivo ma non connesso a nulla (o in modalità aereo con WiFi
+   riacceso), deve comparire come client nella vista CLIENTS; se il
+   dispositivo non randomizza il MAC (o lo fa e va verificato che compaia
+   "R" e vendor vuoto), le reti che prova a cercare da probe request
+   dirette devono comparire come SSID probati.
+4. **BEACON/PROBE INTEL — riconnessione**: fermare l'ascolto (`ENTER`) e
+   verificare che il WiFi proprio del Cardputer si riconnetta da solo
+   entro qualche secondo alla rete salvata.
+5. **SERVICE SCAN → HOST DETAIL**: dopo un `NETWORK SCAN` seguito da
+   `SERVICE SCAN` (o `RUN ALL DISCOVERY`) sulla stessa rete, un host che
+   risponde a DNS-SD (es. una Apple TV/Chromecast/stampante) deve
+   mostrare la riga `MDNS:` valorizzata in `HOST DETAIL`, e se l'host non
+   aveva già un hostname da `NETWORK SCAN`, il campo `HOST:` deve ora
+   mostrare il nome istanza mDNS.
+6. **Export mDNS**: un export JSON/CSV da `NETWORK SCAN` (tasto `E`) dopo
+   il punto 5 deve includere il campo `mdnsServices`/`mdns_services`
+   valorizzato per l'host in questione.
+7. **RTC assente (caso comune)**: su un Cardputer/Cardputer ADV senza
+   nulla collegato alla porta Grove, `DIAGNOSTICS` deve mostrare `RTC:
+   absent` (ambra) e il comportamento di `TimeSync` deve restare
+   identico a prima di questa fase (solo NTP, nessun crash/rallentamento
+   al boot dovuto al probe `external_rtc`).
+8. **RTC presente**: con un'unità RTC a batteria (es. M5Stack RTC Unit,
+   BM8563) collegata alla porta Grove, `DIAGNOSTICS` deve mostrare `RTC:
+   present`; spegnendo il dispositivo (batteria RTC comunque inserita) e
+   riaccendendolo SENZA WiFi disponibile, l'ora mostrata in header deve
+   essere già quella reale (non uptime) prima di qualunque tentativo di
+   connessione. Con WiFi disponibile, dopo qualche minuto scollegare
+   l'RTC, riavviare e verificare che l'ultimo orario NTP scritto sia
+   stato effettivamente persistito (l'RTC riparte da lì, non da zero).
+
+## Test plan — Fase 28 (report su /netrunner)
+
+1. **Export manuale**: da `NETWORK SCAN` dopo uno scan, `E` deve creare
+   `/netrunner/<timestamp>_<SSID>.json` e `.csv` su SD (o LittleFS se
+   nessuna SD); ripetere l'export sulla stessa rete deve produrre un
+   NUOVO file (timestamp diverso), non sovrascrivere il precedente.
+2. **Export automatico**: con `AUTO-EXPORT` attivo in `SETTINGS`, ogni
+   scan completato deve produrre la stessa coppia di file in
+   `/netrunner`, senza intervento dell'utente.
+3. **Report HTML manuale e da AUTO ASSESS**: `R` da `NETWORK SCAN` e un
+   run completo di `AUTO ASSESS` devono entrambi produrre un
+   `/netrunner/<timestamp>_<SSID>.html` che si apre correttamente in un
+   browser, con la sezione COMPANION ARTIFACTS che elenca `/netrunner/`
+   (non i vecchi nomi fissi) quando ce ne sono già altri sulla card.
+4. **SSID con caratteri problematici**: connettersi a una rete con SSID
+   contenente `/`, spazi o `:` e verificare che l'export non fallisca e
+   il nome file sia sanificato (niente sottocartelle spurie create per
+   sbaglio da uno `/` non sanificato).
+5. **Nessun WiFi/ora non sincronizzata**: non dovrebbe essere raggiungibile
+   in pratica (l'export richiede una rete scansionata), ma verificare
+   comunque che senza sync l'export usi il fallback `uptime-<secondi>`
+   invece di fallire o produrre un nome vuoto.
+
+## Test plan — Fase 29 (war driving su /netrunner)
+
+1. **Log continuo**: avviare `WAR DRIVING`, lasciarlo girare finché non
+   viene loggata almeno una AP, verificare che compaia
+   `/netrunner/wardrive.csv` (non più `/wardrive/wardrive.csv`) e che
+   righe di sessioni precedenti (se il file esisteva già) siano ancora
+   presenti (append, non troncamento).
+2. **Export per-AP**: con una AP aperta in allowlist nei paraggi,
+   verificare che l'incursione produca
+   `/netrunner/<timestamp>_<ssid>_<bssid>.json` e `.csv`; una seconda
+   incursione sulla stessa AP in un momento diverso deve produrre un
+   NUOVO file (timestamp diverso), non sovrascrivere il primo.
+3. **COMPANION ARTIFACTS**: un report HTML generato dopo il punto 1 o 2
+   deve elencare `/netrunner/` (non più una voce `/wardrive/wardrive.csv`
+   separata) nella sezione COMPANION ARTIFACTS.
+
 ## Limiti noti e tagli di scope deliberati
 
 Riepilogo di quanto già menzionato nelle sezioni sopra, in un unico
@@ -2590,19 +2878,37 @@ posto:
   listato) può far sì che uno dei due diventi silenziosamente un no-op
   — stesso genere di limite già accettato per `PortScanManager` a un
   solo scan alla volta.
-- **NTP senza RTC a batteria** (Fase 11): l'orario si perde a ogni spegnimento
-  e va risincronizzato al boot successivo (richiede WiFi) — un limite
-  hardware di questa scheda, non del codice. Finché non sincronizzato,
-  ogni timestamp nel firmware resta l'uptime.
+- **NTP senza RTC a batteria, RISOLTO in Fase 27 se un'unità è collegata**:
+  fino alla Fase 26 l'orario si perdeva sempre a ogni spegnimento e andava
+  risincronizzato al boot successivo (richiede WiFi) — un limite hardware
+  di questa scheda (nessun RTC di serie), non del codice. Dalla Fase 27,
+  collegando un'unità RTC a batteria alla porta Grove (es. M5Stack RTC
+  Unit, BM8563) e con `cfg.external_rtc=true` (`main.cpp`), `TimeSync`
+  la rileva da sola e semina l'orologio da lì al boot, senza aspettare
+  il WiFi — vedi la sezione "Fase 27" sopra. **Resta un limite hardware
+  puro sul Cardputer/Cardputer ADV senza nulla collegato alla porta
+  Grove**: in quel caso (il caso comune, scheda "nuda") il comportamento
+  è quello di sempre, orario perso a ogni spegnimento, uptime finché NTP
+  non risincronizza.
 - **Nessun editor manuale di subnet**: `NETWORK SCAN` usa sempre la
   subnet DHCP-rilevata (non ha senso poterla cambiare finché non c'è
   un modo di specificare un range arbitrario in modo sicuro). Il range
   porte invece **è** ora editabile da `SETTINGS` (Fase 6).
-- **mDNS ora implementato, ma solo come fallback a NBNS** (Fase 10, #5):
-  interrogato solo quando NBNS non ha già trovato un nome, e solo con
-  una singola query PTR reverse a bassa priorità — non è un browser di
-  servizi mDNS completo, e dispositivi che ignorano query reverse PTR
-  (alcuni, non tutti, lo fanno) restano senza hostname.
+- **`MdnsReverseResolver` (hostname per-host durante NETWORK SCAN) resta
+  solo fallback a NBNS** (Fase 10, #5): interrogato solo quando NBNS non
+  ha già trovato un nome, e solo con una singola query PTR reverse a
+  bassa priorità — dispositivi che ignorano query reverse PTR (alcuni,
+  non tutti, lo fanno) restano senza hostname da questo meccanismo. Un
+  **browser DNS-SD completo esiste comunque dalla Fase 19**
+  (`ServiceEnumerator`, `SERVICE SCAN`) — separato da questo fallback,
+  interroga `_services._dns-sd._udp.local` e poi ogni tipo di servizio
+  trovato — e dalla Fase 27 i suoi risultati vengono **correlati agli
+  host** (per IP sorgente della risposta) e usati come fonte di hostname
+  aggiuntiva quando sia NBNS sia la reverse-PTR non trovano nulla — vedi
+  la sezione "Fase 27" sopra. Questa voce descriveva già solo il
+  meccanismo di fallback per-host, non l'assenza di un browser mDNS
+  completo altrove nel firmware — la formulazione precedente era
+  ambigua su questo punto anche prima della Fase 27.
 - **Euristica Telnet non affidabile al 100%**: il rilevamento di login
   riuscito è basato su pattern-matching testuale, non su un parser di
   protocollo — vedi Fase 4. FTP invece usa i codici di risposta
@@ -2776,14 +3082,37 @@ posto:
   non viene fusa nella tabella di `ScanManager` (per non toccare la sua
   logica di generazione, già verificata) e, come tutta la famiglia
   promiscua, non vede nulla su WiFi WPA cifrato.
-- **Enumerazione servizi mDNS: tipo + istanza (+ porta), non l'IP**
-  (Fase 19): `ServiceEnumerator` non insegue i target SRV fino ai record A
-  per risolvere l'IP di backing — il nome istanza più la tabella host già
-  scoperta danno il contesto, e ogni round-trip in più è tempo su radio.
+- **Enumerazione servizi mDNS: `fromIp` è l'IP sorgente della risposta,
+  non un vero record A/AAAA risolto** (Fase 19, IP aggiunto in Fase 27):
+  `ServiceEnumerator` non insegue mai i target SRV fino ai record A per
+  risolvere l'IP di backing con una query dedicata — ogni round-trip in
+  più è tempo su radio condiviso. L'IP ora annotato per ogni servizio
+  (`fromIp`, usato da `ScanManager::mergeMdnsService` per la correlazione
+  con la tabella host) è letto gratis dall'indirizzo sorgente del pacchetto
+  UDP della risposta stessa: un'ottima approssimazione (di norma è
+  proprio il dispositivo che offre il servizio a rispondere), ma non una
+  garanzia formale — un ambiente con relay/proxy mDNS insoliti potrebbe
+  restituire un `fromIp` fuorviante.
 - **Sweep SNMP: solo GET di sysDescr con community "public"** (Fase 19):
   read-only, mai SET, un solo scalare, una sola community di default — è
   un banner grab SNMP, non un walk completo della MIB né un test di
   community multiple.
+- **Beacon/probe intel: PNL harvesting parziale sui dispositivi moderni**
+  (Fase 27): iOS/Android recenti randomizzano di default il MAC delle
+  probe request quando non associati proprio per rendere inefficace
+  questa tecnica — `BeaconProbeSniffer` la rileva (bit locally-
+  administered) e lo segnala, ma non c'è modo di aggirarla: un
+  dispositivo che randomizza resta tracciabile solo per la durata di
+  quel singolo MAC "usa e getta", non a lungo termine. La cifratura AP
+  ricostruita dalle IE grezze (RSN/vendor-WPA) non distingue in modo
+  affidabile WPA2 puro da WPA3/transition mode — vedi il commento in
+  `BeaconProbeSniffer.cpp`.
+- **Beacon/probe intel: il channel-hopping disconnette il WiFi proprio
+  del dispositivo per tutta la sessione di ascolto** (Fase 27): a
+  differenza degli altri sniffer passivi (LAN TOPOLOGY, PASSIVE HOSTS,
+  ROGUE DHCP) che restano sul canale già associato, questo salta su
+  tutti i 13 canali 2.4GHz — un compromesso deliberato per una copertura
+  reale, non un bug; la riconnessione allo stop è automatica.
 - **Nessuna build reale eseguita**: vale per ogni fase di questo
   progetto — il sandbox di sviluppo non ha accesso al registry
   PlatformIO. Tutto il codice è stato scritto con attenzione e, dove

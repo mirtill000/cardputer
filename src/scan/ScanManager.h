@@ -63,6 +63,23 @@ public:
     // warrant that color, see README.
     void setHostCredResult(const IPAddress& ip, bool vulnerable, const String& note);
 
+    // Called once per discovered mDNS/DNS-SD service instance (see
+    // ServiceEnumerator::Service::fromIp) after a browse finishes, by
+    // whichever screen/runner drove it (ServiceScreen, DiscoveryRunner) —
+    // ScanManager itself never talks to ServiceEnumerator directly, same
+    // "narrow IP-matched setter" shape as setHostPorts/setHostCredResult
+    // above. No-op if fromIp doesn't match any host already in this
+    // table (e.g. the reply came from something outside the discovery
+    // sweep's range, or discovery hasn't been run yet this session).
+    // Appends a short display line to HostInfo::mdnsServices (deduped,
+    // capped) and, if the host has no hostname yet, adopts the mDNS
+    // instance name as one — a device's own DNS-SD instance name is
+    // often its human-assigned name ("Living Room speaker"), a better
+    // source than the generic reverse-PTR lookup already tried during
+    // discovery (see ScanManager::probeHost), which plenty of devices
+    // simply don't answer.
+    void mergeMdnsService(const IPAddress& ip, const String& type, const String& instance, uint16_t port);
+
 private:
     struct WorkerArgs {
         ScanManager* self;

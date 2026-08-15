@@ -7,8 +7,9 @@
 // LittleFS — same fs::FS& approach as ResultStore, which see for why the
 // filesystem is passed in rather than hardcoded).
 //
-// The report is a human-readable companion to the machine-readable
-// export.json/export.csv: a cyberpunk-styled page with a summary, an
+// The report is a human-readable companion to the machine-readable JSON/
+// CSV export (both live under /netrunner/ — see storage/NetrunnerPaths.h):
+// a cyberpunk-styled page with a summary, an
 // "attack surface" section that ranks the most interesting findings
 // (default-credential hits, plaintext services like telnet/ftp, exposed
 // SMB, known-vulnerable banners), and a full host inventory table. It

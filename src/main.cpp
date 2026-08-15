@@ -21,6 +21,7 @@
 #include "scan/HttpPathBruteforcer.h"
 #include "scan/PmkidManager.h"
 #include "scan/CdpLldpSniffer.h"
+#include "scan/BeaconProbeSniffer.h"
 #include "scan/SsdpDiscovery.h"
 #include "scan/RogueDhcpDetector.h"
 #include "scan/SmbNegotiateCheck.h"
@@ -53,6 +54,13 @@ MenuItem g_menuItems[7];
 
 void setup() {
     auto cfg = M5.config();
+    // Cardputer/Cardputer ADV have no onboard RTC chip (unlike Core2/
+    // CoreS3) - external_rtc tells M5Unified's board bring-up to also
+    // probe the Grove port's I2C bus for one, so a battery-backed RTC
+    // Unit plugged in there gets auto-detected (M5.Rtc.isEnabled()) the
+    // same way SD/IMU already degrade to "absent" instead of erroring
+    // when nothing's attached. See net/TimeSync.h.
+    cfg.external_rtc = true;
     M5Cardputer.begin(cfg, /*enableKeyboard=*/true);
     M5Cardputer.Display.setRotation(1);  // landscape, 240x135
 
@@ -102,6 +110,7 @@ void setup() {
     g_httpBruteforcer.begin(g_ui.scanQueue());
     g_pmkidManager.begin(g_ui.scanQueue());
     g_cdpLldpSniffer.begin(g_ui.scanQueue());
+    g_beaconProbeSniffer.begin(g_ui.scanQueue());
     g_ssdpDiscovery.begin(g_ui.scanQueue());
     g_rogueDhcpDetector.begin(g_ui.scanQueue());
     g_smbCheck.begin(g_ui.scanQueue());
