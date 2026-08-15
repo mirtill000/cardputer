@@ -6,6 +6,8 @@
 #include "CdpLldpSniffer.h"
 #include "PassiveHostDiscovery.h"
 #include "RogueDhcpDetector.h"
+#include "BeaconProbeSniffer.h"
+#include "ScanManager.h"
 #include "../net/WifiManager.h"
 
 DiscoveryRunner g_discoveryRunner;
@@ -57,6 +59,7 @@ void DiscoveryRunner::run() {
     g_cdpLldpSniffer.stop();
     g_passiveHostDiscovery.stop();
     g_rogueDhcpDetector.stop();
+    g_beaconProbeSniffer.stop();
     vTaskDelay(pdMS_TO_TICKS(300));
 
     // --- One-shot UDP/TCP queries, sequentially ---
@@ -69,6 +72,17 @@ void DiscoveryRunner::run() {
         setPhase(Phase::Services, "mDNS service scan...", 20);
         g_serviceEnumerator.start();
         waitOneShot([]() { return g_serviceEnumerator.isRunning(); });
+
+        // Correlate whatever came back to the discovery host table - see
+        // ScanManager::mergeMdnsService. Best-effort/no-op per entry for
+        // anything whose fromIp isn't a known host (e.g. discovery hasn't
+        // run yet, or the reply came from outside the swept range).
+        ServiceEnumerator::Service svc;
+        for (size_t i = 0; i < g_serviceEnumerator.count(); i++) {
+            if (g_serviceEnumerator.get(i, svc)) {
+                g_scanManager.mergeMdnsService(svc.fromIp, svc.type, svc.instance, svc.port);
+            }
+        }
     }
     if (_running) {
         setPhase(Phase::Snmp, "SNMP public sweep...", 35);
@@ -99,6 +113,17 @@ void DiscoveryRunner::run() {
         g_rogueDhcpDetector.start();
         sleepWindow(kPromiscWindowMs);
         g_rogueDhcpDetector.stop();
+    }
+    if (_running) {
+        // Last on purpose: unlike the three phases above, this one hops
+        // channels and so drops this device's own WiFi connection for its
+        // duration (see BeaconProbeSniffer.h) - nothing later in this run
+        // needs that connection, and the sniffer reconnects on its own
+        // stop().
+        setPhase(Phase::BeaconProbe, "beacon/probe survey...", 97);
+        g_beaconProbeSniffer.start();
+        sleepWindow(kPromiscWindowMs);
+        g_beaconProbeSniffer.stop();
     }
 
     if (_running) {

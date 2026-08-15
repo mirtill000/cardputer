@@ -157,6 +157,45 @@ void ScanManager::setHostPorts(const IPAddress& ip, const std::vector<PortResult
     xSemaphoreGive(_mutex);
 }
 
+void ScanManager::mergeMdnsService(const IPAddress& ip, const String& type, const String& instance, uint16_t port) {
+    if (!_mutex || xSemaphoreTake(_mutex, pdMS_TO_TICKS(300)) != pdTRUE) return;
+
+    static constexpr size_t kMaxServicesPerHost = 8;  // display summary, not the full raw list - see Types.h
+
+    for (auto& h : _hosts) {
+        if (!(h.ip == ip)) continue;
+
+        String label = type;
+        if (port) {
+            label += ':';
+            label += String(port);
+        }
+        if (instance.length()) {
+            label += " (";
+            label += instance;
+            label += ')';
+        }
+
+        bool dup = false;
+        for (const auto& existing : h.mdnsServices) {
+            if (existing == label) {
+                dup = true;
+                break;
+            }
+        }
+        if (!dup && h.mdnsServices.size() < kMaxServicesPerHost) h.mdnsServices.push_back(label);
+
+        // Adopt the instance name as this host's hostname only if it
+        // doesn't have one yet - never overwrites a name NBNS/mDNS
+        // reverse-PTR already found during discovery (see probeHost()).
+        if (h.hostname.isEmpty() && instance.length()) h.hostname = instance;
+
+        break;
+    }
+
+    xSemaphoreGive(_mutex);
+}
+
 void ScanManager::workerTaskEntry(void* arg) {
     auto* args = static_cast<WorkerArgs*>(arg);
     ScanManager* self = args->self;

@@ -52,6 +52,15 @@ struct HostInfo {
     String credNote;
     String vulnNote;  // set from the first port whose banner matched a known-vulnerable signature
 
+    // mDNS/DNS-SD service instances best-effort correlated to this host by
+    // ServiceEnumerator::Service::fromIp - see ScanManager::mergeMdnsService.
+    // Short display strings, e.g. "_airplay._tcp:7000 (Living Room)" -
+    // deduplicated, not a full re-derivation of ServiceEnumerator's own
+    // richer per-field records (this is a summary for HOST DETAIL/export,
+    // SERVICE SCAN remains the place to browse the raw type/instance/port
+    // list for every host at once).
+    std::vector<String> mdnsServices;
+
     bool macEqual(const uint8_t other[6]) const {
         return memcmp(mac, other, 6) == 0;
     }

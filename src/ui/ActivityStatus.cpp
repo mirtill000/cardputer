@@ -6,6 +6,7 @@
 #include "../scan/CdpLldpSniffer.h"
 #include "../scan/RogueDhcpDetector.h"
 #include "../scan/PassiveHostDiscovery.h"
+#include "../scan/BeaconProbeSniffer.h"
 #include <cstdio>
 #include <cstring>
 
@@ -23,6 +24,7 @@ void activity::draw(M5Canvas& gfx, int16_t rightX, int16_t y) {
         {g_cdpLldpSniffer.isRunning(), "CDP"},
         {g_rogueDhcpDetector.isRunning(), "DHCP"},
         {g_passiveHostDiscovery.isRunning(), "PSV"},
+        {g_beaconProbeSniffer.isRunning(), "BCN"},
     };
 
     int count = 0;

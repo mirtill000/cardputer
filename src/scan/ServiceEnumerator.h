@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include <IPAddress.h>
 #include <atomic>
 #include <vector>
 #include "../core/EventQueue.h"
@@ -21,6 +22,15 @@
 // chase SRV targets down to A records for the backing IP — the instance
 // name plus the already-discovered host table give more than enough
 // context, and each extra query round-trip is time on a shared radio.
+// `fromIp` below is NOT that A-record chase — it costs nothing extra: an
+// mDNS reply for an instance is, per RFC 6762 convention, sent BY the
+// device offering that service, so the UDP packet's own source address
+// (already available the moment the reply arrives, no additional query)
+// is a good best-effort proxy for "which host this is" — the same
+// zero-extra-cost reasoning SsdpDiscovery already uses for its
+// Device::fromIp. Best-effort like everything else here: a reply relayed
+// or proxied by something other than the actual service host would give
+// a misleading fromIp, but that's an unusual setup on a home/office LAN.
 //
 // Low risk: standard multicast queries over WiFiUDP, no promiscuous
 // mode, no raw-frame parsing — reuses the DnsWire helpers (verified
@@ -32,6 +42,7 @@ public:
         String type;      // e.g. "_airplay._tcp" (".local" trimmed for display)
         String instance;  // human-readable instance label
         uint16_t port = 0;
+        IPAddress fromIp;  // source IP of the reply that announced this instance - see the class comment
     };
 
     void begin(QueueHandle_t outQueue);

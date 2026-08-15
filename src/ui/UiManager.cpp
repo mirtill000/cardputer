@@ -4,6 +4,7 @@
 #include "Sound.h"
 #include "screens/Screen.h"
 #include "../core/Config.h"
+#include "../net/TimeSync.h"
 #include <M5Cardputer.h>
 #include <cstring>
 
@@ -142,6 +143,14 @@ void UiManager::run() {
             } else if (b >= 20) {
                 _lowBattWarned = false;
             }
+
+            // Same 5s cadence as the battery check above (not per-frame -
+            // no reason to touch M5Unified's RTC state 30x/sec): writes a
+            // fresh NTP-corrected time back to a battery-backed RTC, if
+            // one's attached, once a grace period after sync and then
+            // periodically - see TimeSync::syncRtcIfNeeded()'s own comment
+            // for why it isn't just "on every sync".
+            TimeSync::syncRtcIfNeeded();
         }
 
         // Idle timeout dims the backlight - see kIdleTimeoutMs above.

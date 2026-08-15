@@ -4,6 +4,7 @@
 #include "../Chrome.h"
 #include "../Sound.h"
 #include "../../net/WifiManager.h"
+#include "../../net/TimeSync.h"
 #include "../../storage/SdCard.h"
 #include <M5Unified.h>
 
@@ -84,6 +85,14 @@ void DiagnosticsScreen::draw(M5Canvas& gfx) {
 
     // Free heap
     statusRow(gfx, 90, "FREE RAM:", String((unsigned)(ESP.getFreeHeap() / 1024)) + " KB", true);
+
+    // Battery-backed RTC (Grove-attached M5Stack RTC Unit) - absent on a
+    // bare Cardputer/Cardputer ADV is the expected common case, shown
+    // amber same as SD/IMU's "not fitted" state rather than as an error.
+    bool rtc = TimeSync::rtcAvailable();
+    bool rtcLow = rtc && TimeSync::rtcBatteryLow();
+    String rtcVal = !rtc ? "absent" : (rtcLow ? "present, battery LOW" : "present");
+    statusRow(gfx, 100, "RTC:", rtcVal, rtc && !rtcLow);
 
     gfx.setTextColor(theme::GREY, theme::BG);
     gfx.setCursor(4, gfx.height() - 9);
