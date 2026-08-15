@@ -18,7 +18,7 @@ public:
     void draw(M5Canvas& gfx) override;
 
     const char* helpText() const override {
-        return "PMKID CAPTURE\n\nAssociates with a deliberately\nwrong password to catch a\nPMKID, if this AP offers one.\nNo deauth involved.\nENTER: start\nDEL: back";
+        return "PMKID CAPTURE\n\nAssociates with a deliberately\nwrong password to catch a\nPMKID, if this AP offers one.\nNo deauth involved.\n\nDetects (never cracks) whether\na PMKID structurally looks\npresent in the capture.\nENTER: start\nDEL: back";
     }
 
 private:

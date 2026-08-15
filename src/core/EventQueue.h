@@ -69,6 +69,7 @@ enum class ScanSource : uint8_t {
     NtlmHttp,
     DeauthWatch,
     Sentinel,
+    PmkidSweep,
 };
 
 struct ScanNotification {

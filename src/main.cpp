@@ -36,6 +36,7 @@
 #include "scan/DiscoveryRunner.h"
 #include "scan/DeauthWatcher.h"
 #include "scan/SentinelManager.h"
+#include "scan/PmkidSweepManager.h"
 #include "net/WifiManager.h"
 #include "net/CaptivePortalDetector.h"
 #include "net/TimeSync.h"
@@ -134,6 +135,7 @@ void setup() {
     g_discoveryRunner.begin(g_ui.scanQueue());
     g_deauthWatcher.begin(g_ui.scanQueue());
     g_sentinelManager.begin(g_ui.scanQueue());
+    g_pmkidSweepManager.begin(g_ui.scanQueue());
 
     // Non-blocking: if a network was saved from a previous WIFI SCAN
     // run, this kicks the connection off immediately at boot instead of

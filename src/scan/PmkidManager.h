@@ -21,9 +21,17 @@
 // one — this device doesn't try to guess it), capture whatever EAPOL
 // traffic crosses the air during that attempt, and let the same
 // offline tools DeauthManager already points at (hashcat mode 22000,
-// aircrack-ng) pull the PMKID out of the resulting .pcap — this
-// firmware never attempts to parse EAPOL content or crack anything
-// itself, same as DeauthManager.
+// aircrack-ng) pull the PMKID out of the resulting .pcap.
+//
+// Since Fase 36, each captured frame is also run through
+// net/EapolWire.h's structural classifier — enough to say "this capture
+// looks like it has a usable PMKID" right on the device, without
+// waiting to find out on a PC. Read that file's own header comment for
+// the precise, deliberate line this still never crosses: it reads
+// header/flag bits and confirms a PMKID marker's PRESENCE, but never
+// the nonce/MIC/PMKID bytes themselves, and never attempts to derive,
+// guess, or verify a passphrase from anything captured — this firmware
+// still never cracks anything itself, same as DeauthManager.
 //
 // Whether a given AP actually sends the PMKID unsolicited like this is
 // AP-firmware-dependent — some do, some don't, and this device has no
@@ -40,6 +48,13 @@ public:
 
     uint32_t capturedPackets() const { return _captured; }
     String pcapPath() const { return _pcapPath; }
+
+    // Structural EAPOL read-out for the capture just finished (or in
+    // progress) - see net/EapolWire.h. pmkidLikelyCaptured() is the
+    // headline verdict: a Message 1 carrying a PMKID KDE was seen.
+    bool pmkidLikelyCaptured() const { return _pmkidSeen; }
+    uint32_t message1Count() const { return _m1Count; }
+    uint32_t message2Count() const { return _m2Count; }
 
 private:
     static constexpr uint32_t kCaptureWindowMs = 8000;  // bounded - the association attempt fails on its own well before this
@@ -66,6 +81,9 @@ private:
     uint8_t _selfMac[6] = {0};
     uint8_t _channel = 1;
     std::atomic<uint32_t> _captured{0};
+    std::atomic<uint32_t> _m1Count{0};
+    std::atomic<uint32_t> _m2Count{0};
+    std::atomic<bool> _pmkidSeen{false};
     String _pcapPath;
 };
 

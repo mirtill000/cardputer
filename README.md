@@ -2137,6 +2137,65 @@ semplice lista "nuovi dispositivi" a un log eventi unificato (`I` per il
 dettaglio di ciascuno), con un'etichetta e un colore diversi per NEW
 (magenta), GONE (ambra) e FLOOD (rosso).
 
+### Fase 36: rilevamento EAPOL sul dispositivo + PMKID sweep su più AP
+
+Risposta a una domanda esplicita dell'utente ("cosa potresti implementare
+riguardo la raccolta di PMKID/handshake?"), con un vincolo dato altrettanto
+esplicitamente prima di scrivere una riga di codice: **"cattura solo, non
+craccare mai"**. Le due funzionalità implementate rispettano quella linea
+alla lettera — nessuna delle due deriva, indovina o verifica mai una
+passphrase.
+
+- **`net/EapolWire`: classificatore strutturale EAPOL-Key** — nuovo
+  parser che legge SOLO i bit di frame-control, l'EtherType LLC/SNAP
+  (0x888E), il byte Type dell'header EAPOL e i flag del campo Key
+  Information (Install/Ack/MIC/Secure) per capire quale dei quattro
+  messaggi del 4-way handshake un frame sembra essere — la stessa
+  euristica standard usata da Wireshark/aircrack-ng/hcxdumptool (Message1:
+  Ack=1,Install=0; Message3: Ack=1,Install=1; Message2: Ack=0,MIC=1,
+  Secure=0; Message4: Ack=0,MIC=1,Secure=1). Per il solo Message1, cerca
+  anche la presenza (non il valore) di un KDE PMKID (elemento vendor 0xDD,
+  OUI `00:0F:AC` tipo 4) nel Key Data. **Non legge mai** Nonce, MIC, IV,
+  RSC, Key ID, né i 16 byte del PMKID stesso una volta trovato il
+  marcatore — solo la sua presenza/assenza. Riusa
+  `ieee80211::parseDataFrame`/`parseSnap` già esistenti (stesso codice già
+  verificato e condiviso da CdpLldpSniffer/RogueDhcpDetector/
+  PassiveHostDiscovery), non ri-deriva l'header 802.11 da zero.
+- **`PmkidManager`/`DeauthManager`: verdetto "cattura riuscita" a bordo**
+  — ogni frame catturato viene ora classificato con `EapolWire` (sul
+  frame completo, prima del troncamento a 256 byte usato per il pcap —
+  un PMKID KDE tardivo nel Key Data non viene perso). `PmkidManager`
+  espone `pmkidLikelyCaptured()` (almeno un Message1 con KDE PMKID
+  visto); `DeauthManager` espone `handshakeLikelyCaptured()` (almeno un
+  Message1 E un Message2 visti — la coppia minima che hashcat/aircrack
+  richiedono per un attacco a dizionario offline). Le schermate `PMKID
+  CAPTURE`/`DEAUTH + CAPTURE` mostrano ora questo verdetto a fine cattura
+  (verde "likely captured!" / ambra "no PMKID/handshake seen"), invece di
+  lasciare che sia solo il numero di pacchetti a suggerire se è valsa la
+  pena. Il file pcap resta scritto verbatim esattamente come prima — la
+  classificazione è un'analisi aggiuntiva sullo stesso frame già in
+  arrivo, non un filtro su cosa viene salvato.
+- **PMKID SWEEP** (`scan/PmkidSweepManager`, nuovo tasto `S` da WAR
+  DRIVING) — invece di ripetere PMKID CAPTURE a mano su ogni sighting,
+  questo orchestratore (stesso schema di `DiscoveryRunner`/
+  `AssessmentRunner`: guida solo l'API pubblica di `PmkidManager`, non
+  reimplementa nulla della cattura) prende uno snapshot degli AP
+  attualmente noti a WAR DRIVING con cifratura reale (esclude le reti
+  aperte, che non hanno nulla da catturare, ed esclude gli SSID nascosti,
+  che `WiFi.begin()` non può raggiungere per nome) e ci gira PMKID CAPTURE
+  in sequenza, un AP alla volta — necessariamente sequenziale, non
+  parallelo, per lo stesso motivo di ogni altro modulo che condivide il
+  callback promiscuo (vedi `ui/ActivityStatus.h`). Ogni risultato (SSID,
+  BSSID, verdetto, conteggio frame, percorso pcap) resta consultabile
+  nella schermata `PMKID SWEEP` (`I` per il dettaglio). Stesso gate
+  `OffensiveDisclaimerScreen` di EVIL TWIN/DEAUTH/PMKID singolo.
+
+Le altre nove aree della lista originale di 15 restano proposte non
+implementate. Il dictionary-check on-device sui PMKID catturati in
+particolare — l'unica idea di quella lista che avrebbe cambiato il
+principio "mai craccare" — non è stato toccato, coerentemente col vincolo
+posto per questa fase.
+
 ## Compilare e flashare
 
 ```
@@ -2401,6 +2460,15 @@ originale.
       parte, riepilogo di sessione (`_summary.txt`) scritto allo stop
       con ogni evento nuovo/scomparso/flood. Schermata aggiornata a un
       log eventi unificato con colore per tipo.
+- [x] **Fase 36 — Rilevamento EAPOL a bordo + PMKID sweep**:
+      `net/EapolWire` classifica strutturalmente i frame EAPOL-Key
+      catturati (Message1-4, presenza KDE PMKID) senza mai leggere
+      nonce/MIC/PMKID stessi; `PmkidManager`/`DeauthManager` mostrano ora
+      un verdetto "cattura riuscita" a fine sessione; nuovo `PMKID SWEEP`
+      (`scan/PmkidSweepManager`, tasto `S` da WAR DRIVING) esegue PMKID
+      CAPTURE in sequenza su ogni AP non aperto già noto invece di uno
+      alla volta a mano. Vincolo esplicito rispettato: cattura solo, mai
+      craccare.
 
 ## Test plan — Fase 1
 
@@ -3429,6 +3497,43 @@ altrui:
    pertinente al tipo (BSSID per FLOOD, IP/MAC/hostname/vendor per gli
    altri due).
 
+## Test plan — Fase 36 (rilevamento EAPOL, PMKID sweep)
+
+**Solo in ambiente autorizzato**, stessa regola di ogni altro strumento
+che tenta un'associazione/cattura verso un AP:
+
+1. **PMKID rilevato**: contro un AP di test WPA2-PSK che offre il PMKID
+   nel primo messaggio EAPOL (molti router consumer moderni), avviare
+   `PMKID CAPTURE` — a fine cattura deve mostrare "PMKID likely
+   captured!" in verde, non solo il conteggio pacchetti.
+2. **PMKID assente**: contro un AP che non lo offre (o WPA3-only/
+   Enterprise), la cattura deve terminare mostrando "no PMKID seen this
+   time" in ambra, senza falsi positivi.
+3. **Handshake rilevato**: contro un client reale connesso a un AP di
+   test, avviare `DEAUTH + CAPTURE` — se il client si riassocia entro la
+   finestra di cattura, deve mostrare "handshake likely captured!" in
+   verde (Message1 E Message2 entrambi visti).
+4. **Verifica incrociata col PC**: per almeno una cattura con verdetto
+   positivo, aprire il pcap risultante con Wireshark (filtro `eapol`) o
+   `hcxpcapngtool` e confermare che il verdetto del dispositivo era
+   corretto — non deve mai dichiarare un falso positivo (mai un vero
+   negativo dichiarato falso positivo).
+5. **PMKID SWEEP, nessun target**: da `WAR DRIVING` senza ancora nessun
+   sighting non-aperto, `S` deve mostrare "no WAR DRIVING sightings yet"
+   e non avviare nulla.
+6. **PMKID SWEEP, sequenza multi-AP**: con almeno due sighting non
+   aperti/non nascosti noti, avviare `S` — deve mostrare "1/N", poi
+   "2/N", ecc. via via che ogni AP viene provato in sequenza (mai in
+   parallelo), popolando la lista risultati con SSID/verdetto per
+   ciascuno.
+7. **PMKID SWEEP, header**: durante lo sweep, l'header deve mostrare
+   `RF:PMK` mentre una cattura per-AP è attiva (stesso tag del PMKID
+   CAPTURE singolo) — `PMKID SWEEP` stesso non è un consumer promiscuo,
+   solo un orchestratore.
+8. **PMKID SWEEP, DEL e rientro**: uscire con `DEL` mentre lo sweep gira
+   e rientrare — deve mostrare ancora il progresso corretto (indice/
+   totale/hit) accumulato nel frattempo.
+
 ## Limiti noti e tagli di scope deliberati
 
 Riepilogo di quanto già menzionato nelle sezioni sopra, in un unico
@@ -3748,6 +3853,28 @@ posto:
   MODE resta utile da solo se si vuole solo il rilevamento flood senza
   discovery/traffic dump), a costo di dover mantenere la stessa logica
   in due punti se la soglia cambierà in futuro.
+- **`net/EapolWire`: euristica standard, non verificata contro una
+  cattura reale** (Fase 36): la classificazione Message1-4 usa gli stessi
+  bit del Key Information già documentati pubblicamente (IEEE 802.11-2020
+  §12.7.2) e usati da Wireshark/aircrack-ng/hcxdumptool, ma — a
+  differenza di `net/LdapWire`/`net/NtlmWire`, verificati byte-a-byte
+  contro `ldap3`/`ntlm-auth` prima dell'uso — qui non è stato possibile
+  costruire un handshake WPA2 reale a tavolino per un confronto
+  altrettanto diretto: serve un vero scambio EAPOL fra AP e client, non
+  solo una libreria che codifica messaggi. Il rischio pratico più
+  probabile in caso di bug: un frame classificato come tipo sbagliato (es.
+  Message2 scambiato per Message4), non un crash — la funzione fallisce
+  chiuso (bounds-check ovunque) su qualunque cosa più corta del previsto.
+  Il pcap scritto su SD resta comunque il dato originale, verbatim,
+  intatto anche se il verdetto a bordo fosse impreciso — verificabile
+  sempre con Wireshark/hashcat come prima di questa fase.
+- **PMKID SWEEP: nessuna soglia di RSSI/distanza, sequenziale non
+  parallelo** (Fase 36): prova ogni AP eleggibile indipendentemente da
+  quanto sia debole il segnale (una cattura contro un AP troppo lontano
+  probabilmente fallisce e basta, senza essere filtrata in anticipo), e
+  — come ogni altro modulo che condivide il callback promiscuo — un AP
+  alla volta, mai in parallelo: uno sweep su molti sighting può richiedere
+  diversi minuti (~8s + tempo di associazione per AP).
 - **Nessuna build reale eseguita**: vale per ogni fase di questo
   progetto — il sandbox di sviluppo non ha accesso al registry
   PlatformIO. Tutto il codice è stato scritto con attenzione e, dove

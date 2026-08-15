@@ -3,6 +3,7 @@
 #include "EvilTwinScreen.h"
 #include "DeauthScreen.h"
 #include "PmkidScreen.h"
+#include "PmkidSweepScreen.h"
 #include "OpenConnectScreen.h"
 #include "OffensiveDisclaimerScreen.h"
 #include "../UiManager.h"
@@ -113,6 +114,16 @@ void WardrivingScreen::onKey(UiKey key, char ch) {
                         OffensiveDisclaimerScreen::instance().setPendingTargetScreen(&PmkidScreen::instance());
                         g_ui.pushScreen(&OffensiveDisclaimerScreen::instance());
                     }
+                }
+            } else if (key == UiKey::Char && (ch == 's' || ch == 'S')) {
+                // Unlike E/X/P above, this doesn't need a selected
+                // sighting - PmkidSweepScreen gathers every eligible
+                // (non-open, non-hidden) AP itself when started.
+                if (g_config.offensiveEnabled) {
+                    g_ui.pushScreen(&PmkidSweepScreen::instance());
+                } else {
+                    OffensiveDisclaimerScreen::instance().setPendingTargetScreen(&PmkidSweepScreen::instance());
+                    g_ui.pushScreen(&OffensiveDisclaimerScreen::instance());
                 }
             } else if (key == UiKey::Char && (ch == 'c' || ch == 'C')) {
                 // Join a selected OPEN network (no password) and check for a

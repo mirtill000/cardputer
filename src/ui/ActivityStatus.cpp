@@ -25,6 +25,7 @@
 #include "../scan/AssessmentRunner.h"
 #include "../scan/EvilTwinManager.h"
 #include "../scan/DiscoveryRunner.h"
+#include "../scan/PmkidSweepManager.h"
 #include <cstdio>
 #include <cstring>
 
@@ -79,6 +80,7 @@ void activity::draw(M5Canvas& gfx, int16_t rightX, int16_t y) {
         {g_smbCheck.isRunning(), "SMB"},
         {g_assessmentRunner.isRunning(), "ASSESS"},
         {g_evilTwinManager.isRunning(), "TWIN"},
+        {g_pmkidSweepManager.isRunning(), "PSWP"},
     };
     int bgCount = 0;
     const char* bgOnly = nullptr;

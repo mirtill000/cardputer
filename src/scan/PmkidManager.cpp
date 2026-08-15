@@ -1,5 +1,6 @@
 #include "PmkidManager.h"
 #include "DeauthManager.h"  // parseMacString - shared free function
+#include "../net/EapolWire.h"
 #include "../net/WifiManager.h"
 #include "../storage/SdCard.h"
 #include "../storage/PcapWriter.h"
@@ -19,6 +20,9 @@ bool PmkidManager::start(const String& ssid, const String& bssid, uint8_t channe
     _ssid = ssid;
     _channel = channel;
     _captured = 0;
+    _m1Count = 0;
+    _m2Count = 0;
+    _pmkidSeen = false;
     WiFi.macAddress(_selfMac);
 
     fs::FS& fs = sdcard::exportFs();
@@ -74,7 +78,7 @@ void PmkidManager::run() {
     _captureQueue = nullptr;
 
     WiFi.disconnect(true);
-    notify("capture done: " + String((unsigned)_captured) + " frames -> " + _pcapPath);
+    notify(pmkidLikelyCaptured() ? "PMKID likely captured!" : "capture done, no PMKID seen");
     notify("reconnecting to your own network");
     g_wifi.autoConnect();  // no-op if nothing is saved; otherwise rejoins the MRU-front saved network
 
@@ -96,14 +100,26 @@ void PmkidManager::onCapturedFrame(const uint8_t* p, uint16_t len) {
     const uint8_t* addr3 = p + 16;
 
     // Anything involving the target AP or our own STA - broad on
-    // purpose, same reasoning as DeauthManager's capture filter: let
-    // the offline tools sort out which frame is the EAPOL message that
-    // actually matters, rather than this firmware trying to identify
-    // it itself.
+    // purpose, same reasoning as DeauthManager's capture filter: every
+    // matching frame still goes into the pcap verbatim regardless of
+    // what it structurally looks like below, so the offline tools
+    // always get the full picture, not just what this firmware could
+    // classify.
     bool involvesTarget = memcmp(addr1, _apBssid, 6) == 0 || memcmp(addr2, _apBssid, 6) == 0 ||
                            memcmp(addr3, _apBssid, 6) == 0 || memcmp(addr1, _selfMac, 6) == 0 ||
                            memcmp(addr2, _selfMac, 6) == 0;
     if (!involvesTarget) return;
+
+    // Structural read-out on the FULL frame, before the 256-byte
+    // truncation below - a PMKID KDE could in principle land past that
+    // cutoff. See net/EapolWire.h for exactly what is and isn't read.
+    eapol::Classification c = eapol::classify(p, len);
+    if (c.kind == eapol::MessageKind::Message1) {
+        _m1Count++;
+        if (c.hasPmkidKde) _pmkidSeen = true;
+    } else if (c.kind == eapol::MessageKind::Message2) {
+        _m2Count++;
+    }
 
     CapturedFrame frame;
     frame.originalLen = len;

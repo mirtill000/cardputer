@@ -19,7 +19,7 @@ public:
     void draw(M5Canvas& gfx) override;
 
     const char* helpText() const override {
-        return "WAR DRIVING\n\nENTER: start/stop passive scan\nA: allowlist   TAB: locate\nI: full SSID   C: join open\nE/X/P: evil twin/deauth/pmkid\n  (offensive gate applies)\nDEL: back (keeps running)";
+        return "WAR DRIVING\n\nENTER: start/stop passive scan\nA: allowlist   TAB: locate\nI: full SSID   C: join open\nE/X/P: evil twin/deauth/pmkid\nS: PMKID sweep (all non-open\n  sightings, not just this one)\n  (offensive gate applies)\nDEL: back (keeps running)";
     }
 
 private:
