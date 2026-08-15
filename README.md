@@ -1948,6 +1948,35 @@ cambiata, solo nuovi override opzionali e nuovi helper condivisi in
   liberando spazio perché il banner nella tabella non venga più troncato
   dalla sovrapposizione.
 
+### Fase 32: PORT SCAN copre anche le porte comuni sopra la 1024
+
+Il range di default (1-1024, `SETTINGS`) è quello classico dei "well-known
+port" IANA, ma lascia fuori un bel po' di servizi reali molto comuni che
+vivono sopra quella soglia — database, pannelli d'amministrazione, accesso
+remoto. `PortScanManager::startScan` ora unisce sempre al range
+configurato un elenco curato di ~50 porte sopra la 1024
+(`scan/WellKnownHighPorts.h`): database (`3306` MySQL, `5432` Postgres,
+`6379` Redis, `27017`/`27018`/`28017` MongoDB, `9042` Cassandra, `11211`
+Memcached, `1433` MSSQL, `1521` Oracle), accesso remoto (`3389` RDP,
+`5900` VNC, `5985`/`5986` WinRM), pannelli/dev server (`8080`, `8000`,
+`8888`, `3000`, `9000`, `9090`, `8443`, ...), e qualche porta storicamente
+nota come backdoor/exotic (`31337`). L'elenco viene deduplicato contro il
+range configurato in `startScan` — se qualcuno alza manualmente
+`portRangeEnd` oltre 1024 fino a coprire tutto da sé, nessuna di queste
+porte viene sondata due volte.
+
+Nessuna modifica al comportamento per porta trovata aperta: banner
+grabbing (`BannerGrabber`), lookup nome servizio (`PortServiceDb`, ~12.000
+voci — già copre questi servizi per nome) e controllo firme vulnerabili
+(`VulnSignatures`) restano identici, semplicemente vengono eseguiti anche
+sulle porte nuove. La schermata `PORT MAPPING` mostra ora "+50 common
+ports >1024" sotto il range configurato quando è idle, così è chiaro cosa
+viene effettivamente sondato senza dover aprire `SETTINGS`. Effetto
+collaterale positivo non richiesto ma già presente nel codice: l'evidenza
+"legacy port" (ambra) su `3389`/RDP nella tabella risultati, che prima non
+poteva mai scattare col range di default (3389 > 1024, mai sondata), ora è
+raggiungibile.
+
 ## Compilare e flashare
 
 ```
@@ -2182,6 +2211,12 @@ originale.
       menu DISCOVERY raggruppato per prerequisito invece di elenco piatto,
       indicatore `BG:xxx` nell'header per le attività in background non
       promiscue, rimozione del donut chart inutilizzato da `PORT SCAN`.
+- [x] **Fase 32 — `PORT SCAN` copre anche le porte comuni sopra la
+      1024**: ~50 porte curate (`scan/WellKnownHighPorts.h`) — database,
+      RDP/VNC/WinRM, pannelli/dev server, `31337` — sondate su ogni scan
+      insieme al range configurato in `SETTINGS`, deduplicate contro di
+      esso. Nessuna modifica a banner grabbing/lookup servizio/firme
+      vulnerabili, che restano identici sulle porte nuove.
 
 ## Test plan — Fase 1
 
@@ -3071,6 +3106,31 @@ a tavolino contro librerie Python — vedi sopra):
    compaia più alcun grafico a torta nell'angolo in alto a destra e che il
    testo del banner nella tabella non venga più tagliato da una
    sovrapposizione.
+
+## Test plan — Fase 32 (porte comuni sopra la 1024)
+
+1. **Idle screen**: aprire `PORT MAPPING` su un host senza ancora scan
+   fatti — sotto "range: 1-1024" deve comparire "+50 common ports
+   >1024".
+2. **Porta comune sopra 1024 trovata**: contro un host di test con un
+   servizio in ascolto su una delle porte aggiunte (es. un MySQL/Postgres/
+   Redis locale su `3306`/`5432`/`6379`, o un web server su `8080`),
+   avviare `ENTER` e verificare che compaia nella tabella risultati con
+   nome servizio corretto (da `PortServiceDb`) anche se fuori dal range
+   configurato in `SETTINGS`.
+3. **Deduplica con range esteso**: in `SETTINGS`, alzare `portRangeEnd`
+   oltre una delle porte comuni (es. a 9000, che copre `8080`) e rifare lo
+   scan — verificare che il tempo totale di scan non aumenti in modo
+   percepibile e che quella porta compaia una sola volta nei risultati,
+   non due.
+4. **RDP ora raggiungibile**: contro un host con RDP (`3389`) aperto, col
+   range di default 1-1024, verificare che compaia nella tabella
+   evidenziato in ambra ("legacy port") — prima di questa fase non
+   sarebbe mai stato sondato.
+5. **Nessuna porta aperta tra quelle nuove**: su un host senza alcuno di
+   questi servizi, verificare che lo scan finisca comunque in tempo
+   ragionevole (le ~50 porte extra restano una piccola frazione del
+   totale) e che l'elenco risultati non contenga falsi positivi.
 
 ## Limiti noti e tagli di scope deliberati
 

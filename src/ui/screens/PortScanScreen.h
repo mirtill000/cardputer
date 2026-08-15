@@ -20,7 +20,7 @@ public:
     void draw(M5Canvas& gfx) override;
 
     const char* helpText() const override {
-        return "PORT MAPPING\n\nTCP connect-scan of this\nhost's configured port range\n(see SETTINGS).\nENTER: start/rescan  I: full\n  banner\nArrows: move   DEL: back";
+        return "PORT MAPPING\n\nTCP connect-scan of this\nhost's configured port range\n(see SETTINGS) plus ~50 common\nports above 1024 (8080, 3306,\n6379, RDP, VNC, ...).\nENTER: start/rescan  I: full\n  banner\nArrows: move   DEL: back";
     }
 
 private:

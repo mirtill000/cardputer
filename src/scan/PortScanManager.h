@@ -14,7 +14,10 @@
 // for the rationale), just partitioned across *ports* of one host
 // instead of *hosts* of one subnet — and it only keeps OPEN ports (a
 // 1-1024 sweep with mostly-closed results would otherwise mean carrying
-// ~1000 uninteresting entries around).
+// ~1000 uninteresting entries around). Every scan also probes the
+// curated set of common ports above 1024 from WellKnownHighPorts.h
+// (databases, admin panels, RDP/VNC, dev-server ports, ...), so a
+// default 1-1024 range doesn't silently miss them.
 //
 // A singleton, not one instance per host: only one port scan is ever
 // meant to run at a time (the UI only exposes "scan ports of the host
@@ -56,6 +59,11 @@ private:
     IPAddress _target;
     uint16_t _portStart = 1;
     uint16_t _portEnd = 1024;
+    // Full list of ports this scan probes: the configured range plus the
+    // deduplicated well-known-high-ports set — built once in startScan(),
+    // read-only for the lifetime of the scan (safe for workers to read
+    // without the mutex above, which only guards _openPorts).
+    std::vector<uint16_t> _portList;
 
     std::atomic<bool> _running{false};
     std::atomic<bool> _hasResult{false};  // true once a scan has completed at least once

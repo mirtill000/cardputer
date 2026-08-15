@@ -4,6 +4,7 @@
 #include "../Chrome.h"
 #include "../../core/Config.h"
 #include "../../scan/PortScanManager.h"
+#include "../../scan/WellKnownHighPorts.h"
 
 PortScanScreen& PortScanScreen::instance() {
     static PortScanScreen s;
@@ -100,8 +101,14 @@ void PortScanScreen::draw(M5Canvas& gfx) {
         gfx.print("-");
         gfx.print(g_config.portRangeEnd);
 
+        gfx.setTextColor(theme::GREY, theme::BG);
+        gfx.setCursor(6, 38);
+        gfx.print("+");
+        gfx.print((unsigned)kWellKnownHighPortsCount);
+        gfx.print(" common ports >1024");
+
         gfx.setTextColor(theme::MAGENTA, theme::BG);
-        gfx.setCursor(6, 46);
+        gfx.setCursor(6, 50);
         gfx.print("ENTER: start scan");
 
         gfx.setTextColor(theme::GREY, theme::BG);
