@@ -26,6 +26,8 @@
 #include "../scan/EvilTwinManager.h"
 #include "../scan/DiscoveryRunner.h"
 #include "../scan/PmkidSweepManager.h"
+#include "../scan/IotOtProbe.h"
+#include "../scan/PlaybookRunner.h"
 #include <cstdio>
 #include <cstring>
 
@@ -66,6 +68,7 @@ size_t buildTaskTable(TaskEntry* out, size_t cap) {
     add(g_ssdpDiscovery.isRunning(), "UPNP", "UPNP DISCOVERY", false);
     add(g_snmpSweep.isRunning(), "SNMP", "SNMP SWEEP", false);
     add(g_dataStoreProbe.isRunning(), "DS", "DATASTORE SWEEP", false);
+    add(g_iotOtProbe.isRunning(), "IOT", "IOT/OT SWEEP", false);
     add(g_ldapProbe.isRunning(), "LDAP", "LDAP SWEEP", false);
     add(g_ntlmHttpProbe.isRunning(), "NTLM", "NTLM DISCLOSURE", false);
     add(g_serviceAuditManager.isRunning(), "AUD", "SERVICE AUDIT", false);
@@ -75,6 +78,7 @@ size_t buildTaskTable(TaskEntry* out, size_t cap) {
     add(g_assessmentRunner.isRunning(), "ASSESS", "AUTO ASSESS", false);
     add(g_evilTwinManager.isRunning(), "TWIN", "EVIL TWIN", false);
     add(g_pmkidSweepManager.isRunning(), "PSWP", "PMKID SWEEP", false);
+    add(g_playbookRunner.isRunning(), "PBK", "PLAYBOOK", false);
     return n;
 }
 }  // namespace

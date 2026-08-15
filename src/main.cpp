@@ -30,6 +30,7 @@
 #include "scan/SnmpSweep.h"
 #include "scan/AssessmentRunner.h"
 #include "scan/DataStoreProbe.h"
+#include "scan/IotOtProbe.h"
 #include "scan/ServiceAuditManager.h"
 #include "scan/LdapProbe.h"
 #include "scan/NtlmHttpProbe.h"
@@ -48,6 +49,8 @@
 #include "ui/screens/ChannelScanScreen.h"
 #include "ui/screens/SentinelScreen.h"
 #include "ui/screens/ActivityScreen.h"
+#include "ui/screens/PlaybookScreen.h"
+#include "scan/PlaybookRunner.h"
 // The discovery screens (LAN TOPOLOGY / UPNP DISCOVERY / SERVICE SCAN /
 // PASSIVE HOSTS / ROGUE DHCP / SNMP SWEEP / DATASTORE SWEEP) are no longer
 // top-level menu entries — they're grouped under NETWORK SCAN via
@@ -57,7 +60,7 @@
 namespace {
 BootScreen g_bootScreen;
 
-MenuItem g_menuItems[10];
+MenuItem g_menuItems[11];
 }  // namespace
 
 void setup() {
@@ -100,10 +103,11 @@ void setup() {
     g_menuItems[6] = {"CHANNEL SCAN", &ChannelScanScreen::instance()};
     g_menuItems[7] = {"SENTINEL MODE", &SentinelScreen::instance()};
     g_menuItems[8] = {"ACTIVITY", &ActivityScreen::instance()};
-    g_menuItems[9] = {"SETTINGS", &SettingsScreen::instance()};
+    g_menuItems[9] = {"PLAYBOOK", &PlaybookScreen::instance()};
+    g_menuItems[10] = {"SETTINGS", &SettingsScreen::instance()};
     // The discovery tools moved under NETWORK SCAN -> 'D' (see
     // DiscoveryMenuScreen); their managers are still begin()'d below.
-    MainMenuScreen::instance().configure(g_menuItems, 10);
+    MainMenuScreen::instance().configure(g_menuItems, 11);
 
     // MainMenuScreen must already be configured by this point: once the
     // render task starts, BootScreen can transition straight to it on
@@ -131,6 +135,7 @@ void setup() {
     g_assessmentRunner.begin(g_ui.scanQueue());
     g_captivePortalDetector.begin(g_ui.scanQueue());
     g_dataStoreProbe.begin(g_ui.scanQueue());
+    g_iotOtProbe.begin(g_ui.scanQueue());
     g_serviceAuditManager.begin(g_ui.scanQueue());
     g_ldapProbe.begin(g_ui.scanQueue());
     g_ntlmHttpProbe.begin(g_ui.scanQueue());
@@ -138,6 +143,7 @@ void setup() {
     g_deauthWatcher.begin(g_ui.scanQueue());
     g_sentinelManager.begin(g_ui.scanQueue());
     g_pmkidSweepManager.begin(g_ui.scanQueue());
+    g_playbookRunner.begin(g_ui.scanQueue());
 
     // Non-blocking: if a network was saved from a previous WIFI SCAN
     // run, this kicks the connection off immediately at boot instead of

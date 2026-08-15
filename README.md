@@ -2294,6 +2294,61 @@ lettura diretta del codice esistente, non ipotizzati — stesso approccio
 usato per le due passate UX/UI precedenti di questo progetto (Fase 24,
 Fase 31).
 
+### Fase 38: sweep IoT/OT + PLAYBOOK (sequenze scriptabili)
+
+Su richiesta esplicita dell'utente, dopo una proposta di 15 evoluzioni
+in ottica red/blue teaming: due di quelle proposte implementate, le
+altre restano proposte aperte (vedi la sezione più sotto per l'elenco
+completo).
+
+- **`net/../scan/IotOtProbe`: rilevamento MQTT/Modbus/CoAP senza
+  autenticazione** — stesso schema e stesso livello di rischio di
+  `DataStoreProbe` (sola lettura, nessun gate): sweepa la tabella host
+  vivi e controlla i tre protocolli più comunemente trovati esposti
+  senza autenticazione sui segmenti IoT/OT:
+  - **MQTT (1883/TCP)**: invia un vero pacchetto CONNECT (clean
+    session, nessuna credenziale) — un CONNACK con return code 0
+    significa che il broker accetta client anonimi; disconnette
+    subito dopo in modo pulito, non pubblica né si iscrive a nulla.
+  - **Modbus TCP (502/TCP)**: invia una Read Device Identification
+    (funzione 0x2B/0x0E, oggetto 0 = VendorName) — sola lettura per
+    definizione. Modbus non ha ALCUN concetto di autenticazione in
+    tutto il protocollo, quindi qualunque risposta valida (successo O
+    un'eccezione di protocollo) è già di per sé il finding: un
+    protocollo OT che per progettazione non può mai richiedere una
+    password è raggiungibile da questo segmento.
+  - **CoAP (5683/UDP)**: un GET NON-confirmable alla risorsa standard
+    di discovery CoRE (`/.well-known/core`, RFC 6690) — la richiesta di
+    sola lettura "cosa offri" che ogni client CoAP deve poter inviare.
+  Wired in `DISCOVERY` (gruppo "NEEDS NETWORK SCAN", stesso indicatore
+  di prontezza della Fase 37) e in `RUN ALL DISCOVERY`
+  (`DiscoveryRunner`, nuova fase tra DATASTORE e LDAP).
+- **`scan/PlaybookRunner` + schermata `PLAYBOOK`: sequenze scriptabili**
+  — non un vero linguaggio di scripting (avrebbe richiesto un parser/
+  interprete completo per un guadagno che non giustifica quella
+  superficie nuova su questo hardware), ma una piccola libreria di
+  preset, ciascuno una sequenza ordinata di step che questo
+  orchestratore guida tramite le API pubbliche `start()`/`isRunning()`/
+  `stop()` di manager e orchestratori GIÀ esistenti — stesso principio
+  di `DiscoveryRunner`/`AssessmentRunner`/`PmkidSweepManager`, applicato
+  un livello più in alto (uno step può essere un singolo probe, o
+  un intero orchestratore già esistente eseguito come un unico step).
+  Tre preset iniziali:
+  - **FULL RECON**: `AUTO ASSESS` poi `RUN ALL DISCOVERY` — i due
+    "one-button" già esistenti, incatenati; oggi nulla li concatenava,
+    bisognava lanciarli a mano uno dopo l'altro.
+  - **QUICK IOT/OT**: `NETWORK SCAN` → `SNMP SWEEP` → `DATASTORE SWEEP`
+    → `IOT/OT SWEEP` — una ricognizione rapida, senza porte estese né
+    listener promiscui, per quando interessa solo il quadro IoT/OT.
+  - **WIRELESS SURVEY**: l'unico preset che non richiede WiFi connesso
+    — una finestra a tempo di `WAR DRIVING` seguita da una finestra a
+    tempo di `BEACON/PROBE INTEL` (20s ciascuna), un campione rapido,
+    non un sostituto di una sessione più lunga aperta a mano.
+  Raggiunta dal menu principale (`PLAYBOOK`); la schermata mostra un
+  selettore quando inattiva e progresso step-per-step (con log) mentre
+  gira; `DEL` esce lasciandolo attivo in background, stesso pattern di
+  ogni altro orchestratore in questo firmware.
+
 ## Compilare e flashare
 
 ```
@@ -2577,6 +2632,15 @@ originale.
       (dashboard di ogni task in background), tasso per finestra in
       `GUARD MODE`, anteprima target con RSSI in `PMKID SWEEP`, legenda
       tasti globali nell'overlay di aiuto.
+- [x] **Fase 38 — Sweep IoT/OT + PLAYBOOK**: `scan/IotOtProbe` rileva
+      MQTT/Modbus TCP/CoAP raggiungibili senza autenticazione (stesso
+      rischio/stesso schema di `DATASTORE SWEEP`), wired in `DISCOVERY`
+      e `RUN ALL DISCOVERY`; nuovo `scan/PlaybookRunner` + schermata
+      `PLAYBOOK` (menu principale) esegue sequenze scriptabili di
+      manager/orchestratori già esistenti — tre preset: FULL RECON
+      (AUTO ASSESS poi RUN ALL DISCOVERY), QUICK IOT/OT (network scan +
+      SNMP/datastore/IoT-OT), WIRELESS SURVEY (war driving + beacon/
+      probe, l'unico senza bisogno di WiFi connesso).
 
 ## Test plan — Fase 1
 
@@ -3700,6 +3764,51 @@ che tenta un'associazione/cattura verso un AP:
     — deve comparire sempre, subito sopra "any key: close", la riga
     `I/TAB vary by screen  ?:this help`.
 
+## Test plan — Fase 38 (IoT/OT sweep, PLAYBOOK)
+
+**Solo in ambiente autorizzato**, stessa regola di ogni altro strumento
+di questo firmware:
+
+1. **MQTT anonimo accettato**: contro un broker Mosquitto/EMQX di test
+   configurato senza autenticazione, `IOT/OT SWEEP` deve mostrare
+   `mqtt` con NO-AUTH in rosso.
+2. **MQTT richiede auth**: contro lo stesso broker riconfigurato con
+   `allow_anonymous false`, deve mostrare "auth required" in ambra, non
+   NO-AUTH.
+3. **Modbus TCP**: contro un simulatore Modbus TCP di test (es.
+   `pymodbus` in modalità server), deve comparire `modbus` con il nome
+   vendor se il simulatore risponde a Read Device Identification, o
+   "responds (device id not supported)" se risponde con un'eccezione di
+   protocollo — in entrambi i casi NO-AUTH, perché Modbus non ha
+   autenticazione per definizione.
+4. **CoAP**: contro un server CoAP di test (es. `aiocoap`) che espone
+   `/.well-known/core`, deve comparire `coap` con parte della risposta
+   come dettaglio.
+5. **IoT/OT sweep senza NETWORK SCAN**: senza host vivi noti, `ENTER`
+   deve mostrare "no alive hosts - run NETWORK SCAN first" e terminare
+   subito, senza falsi risultati.
+6. **RUN ALL DISCOVERY include IoT/OT**: durante `RUN ALL DISCOVERY`,
+   la fase deve mostrare "IOT/OT SWEEP" tra DATASTORE e LDAP, con la
+   barra di progresso che avanza di conseguenza.
+7. **PLAYBOOK, selettore**: aprendo `PLAYBOOK` da inattivo, le frecce
+   devono scorrere i tre preset (FULL RECON/QUICK IOT/OT/WIRELESS
+   SURVEY) con nome e descrizione leggibili.
+8. **PLAYBOOK, FULL RECON**: avviarlo con WiFi connesso — deve mostrare
+   "step 1/2: AUTO ASSESS" e poi, al termine di quello, "step 2/2: RUN
+   ALL DISCOVERY", con la barra di progresso che avanza a metà tra i
+   due step.
+9. **PLAYBOOK, WIRELESS SURVEY senza WiFi**: avviarlo senza essere
+   connessi a nessuna rete — a differenza degli altri due preset, deve
+   partire comunque (mostrare "step 1/2: WAR DRIVING"), non bloccarsi
+   su "no WiFi - connect first".
+10. **PLAYBOOK, DEL e rientro**: uscire con `DEL` mentre un preset gira
+    e rientrare — deve mostrare ancora lo step/progresso corretto,
+    accumulato nel frattempo, stesso comportamento di ogni altro
+    orchestratore in background di questo firmware.
+11. **PLAYBOOK, ENTER ferma**: durante l'esecuzione, `ENTER` deve
+    fermare il preset alla fine dello step corrente (non a metà) e
+    mostrare "cancelled" nel log.
+
 ## Limiti noti e tagli di scope deliberati
 
 Riepilogo di quanto già menzionato nelle sezioni sopra, in un unico
@@ -4064,6 +4173,28 @@ posto:
   scorciatoie per fermarlo — per farlo bisogna comunque raggiungere la
   schermata proprietaria di quel task (stesso principio già valido per
   il tag `RF:`/`BG:` dell'header che questa schermata espande).
+- **`IOT/OT SWEEP`: nessun MQTT/CoAP/Modbus su TLS** (Fase 38): MQTT su
+  8883, CoAPS (DTLS) e Modbus/TCP-Security restano fuori scope per lo
+  stesso motivo già documentato per NTLM-over-HTTPS e LDAPS — nessun
+  client TLS in questo firmware. Un deployment che espone SOLO le
+  varianti cifrate di questi protocolli non viene rilevato.
+- **`PLAYBOOK`: preset fissi scritti in C++, non un vero linguaggio di
+  scripting** (Fase 38): i tre preset (FULL RECON/QUICK IOT/OT/WIRELESS
+  SURVEY) sono l'unica scelta possibile — non esiste un formato di
+  script caricabile da SD, componibile dall'utente. Costruire un vero
+  parser/interprete (con relativa gestione errori su script malformati)
+  sarebbe stata una superficie nuova enorme per un firmware embedded,
+  a fronte di un guadagno che i tre preset già coprono per i casi d'uso
+  più comuni — se serve una sequenza diversa resta più semplice
+  concatenare le schermate a mano.
+- **`PLAYBOOK`: barra di progresso a granularità di step, non
+  sotto-step** (Fase 38): quando uno step è a sua volta un intero
+  orchestratore (es. `AUTO ASSESS` dentro FULL RECON), `PLAYBOOK` non
+  guarda il progresso interno di quell'orchestratore — la barra avanza
+  solo quando l'intero step finisce, quindi può restare ferma per
+  diversi minuti su uno step lungo prima di scattare al successivo.
+  Aprire la schermata dedicata di quello step (es. `AUTO ASSESS` stessa,
+  che continua a girare in background) mostra il progresso fine.
 - **Nessuna build reale eseguita**: vale per ogni fase di questo
   progetto — il sandbox di sviluppo non ha accesso al registry
   PlatformIO. Tutto il codice è stato scritto con attenzione e, dove

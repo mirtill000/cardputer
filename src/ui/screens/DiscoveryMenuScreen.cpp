@@ -7,6 +7,7 @@
 #include "RogueDhcpScreen.h"
 #include "SnmpScreen.h"
 #include "DataStoreScreen.h"
+#include "IotOtScreen.h"
 #include "BeaconProbeScreen.h"
 #include "LdapScreen.h"
 #include "NtlmHttpScreen.h"
@@ -33,6 +34,7 @@ Screen* gPassive() { return &PassiveHostScreen::instance(); }
 Screen* gRogue() { return &RogueDhcpScreen::instance(); }
 Screen* gSnmp() { return &SnmpScreen::instance(); }
 Screen* gData() { return &DataStoreScreen::instance(); }
+Screen* gIotOt() { return &IotOtScreen::instance(); }
 Screen* gBeaconProbe() { return &BeaconProbeScreen::instance(); }
 Screen* gLdap() { return &LdapScreen::instance(); }
 Screen* gNtlmHttp() { return &NtlmHttpScreen::instance(); }
@@ -72,6 +74,7 @@ const DItem kItems[] = {
     {"-- NEEDS NETWORK SCAN --", nullptr, nullptr},
     {"SNMP SWEEP", gSnmp, needsNetworkScanReady},
     {"DATASTORE SWEEP", gData, needsNetworkScanReady},
+    {"IOT/OT SWEEP", gIotOt, needsNetworkScanReady},
     {"LDAP SWEEP", gLdap, needsNetworkScanReady},
     {"-- NEEDS PORT SCAN --", nullptr, nullptr},
     {"NTLM DISCLOSURE", gNtlmHttp, needsPortScanReady},

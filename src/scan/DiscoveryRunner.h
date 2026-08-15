@@ -30,6 +30,7 @@ public:
         Services,
         Snmp,
         DataStore,
+        IotOt,
         Ldap,
         NtlmHttp,
         LanTopology,
