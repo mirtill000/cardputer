@@ -22,6 +22,12 @@ String FileManagerScreen::fullPath(const String& base) const {
     return _path + "/" + base;
 }
 
+void FileManagerScreen::jumpTo(const String& path) {
+    _path = path;
+    _selected = 0;
+    rebuild();
+}
+
 void FileManagerScreen::rebuild() {
     _entries.clear();
     fs::FS& fs = sdcard::exportFs();
@@ -66,6 +72,10 @@ void FileManagerScreen::onKey(UiKey key, char ch) {
         }
     } else if (key == UiKey::Char && (ch == 'x' || ch == 'X')) {
         if (_selected < _entries.size() && !_entries[_selected].dir) _confirmDelete = true;
+    } else if (key == UiKey::Char && (ch == 'n' || ch == 'N')) {
+        jumpTo("/netrunner");
+    } else if (key == UiKey::Char && (ch == 'h' || ch == 'H')) {
+        jumpTo("/handshakes");
     } else if (key == UiKey::Back) {
         if (_path == "/") {
             g_ui.popScreen();
@@ -135,5 +145,5 @@ void FileManagerScreen::draw(M5Canvas& gfx) {
 
     gfx.setTextColor(theme::GREY, theme::BG);
     gfx.setCursor(4, gfx.height() - 9);
-    gfx.print("ENTER:opendir X:del DEL:up ?:help");
+    gfx.print("ENTER:opendir X:del N/H:jump DEL:up");
 }

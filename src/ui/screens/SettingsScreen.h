@@ -16,7 +16,7 @@ public:
     void draw(M5Canvas& gfx) override;
 
     const char* helpText() const override {
-        return "SETTINGS\n\narrows: select / adjust value\nO: OTA firmware update\nB: backup config to SD\nR: restore config from SD\nF: SD file manager\nD: hardware diagnostics\nENTER/DEL: save & exit";
+        return "SETTINGS\n\narrows: select / adjust value\nO: OTA update   F: file manager\nC: captures browser\nB/R: backup/restore config\nD: hardware diagnostics\nENTER/DEL: save & exit";
     }
 
 private:

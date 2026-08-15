@@ -47,6 +47,7 @@
 #include "ui/screens/AssessmentScreen.h"
 #include "ui/screens/ChannelScanScreen.h"
 #include "ui/screens/SentinelScreen.h"
+#include "ui/screens/ActivityScreen.h"
 // The discovery screens (LAN TOPOLOGY / UPNP DISCOVERY / SERVICE SCAN /
 // PASSIVE HOSTS / ROGUE DHCP / SNMP SWEEP / DATASTORE SWEEP) are no longer
 // top-level menu entries — they're grouped under NETWORK SCAN via
@@ -56,7 +57,7 @@
 namespace {
 BootScreen g_bootScreen;
 
-MenuItem g_menuItems[9];
+MenuItem g_menuItems[10];
 }  // namespace
 
 void setup() {
@@ -98,10 +99,11 @@ void setup() {
     g_menuItems[5] = {"WAR DRIVING", &WardrivingScreen::instance()};
     g_menuItems[6] = {"CHANNEL SCAN", &ChannelScanScreen::instance()};
     g_menuItems[7] = {"SENTINEL MODE", &SentinelScreen::instance()};
-    g_menuItems[8] = {"SETTINGS", &SettingsScreen::instance()};
+    g_menuItems[8] = {"ACTIVITY", &ActivityScreen::instance()};
+    g_menuItems[9] = {"SETTINGS", &SettingsScreen::instance()};
     // The discovery tools moved under NETWORK SCAN -> 'D' (see
     // DiscoveryMenuScreen); their managers are still begin()'d below.
-    MainMenuScreen::instance().configure(g_menuItems, 9);
+    MainMenuScreen::instance().configure(g_menuItems, 10);
 
     // MainMenuScreen must already be configured by this point: once the
     // render task starts, BootScreen can transition straight to it on

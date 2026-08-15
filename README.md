@@ -2196,6 +2196,104 @@ particolare — l'unica idea di quella lista che avrebbe cambiato il
 principio "mai craccare" — non è stato toccato, coerentemente col vincolo
 posto per questa fase.
 
+### Fase 37: terza passata UX/UI trasversale — tutti i 15 punti proposti
+
+Su richiesta esplicita dell'utente ("proponi 15 modifiche UX/UI" seguito
+da "Implementa tutto!"), un audit del codice esistente ha prodotto 15
+proposte concrete, radicate in gap reali (non ipotetici) trovati nelle
+schermate già esistenti — e tutte e 15 sono state implementate in questa
+fase.
+
+- **1-2. Breadcrumb/help text mancanti**: `ChannelScanScreen` non aveva
+  `title()`, quindi non compariva come breadcrumb del genitore quando
+  aperta da un'altra schermata (`chrome::drawHeader`) — aggiunto `"CHAN"`.
+  L'help text di `WardrivingScreen` non menzionava le frecce per muovere
+  la selezione tra i sighting — aggiunta la riga.
+- **3. Audit messaggistica "serve il WiFi"**: verificato a tampone che
+  ogni schermata che richiede una connessione WiFi attiva mostri già un
+  messaggio chiaro quando non è connessa (stesso pattern di verifica-
+  prima-di-reimplementare già usato in questa sessione per il suono
+  SENTINEL/war-driving) — nessuna schermata mancante trovata, nessuna
+  modifica di codice necessaria.
+- **4-5. `THREATS` integra SENTINEL MODE e PMKID SWEEP**: `collectFindings()`
+  ora include anche gli eventi SENTINEL MODE (dispositivo nuovo → ambra
+  "new on network", dispositivo scomparso → ambra "went dark", flood
+  deauth rilevato in sessione Sentinel → rosso) e un riepilogo
+  informativo (ciano) del numero di hit trovati dall'ultimo PMKID SWEEP,
+  se ne è girato uno — prima `THREATS` non sapeva nulla di quello che
+  succedeva in quelle due schermate, per quanto entrambe già scrivessero
+  i propri log dedicati.
+- **6. `FILE MANAGER`: scorciatoie a `/netrunner` e `/handshakes`**: `N`/`H`
+  saltano direttamente alle due cartelle dove finisce quasi ogni artefatto
+  prodotto da questo firmware, invece di dover scendere manualmente da
+  `/` ogni volta.
+- **7. Nuova schermata `CAPTURES`** (`ui/screens/CapturesScreen`, tasto
+  `C` da `SETTINGS`): browser unificato di sola visualizzazione/cancellazione
+  per ogni file `.pcap` prodotto dal firmware — scansiona sia
+  `/handshakes` (PMKID CAPTURE, DEAUTH+CAPTURE) sia `/netrunner`
+  (SENTINEL MODE) e li presenta in un'unica lista con nome/dimensione,
+  `I` per il percorso completo, `X` per cancellare (con conferma). Prima
+  bisognava ricordarsi quale cartella avesse scritto quale strumento e
+  passare da `FILE MANAGER` per trovarli.
+- **8. `DISCOVERY`: indicatore di prontezza per riga**: un pallino verde/
+  rosso accanto a ogni voce che dipende da un prerequisito (SNMP/
+  DATASTORE/LDAP SWEEP vogliono un `NETWORK SCAN` già girato; NTLM
+  DISCLOSURE vuole anche una porta HTTP nota da `PORT SCAN`) mostra a
+  colpo d'occhio se è già soddisfatto, invece di scoprirlo solo aprendo
+  lo strumento e vedendolo terminare a vuoto.
+- **9. `WAR DRIVING`: sottomenu offensivo raggruppato** (tasto `O`,
+  additivo — `E`/`X`/`P`/`S` diretti restano invariati per chi li
+  conosce già): apre un piccolo menu con le quattro azioni offensive
+  (EVIL TWIN/DEAUTH/PMKID/PMKID SWEEP) etichettate con la loro lettera,
+  navigabile con le frecce, per chi non le ricorda a memoria — stesso
+  target/stesso gate `OffensiveDisclaimerScreen` di prima, solo un punto
+  d'ingresso in più.
+- **10. Chiarito il rapporto GUARD MODE / SENTINEL MODE**: `GUARD MODE`
+  ora mostra "(SENTINEL MODE includes this)" quando non è in esecuzione
+  in autonomia, per rendere esplicito che avviare SENTINEL MODE copre
+  già lo stesso rilevamento flood senza dover avviare entrambi.
+- **11. Indicatore "molto occupato" nell'header**: la linea separatrice
+  già disegnata sotto l'header (`chrome::drawHeader`) cambia colore —
+  grigio normale, ambra, o rosso se è in corso un vero conflitto radio —
+  quando tre o più task in background/promiscui girano insieme, invece
+  di lasciare che l'unico indizio sia il tag testuale `RF:`/`BG:` che
+  mostra un solo nome più un contatore. `activity::draw()` ora ritorna
+  quel colore invece di essere `void`, e internamente costruisce la
+  propria tabella di manager tramite un helper condiviso (`buildTaskTable`)
+  invece di due array letterali separati — la stessa tabella alimenta
+  anche il punto 12 qui sotto.
+- **12. Nuova schermata `ACTIVITY`** (`ui/screens/ActivityScreen`, voce
+  nel menu principale): l'espansione a schermo intero del tag compatto
+  dell'header — ogni manager che questo firmware traccia, con il suo
+  stato attuale (in esecuzione o no) e se compete per il callback radio
+  promiscuo (`RF`) o no (`BG`), quelli in esecuzione elencati per primi.
+  Sola lettura: non avvia/ferma nulla, serve solo a non perdere di vista
+  cosa sta ancora girando dopo essere passati ad altro.
+- **13. `GUARD MODE`: tasso della finestra corrente per incidente**: ogni
+  riga ora mostra sia il conteggio totale (`Nt`) sia quello della sola
+  finestra scorrevole attuale (`Nt/w`) — prima si vedeva solo il totale
+  cumulato, che non distingue un incidente ormai concluso da uno ancora
+  in corso.
+- **14. `PMKID SWEEP`: anteprima target con RSSI prima di avviare**:
+  `PmkidSweepManager::previewTargets()` (nuovo, sola lettura, richiamabile
+  anche a riposo) espone lo stesso filtro di eleggibilità usato da
+  `start()` (non aperto, SSID non nascosto); la schermata lo usa per
+  mostrare SSID/barre di segnale/canale di ogni AP che lo sweep
+  colpirebbe, prima che l'utente si impegni in una sequenza che può
+  richiedere diversi minuti — invece di partire alla cieca.
+- **15. Legenda tasti globali nell'overlay di aiuto**: `UiManager::
+  drawHelpOverlay()` ora chiude sempre con una riga fissa che ricorda che
+  `I`/`TAB` variano per schermata e `?` riapre questo stesso overlay,
+  prima di "any key: close" — prima ogni schermata doveva ripetere quella
+  spiegazione nel proprio `helpText()` (molte non lo facevano). Il
+  budget di righe di contenuto si è ristretto di conseguenza (vedi
+  "Limiti noti" per l'effetto su schermate con `helpText()` già lunghi).
+
+Tutte e 15 le proposte erano già radicate in gap concreti trovati per
+lettura diretta del codice esistente, non ipotizzati — stesso approccio
+usato per le due passate UX/UI precedenti di questo progetto (Fase 24,
+Fase 31).
+
 ## Compilare e flashare
 
 ```
@@ -2469,6 +2567,16 @@ originale.
       CAPTURE in sequenza su ogni AP non aperto già noto invece di uno
       alla volta a mano. Vincolo esplicito rispettato: cattura solo, mai
       craccare.
+- [x] **Fase 37 — Terza passata UX/UI trasversale (15 punti)**: breadcrumb/
+      help text mancanti, `THREATS` integra SENTINEL MODE e PMKID SWEEP,
+      scorciatoie `FILE MANAGER` a `/netrunner`/`/handshakes`, nuova
+      schermata `CAPTURES` (browser unificato dei `.pcap`), indicatore di
+      prontezza per riga in `DISCOVERY`, sottomenu offensivo raggruppato
+      in `WAR DRIVING`, chiarito il rapporto GUARD MODE/SENTINEL MODE,
+      indicatore "molto occupato" nell'header, nuova schermata `ACTIVITY`
+      (dashboard di ogni task in background), tasso per finestra in
+      `GUARD MODE`, anteprima target con RSSI in `PMKID SWEEP`, legenda
+      tasti globali nell'overlay di aiuto.
 
 ## Test plan — Fase 1
 
@@ -3534,6 +3642,64 @@ che tenta un'associazione/cattura verso un AP:
    e rientrare — deve mostrare ancora il progresso corretto (indice/
    totale/hit) accumulato nel frattempo.
 
+## Test plan — Fase 37 (terza passata UX/UI, 15 punti)
+
+1. **Breadcrumb `CHANNEL SCAN`**: aprire `CHANNEL SCAN` da un percorso che
+   mostra il breadcrumb del genitore — deve comparire `CHAN` invece che
+   nulla.
+2. **`WAR DRIVING` help text**: premere `?` sulla schermata — deve
+   comparire la riga sulle frecce per muovere la selezione tra i
+   sighting.
+3. **`THREATS` + SENTINEL MODE**: con SENTINEL MODE avviato e almeno un
+   evento nuovo/scomparso/flood generato, aprire `THREATS` — deve
+   comparire il finding corrispondente con la severità attesa
+   (ambra/ambra/rosso).
+4. **`THREATS` + PMKID SWEEP**: dopo uno sweep con almeno un hit, aprire
+   `THREATS` — deve comparire il riepilogo informativo ciano col numero
+   di hit.
+5. **`FILE MANAGER` scorciatoie**: da `/`, premere `N` — deve saltare a
+   `/netrunner` (o mostrare "empty directory" se non esiste ancora);
+   `H` (da `/`) deve fare lo stesso per `/handshakes`.
+6. **`CAPTURES`**: da `SETTINGS`, `C` apre la nuova schermata — con
+   almeno un `.pcap` già scritto (da PMKID CAPTURE, DEAUTH+CAPTURE o
+   SENTINEL MODE) deve comparire nella lista con nome e dimensione; `I`
+   mostra il percorso completo; `X` chiede conferma e poi cancella.
+7. **`DISCOVERY` indicatore di prontezza**: senza mai aver girato
+   `NETWORK SCAN`, aprire `DISCOVERY` — SNMP/DATASTORE/LDAP SWEEP e NTLM
+   DISCLOSURE devono mostrare il pallino rosso; dopo un `NETWORK SCAN`
+   completato (con almeno un host con porta HTTP nota per NTLM
+   DISCLOSURE), il pallino deve diventare verde senza dover riaprire la
+   schermata.
+8. **`WAR DRIVING` sottomenu offensivo**: con almeno un sighting
+   selezionato, premere `O` — deve aprire il menu con le quattro voci;
+   `ENTER` su una lancia la stessa schermata che lancerebbe il tasto
+   diretto corrispondente (E/X/P/S), rispettando lo stesso gate
+   offensivo; `DEL` torna indietro senza lanciare nulla.
+9. **`GUARD MODE` vs `SENTINEL MODE`**: aprire `GUARD MODE` da solo
+   (senza SENTINEL MODE attivo) — nessuna nota; avviare SENTINEL MODE,
+   poi riaprire `GUARD MODE` senza averlo avviato in autonomia — deve
+   comparire "(SENTINEL MODE includes this)".
+10. **Header "molto occupato"**: avviare tre o più task in
+    background/promiscui insieme (es. `WAR DRIVING` + `NETWORK SCAN` +
+    `SENTINEL MODE`) — la linea sotto l'header deve diventare ambra (o
+    rossa se due promiscui competono per lo stesso momento); fermarne
+    abbastanza da scendere sotto tre — deve tornare grigia.
+11. **`ACTIVITY`**: dal menu principale, aprire `ACTIVITY` — ogni
+    manager avviato deve comparire in cima alla lista con il pallino
+    verde e l'etichetta `RF`/`BG` corretta; il contatore in basso deve
+    corrispondere al numero effettivo di task attivi.
+12. **`GUARD MODE` tasso per finestra**: generare un incidente flood,
+    lasciarlo scendere sotto soglia, poi farlo ripartire — la colonna
+    finestra (`.../w`) deve tornare a un numero basso mentre quella
+    totale (`...t`) continua a salire.
+13. **`PMKID SWEEP` anteprima**: con almeno un sighting non aperto/non
+    nascosto noto a WAR DRIVING e lo sweep mai avviato in questa
+    sessione, aprire `PMKID SWEEP` — deve comparire la lista di anteprima
+    con SSID, barre di segnale e canale, non "no results yet" a vuoto.
+14. **Overlay di aiuto globale**: premere `?` su una qualunque schermata
+    — deve comparire sempre, subito sopra "any key: close", la riga
+    `I/TAB vary by screen  ?:this help`.
+
 ## Limiti noti e tagli di scope deliberati
 
 Riepilogo di quanto già menzionato nelle sezioni sopra, in un unico
@@ -3875,6 +4041,29 @@ posto:
   — come ogni altro modulo che condivide il callback promiscuo — un AP
   alla volta, mai in parallelo: uno sweep su molti sighting può richiedere
   diversi minuti (~8s + tempo di associazione per AP).
+- **Overlay di aiuto globale: budget di righe ristretto, alcuni
+  `helpText()` già esistenti restavano troncati anche PRIMA di questa
+  fase** (Fase 37, punto 15): aggiungere la riga fissa sui tasti globali
+  ha ridotto lo spazio di contenuto disponibile a circa 7 righe — ma
+  diversi `helpText()` già scritti in fasi precedenti (`SentinelScreen`,
+  `BeaconProbeScreen` fra gli altri) ne avevano già più del budget
+  PRECEDENTE (circa 8), quindi le righe in eccesso venivano già tagliate
+  silenziosamente prima di questa modifica. Riscrivere ogni `helpText()`
+  troppo lungo per starci in una singola schermata di aiuto sarebbe stato
+  uno scope significativamente più ampio dei 15 punti richiesti — resta
+  un miglioramento futuro, non affrontato qui.
+- **`CAPTURES`: sola visualizzazione/cancellazione, non ricorsiva, solo
+  `.pcap`** (Fase 37, punto 7): scansiona il primo livello di
+  `/handshakes` e `/netrunner` (non entra in eventuali sottocartelle) e
+  filtra solo per estensione `.pcap` — i report JSON/CSV/HTML e i log
+  `.csv`/`.txt` che finiscono nelle stesse cartelle restano visibili solo
+  da `FILE MANAGER`. Nessuna funzione di rinomina/spostamento: non è mai
+  sembrato un'operazione sensata per un artefatto di cattura.
+- **`ACTIVITY`: sola lettura, non avvia/ferma nulla da lì** (Fase 37,
+  punto 12): mostra lo stato di ogni manager tracciato ma non offre
+  scorciatoie per fermarlo — per farlo bisogna comunque raggiungere la
+  schermata proprietaria di quel task (stesso principio già valido per
+  il tag `RF:`/`BG:` dell'header che questa schermata espande).
 - **Nessuna build reale eseguita**: vale per ogni fase di questo
   progetto — il sandbox di sviluppo non ha accesso al registry
   PlatformIO. Tutto il codice è stato scritto con attenzione e, dove

@@ -7,6 +7,8 @@
 #include "../../scan/RogueDhcpDetector.h"
 #include "../../scan/BeaconProbeSniffer.h"
 #include "../../scan/DeauthWatcher.h"
+#include "../../scan/SentinelManager.h"
+#include "../../scan/PmkidSweepManager.h"
 #include <vector>
 
 ThreatsScreen& ThreatsScreen::instance() {
@@ -99,6 +101,37 @@ void collectFindings(std::vector<Finding>& out) {
         if (g_deauthWatcher.getIncident(i, inc) && inc.flooding) {
             out.push_back({inc.bssid + " deauth flood", theme::RED});
         }
+    }
+
+    // SENTINEL MODE's own event log - new/gone devices on the watched
+    // network, plus deauth floods it caught itself (its own folded-in
+    // GUARD MODE logic, a separate detector from the one above - see
+    // SentinelManager.h). Has to be (or have been) running this session.
+    size_t evCount = g_sentinelManager.eventLogCount();
+    SentinelManager::Event ev;
+    for (size_t i = 0; i < evCount && out.size() < kMax; i++) {
+        if (!g_sentinelManager.getEvent(i, ev)) continue;
+        switch (ev.kind) {
+            case SentinelManager::EventKind::NewDevice:
+                out.push_back({ev.ip.toString() + " new on network", theme::AMBER});
+                break;
+            case SentinelManager::EventKind::DeviceGone:
+                out.push_back({(ev.hostname.length() ? ev.hostname : ev.ip.toString()) + " went dark",
+                                theme::AMBER});
+                break;
+            case SentinelManager::EventKind::DeauthFlood:
+                out.push_back({ev.mac + " deauth flood (sentinel)", theme::RED});
+                break;
+        }
+    }
+
+    // PMKID SWEEP: not a threat by itself (the user ran it deliberately
+    // against their own APs), just a status note so a completed sweep's
+    // headline result is visible from the same rollup as everything
+    // else, without having to remember to check PMKID SWEEP directly.
+    if (g_pmkidSweepManager.hitCount() > 0) {
+        out.push_back({String((unsigned)g_pmkidSweepManager.hitCount()) + " PMKID(s) captured this session",
+                        theme::CYAN});
     }
 }
 }  // namespace

@@ -83,48 +83,19 @@ void WardrivingScreen::onKey(UiKey key, char ch) {
                     g_ui.pushScreen(&SignalFinderScreen::instance());
                 }
             } else if (key == UiKey::Char && (ch == 'e' || ch == 'E')) {
-                WardrivingManager::ApSighting ap;
-                if (g_wardrivingManager.getSighting(_sightingsSelected, ap) && !ap.ssid.equals("<hidden>")) {
-                    EvilTwinScreen::instance().setSuggestedSsid(ap.ssid, ap.channel);
-                    if (g_config.offensiveEnabled) {
-                        g_ui.pushScreen(&EvilTwinScreen::instance());
-                    } else {
-                        OffensiveDisclaimerScreen::instance().setPendingTargetScreen(&EvilTwinScreen::instance());
-                        g_ui.pushScreen(&OffensiveDisclaimerScreen::instance());
-                    }
-                }
+                launchOffensiveAction(0);
             } else if (key == UiKey::Char && (ch == 'x' || ch == 'X')) {
-                WardrivingManager::ApSighting ap;
-                if (g_wardrivingManager.getSighting(_sightingsSelected, ap)) {
-                    DeauthScreen::instance().setTarget(ap.ssid, ap.bssid, ap.channel);
-                    if (g_config.offensiveEnabled) {
-                        g_ui.pushScreen(&DeauthScreen::instance());
-                    } else {
-                        OffensiveDisclaimerScreen::instance().setPendingTargetScreen(&DeauthScreen::instance());
-                        g_ui.pushScreen(&OffensiveDisclaimerScreen::instance());
-                    }
-                }
+                launchOffensiveAction(1);
             } else if (key == UiKey::Char && (ch == 'p' || ch == 'P')) {
-                WardrivingManager::ApSighting ap;
-                if (g_wardrivingManager.getSighting(_sightingsSelected, ap)) {
-                    PmkidScreen::instance().setTarget(ap.ssid, ap.bssid, ap.channel);
-                    if (g_config.offensiveEnabled) {
-                        g_ui.pushScreen(&PmkidScreen::instance());
-                    } else {
-                        OffensiveDisclaimerScreen::instance().setPendingTargetScreen(&PmkidScreen::instance());
-                        g_ui.pushScreen(&OffensiveDisclaimerScreen::instance());
-                    }
-                }
+                launchOffensiveAction(2);
             } else if (key == UiKey::Char && (ch == 's' || ch == 'S')) {
-                // Unlike E/X/P above, this doesn't need a selected
-                // sighting - PmkidSweepScreen gathers every eligible
-                // (non-open, non-hidden) AP itself when started.
-                if (g_config.offensiveEnabled) {
-                    g_ui.pushScreen(&PmkidSweepScreen::instance());
-                } else {
-                    OffensiveDisclaimerScreen::instance().setPendingTargetScreen(&PmkidSweepScreen::instance());
-                    g_ui.pushScreen(&OffensiveDisclaimerScreen::instance());
-                }
+                launchOffensiveAction(3);
+            } else if (key == UiKey::Char && (ch == 'o' || ch == 'O')) {
+                // Fase 37: grouped entry point for the four offensive
+                // actions above - same targets, same offensive gate, just
+                // a single key to remember instead of four.
+                _offensiveSelected = 0;
+                _state = State::OffensiveMenu;
             } else if (key == UiKey::Char && (ch == 'c' || ch == 'C')) {
                 // Join a selected OPEN network (no password) and check for a
                 // captive portal. Only meaningful for open APs — a
@@ -207,6 +178,71 @@ void WardrivingScreen::onKey(UiKey key, char ch) {
                 _state = State::AllowlistView;
             }
             break;
+
+        case State::OffensiveMenu:
+            if (key == UiKey::Up) {
+                _offensiveSelected = (_offensiveSelected == 0) ? 3 : (_offensiveSelected - 1);
+            } else if (key == UiKey::Down) {
+                _offensiveSelected = (_offensiveSelected + 1) % 4;
+            } else if (key == UiKey::Enter) {
+                size_t idx = _offensiveSelected;
+                _state = g_wardrivingManager.isRunning() ? State::Running : State::Idle;
+                launchOffensiveAction(idx);
+            } else if (key == UiKey::Back) {
+                _state = g_wardrivingManager.isRunning() ? State::Running : State::Idle;
+            }
+            break;
+    }
+}
+
+void WardrivingScreen::launchOffensiveAction(size_t index) {
+    WardrivingManager::ApSighting ap;
+    switch (index) {
+        case 0:  // Evil Twin
+            if (g_wardrivingManager.getSighting(_sightingsSelected, ap) && !ap.ssid.equals("<hidden>")) {
+                EvilTwinScreen::instance().setSuggestedSsid(ap.ssid, ap.channel);
+                if (g_config.offensiveEnabled) {
+                    g_ui.pushScreen(&EvilTwinScreen::instance());
+                } else {
+                    OffensiveDisclaimerScreen::instance().setPendingTargetScreen(&EvilTwinScreen::instance());
+                    g_ui.pushScreen(&OffensiveDisclaimerScreen::instance());
+                }
+            }
+            break;
+        case 1:  // Deauth
+            if (g_wardrivingManager.getSighting(_sightingsSelected, ap)) {
+                DeauthScreen::instance().setTarget(ap.ssid, ap.bssid, ap.channel);
+                if (g_config.offensiveEnabled) {
+                    g_ui.pushScreen(&DeauthScreen::instance());
+                } else {
+                    OffensiveDisclaimerScreen::instance().setPendingTargetScreen(&DeauthScreen::instance());
+                    g_ui.pushScreen(&OffensiveDisclaimerScreen::instance());
+                }
+            }
+            break;
+        case 2:  // PMKID
+            if (g_wardrivingManager.getSighting(_sightingsSelected, ap)) {
+                PmkidScreen::instance().setTarget(ap.ssid, ap.bssid, ap.channel);
+                if (g_config.offensiveEnabled) {
+                    g_ui.pushScreen(&PmkidScreen::instance());
+                } else {
+                    OffensiveDisclaimerScreen::instance().setPendingTargetScreen(&PmkidScreen::instance());
+                    g_ui.pushScreen(&OffensiveDisclaimerScreen::instance());
+                }
+            }
+            break;
+        case 3:  // PMKID sweep - unlike the other three, doesn't need a
+                 // selected sighting: PmkidSweepScreen gathers every
+                 // eligible (non-open, non-hidden) AP itself when started.
+            if (g_config.offensiveEnabled) {
+                g_ui.pushScreen(&PmkidSweepScreen::instance());
+            } else {
+                OffensiveDisclaimerScreen::instance().setPendingTargetScreen(&PmkidSweepScreen::instance());
+                g_ui.pushScreen(&OffensiveDisclaimerScreen::instance());
+            }
+            break;
+        default:
+            break;
     }
 }
 
@@ -226,6 +262,8 @@ void WardrivingScreen::draw(M5Canvas& gfx) {
 
     if (_state == State::AllowlistView || _state == State::AllowlistAddEntry || _state == State::AllowlistAddConfirm) {
         chrome::drawHeader(gfx, "WARDRIVE ALLOWLIST");
+    } else if (_state == State::OffensiveMenu) {
+        chrome::drawHeader(gfx, "OFFENSIVE ACTIONS");
     } else {
         chrome::drawHeader(gfx, "WAR DRIVING");
     }
@@ -236,7 +274,7 @@ void WardrivingScreen::draw(M5Canvas& gfx) {
             drawSightings(gfx, 56);
             gfx.setTextColor(theme::GREY, theme::BG);
             gfx.setCursor(4, gfx.height() - 9);
-            gfx.print("TAB:loc A:al C:cn E:twn X:dth P:pmk");
+            gfx.print("TAB:loc A:al C:cn O:offensive-menu");
             break;
         }
 
@@ -293,6 +331,45 @@ void WardrivingScreen::draw(M5Canvas& gfx) {
             gfx.setCursor(6, 122);
             gfx.print("DEL: cancel");
             break;
+
+        case State::OffensiveMenu:
+            drawOffensiveMenu(gfx);
+            gfx.setTextColor(theme::GREY, theme::BG);
+            gfx.setCursor(4, gfx.height() - 9);
+            gfx.print("ENTER:launch DEL:back");
+            break;
+    }
+}
+
+void WardrivingScreen::drawOffensiveMenu(M5Canvas& gfx) {
+    WardrivingManager::ApSighting ap;
+    bool haveAp = g_wardrivingManager.getSighting(_sightingsSelected, ap);
+
+    gfx.setTextColor(theme::GREY, theme::BG);
+    gfx.setCursor(6, 20);
+    gfx.print("target: ");
+    gfx.setTextColor(theme::CYAN, theme::BG);
+    gfx.print(haveAp ? ap.ssid : String("(none selected)"));
+
+    static const char* kLabels[4] = {
+        "EVIL TWIN  (E)",
+        "DEAUTH     (X)",
+        "PMKID      (P)",
+        "PMKID SWEEP(S) - all APs",
+    };
+    constexpr int16_t kRowH = 16;
+    constexpr int16_t kTop = 36;
+    for (size_t i = 0; i < 4; i++) {
+        int16_t y = kTop + (int16_t)i * kRowH;
+        bool sel = (i == _offensiveSelected);
+        uint16_t rowBg = sel ? theme::PANEL_BG : theme::BG;
+        gfx.drawRect(4, y, gfx.width() - 8, kRowH - 2, sel ? theme::CYAN : theme::GREY);
+        gfx.fillRect(5, y + 1, gfx.width() - 10, kRowH - 4, rowBg);
+        gfx.setTextColor(sel ? theme::MAGENTA : theme::GREY, rowBg);
+        gfx.setCursor(10, y + 4);
+        gfx.print(sel ? "> " : "  ");
+        gfx.setTextColor(sel ? theme::CYAN : theme::GREEN, rowBg);
+        gfx.print(kLabels[i]);
     }
 }
 

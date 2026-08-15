@@ -19,11 +19,12 @@ public:
 
     const char* title() const override { return "PSWP"; }
     const char* helpText() const override {
-        return "PMKID SWEEP\n\nRuns PMKID CAPTURE against\nevery non-open AP known to\nWAR DRIVING, one after\nanother. No deauth involved -\nsame detect-only PMKID check\nas single-AP capture.\nI: result detail\nENTER: start/stop\nArrows: move   DEL: back";
+        return "PMKID SWEEP\n\nBefore start: preview of\neligible targets + RSSI.\nRuns PMKID CAPTURE against\neach in turn, no deauth.\nI: result detail\nENTER: start/stop   DEL: back";
     }
 
 private:
     void drawResults(M5Canvas& gfx, int16_t top);
+    void drawPreview(M5Canvas& gfx, int16_t top);
 
     size_t _selected = 0;
     bool _showDetail = false;

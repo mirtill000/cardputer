@@ -49,6 +49,13 @@ void DeauthWatchScreen::draw(M5Canvas& gfx) {
         gfx.setTextColor(theme::RED, theme::BG);
         gfx.setCursor(6, 28);
         gfx.print("FLOOD DETECTED");
+    } else if (!_running) {
+        // SENTINEL MODE folds this exact detector in alongside its own
+        // discovery + traffic dump - only worth running THIS screen
+        // standalone if all you want is flood detection by itself.
+        gfx.setTextColor(theme::GREY, theme::BG);
+        gfx.setCursor(6, 28);
+        gfx.print("(SENTINEL MODE includes this)");
     }
 
     drawIncidents(gfx, flooding ? 38 : 30);
@@ -59,7 +66,7 @@ void DeauthWatchScreen::draw(M5Canvas& gfx) {
 
     gfx.setTextColor(theme::GREY, theme::BG);
     gfx.setCursor(4, gfx.height() - 9);
-    gfx.print("DEL:back  (red = flooding now)");
+    gfx.print("DEL:back  t=total /w=this window");
 }
 
 void DeauthWatchScreen::drawIncidents(M5Canvas& gfx, int16_t top) {
@@ -97,7 +104,16 @@ void DeauthWatchScreen::drawIncidents(M5Canvas& gfx, int16_t top) {
         gfx.setCursor(150, y);
         gfx.setTextColor(sel ? theme::CYAN : theme::GREY, rowBg);
         gfx.print((unsigned)inc.count);
-        gfx.print(" total");
+        gfx.print("t");
+
+        // Current 10s window count, separate from the running total -
+        // this is the number that actually decides "flooding" (see
+        // DeauthWatcher::kFloodThreshold), so it's worth seeing live
+        // even before it's high enough to turn the row red.
+        gfx.setCursor(195, y);
+        gfx.setTextColor(sel ? theme::CYAN : (inc.flooding ? theme::RED : theme::GREY), rowBg);
+        gfx.print((unsigned)inc.windowCount);
+        gfx.print("/w");
     }
 
     chrome::drawScrollMarkers(gfx, top + 2, top + 2 + (int16_t)kMaxRows * kRowH, first > 0, (first + kMaxRows) < count);

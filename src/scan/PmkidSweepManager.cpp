@@ -14,11 +14,32 @@ void PmkidSweepManager::begin(QueueHandle_t outQueue) {
     xTaskCreatePinnedToCore(&PmkidSweepManager::taskEntry, "pmkidsweep", 4096, this, 1, nullptr, 0);
 }
 
+size_t PmkidSweepManager::previewTargets(std::vector<TargetPreview>& out) const {
+    out.clear();
+    size_t n = g_wardrivingManager.sightingCount();
+    WardrivingManager::ApSighting ap;
+    for (size_t i = 0; i < n && out.size() < kMaxTargets; i++) {
+        if (!g_wardrivingManager.getSighting(i, ap)) continue;
+        if (ap.open) continue;                // nothing to capture a PMKID/handshake FOR on an open network
+        if (ap.ssid == "<hidden>") continue;  // WiFi.begin() needs a real name to associate to
+
+        TargetPreview t;
+        t.ssid = ap.ssid;
+        t.bssid = ap.bssid;
+        t.rssi = ap.rssi;
+        t.channel = ap.channel;
+        out.push_back(t);
+    }
+    return out.size();
+}
+
 bool PmkidSweepManager::start() {
     if (_running) return false;
     if (!g_wifi.isConnected()) return false;
 
     // Snapshot of eligible sightings, taken once - see class comment.
+    // (Reuses the same filter as previewTargets() above, just written
+    // directly into the sweep-task-owned _targets vector instead.)
     _targets.clear();
     size_t n = g_wardrivingManager.sightingCount();
     WardrivingManager::ApSighting ap;

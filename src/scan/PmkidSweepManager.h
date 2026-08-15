@@ -45,7 +45,22 @@ public:
         String pcapPath;
     };
 
+    struct TargetPreview {
+        String ssid;
+        String bssid;
+        int32_t rssi = 0;
+        uint8_t channel = 1;
+    };
+
     void begin(QueueHandle_t outQueue);
+
+    // Fase 37: read-only preview of what start() would sweep, safe to call
+    // any time (including while idle, before the user commits to
+    // starting) - same eligibility filter as start() itself (not open,
+    // not "<hidden>"), capped at kMaxTargets. Lets the UI show what's
+    // about to happen - and its signal strength - instead of starting
+    // blind against however many APs happen to be eligible.
+    size_t previewTargets(std::vector<TargetPreview>& out) const;
 
     // False if already running, WiFi isn't connected (WAR DRIVING's
     // sightings would be stale/irrelevant otherwise), or no eligible

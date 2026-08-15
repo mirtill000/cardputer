@@ -26,6 +26,26 @@ namespace activity {
 
 // Right-aligns the indicator so it ENDS at rightX (typically just left of
 // the battery block). Draws nothing when nothing is running.
-void draw(M5Canvas& gfx, int16_t rightX, int16_t y);
+//
+// Returns the color chrome::drawHeader should use for the separator line
+// just below the header row: theme::GREY normally, escalating to
+// theme::AMBER (or theme::RED on an actual radio conflict) once enough
+// background/promiscuous activity is running at once that the compact
+// text tag above is easy to skim past — see the .cpp for the threshold.
+uint16_t draw(M5Canvas& gfx, int16_t rightX, int16_t y);
+
+// Fase 37: full status of every task this widget tracks, backing the
+// standalone ACTIVITY screen (ui/screens/ActivityScreen.h) - the header
+// tag above only ever shows one name plus a count, this is the "show me
+// everything" expansion of that. Same manager list/order as the header's
+// own internal tables; `label` is a full name (vs. the header's 3-4 char
+// tag) since this has a whole screen's width to work with. Returns the
+// number of entries written into out (capped at outCapacity).
+struct TaskStatus {
+    const char* label;
+    bool running;
+    bool isRf;  // true = competes for the one promiscuous radio callback
+};
+size_t list(TaskStatus* out, size_t outCapacity);
 
 }  // namespace activity

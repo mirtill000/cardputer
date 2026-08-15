@@ -20,7 +20,7 @@ public:
 
     const char* title() const override { return "GRD"; }
     const char* helpText() const override {
-        return "GUARD MODE\n\nWatches for deauth/disassoc\nfloods - someone ELSE'S\nattack on a nearby network,\nnot anything this device\nsends. Stays on your current\nWiFi channel (no hopping).\n\nRed row = flooding right now.\nENTER: start/stop\nArrows: move   DEL: back";
+        return "GUARD MODE\n\nWatches for deauth/disassoc\nfloods - someone ELSE'S\nattack, not this device's.\nt = total this session,\n/w = frames in the current\n10s window. Red = flooding.\nENTER: start/stop\nArrows: move   DEL: back";
     }
 
 private:

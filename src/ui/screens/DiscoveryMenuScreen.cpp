@@ -14,13 +14,16 @@
 #include "../UiManager.h"
 #include "../Theme.h"
 #include "../Chrome.h"
+#include "../../core/Types.h"
+#include "../../scan/ScanManager.h"
 
 namespace {
 // Function-pointer accessors rather than plain Screen* so the singleton
 // instances are created on first use, with no static-init-order concerns.
 struct DItem {
     const char* label;
-    Screen* (*get)();  // nullptr marks a section-header row: not selectable, opens nothing
+    Screen* (*get)();     // nullptr marks a section-header row: not selectable, opens nothing
+    bool (*ready)();      // nullptr = no prerequisite to check (headers, and tools with none)
 };
 Screen* gRunAll() { return &DiscoveryAllScreen::instance(); }
 Screen* gCdp() { return &CdpLldpScreen::instance(); }
@@ -35,28 +38,49 @@ Screen* gLdap() { return &LdapScreen::instance(); }
 Screen* gNtlmHttp() { return &NtlmHttpScreen::instance(); }
 Screen* gGuardMode() { return &DeauthWatchScreen::instance(); }
 
+// Fase 37: per-row readiness dot for the two gated groups below -
+// "needs NETWORK SCAN" checks the host table isn't empty (a scan has
+// run at least once); "needs PORT SCAN" checks at least one alive host
+// has a known HTTP port (what NtlmHttpProbe itself filters on - see
+// scan/NtlmHttpProbe.h). Both are cheap best-effort checks re-run every
+// draw, same spirit as ThreatsScreen re-deriving its own list from
+// scratch each frame - the host table is small enough that this is not
+// a real cost.
+bool needsNetworkScanReady() { return g_scanManager.hostCount() > 0; }
+bool needsPortScanReady() {
+    size_t n = g_scanManager.hostCount();
+    HostInfo h;
+    for (size_t i = 0; i < n; i++) {
+        if (!g_scanManager.getHost(i, h) || !h.alive) continue;
+        for (const auto& p : h.ports) {
+            if (p.service == "http") return true;
+        }
+    }
+    return false;
+}
+
 // Grouped by prerequisite so the now-12-tool list reads as sections
 // instead of one flat run: standalone "run everything" first, then
 // one-shot active tools, tools that want a NETWORK SCAN's host table
 // first, the one tool that also wants a PORT SCAN, and finally the
 // passive listeners that just sit and collect.
 const DItem kItems[] = {
-    {"RUN ALL DISCOVERY", gRunAll},
-    {"-- ONE-SHOT --", nullptr},
-    {"UPNP DISCOVERY", gSsdp},
-    {"SERVICE SCAN", gSvc},
-    {"-- NEEDS NETWORK SCAN --", nullptr},
-    {"SNMP SWEEP", gSnmp},
-    {"DATASTORE SWEEP", gData},
-    {"LDAP SWEEP", gLdap},
-    {"-- NEEDS PORT SCAN --", nullptr},
-    {"NTLM DISCLOSURE", gNtlmHttp},
-    {"-- PASSIVE LISTENERS --", nullptr},
-    {"LAN TOPOLOGY", gCdp},
-    {"PASSIVE HOSTS", gPassive},
-    {"ROGUE DHCP", gRogue},
-    {"BEACON/PROBE INTEL", gBeaconProbe},
-    {"GUARD MODE", gGuardMode},
+    {"RUN ALL DISCOVERY", gRunAll, nullptr},
+    {"-- ONE-SHOT --", nullptr, nullptr},
+    {"UPNP DISCOVERY", gSsdp, nullptr},
+    {"SERVICE SCAN", gSvc, nullptr},
+    {"-- NEEDS NETWORK SCAN --", nullptr, nullptr},
+    {"SNMP SWEEP", gSnmp, needsNetworkScanReady},
+    {"DATASTORE SWEEP", gData, needsNetworkScanReady},
+    {"LDAP SWEEP", gLdap, needsNetworkScanReady},
+    {"-- NEEDS PORT SCAN --", nullptr, nullptr},
+    {"NTLM DISCLOSURE", gNtlmHttp, needsPortScanReady},
+    {"-- PASSIVE LISTENERS --", nullptr, nullptr},
+    {"LAN TOPOLOGY", gCdp, nullptr},
+    {"PASSIVE HOSTS", gPassive, nullptr},
+    {"ROGUE DHCP", gRogue, nullptr},
+    {"BEACON/PROBE INTEL", gBeaconProbe, nullptr},
+    {"GUARD MODE", gGuardMode, nullptr},
 };
 constexpr size_t kCount = sizeof(kItems) / sizeof(kItems[0]);
 }  // namespace
@@ -135,6 +159,15 @@ void DiscoveryMenuScreen::draw(M5Canvas& gfx) {
         gfx.print(sel ? "> " : "  ");
         gfx.setTextColor(sel ? theme::CYAN : theme::GREEN, rowBg);
         gfx.print(kItems[i].label);
+
+        // Fase 37: readiness dot for gated tools - green once their
+        // prerequisite scan has produced data, red while still waiting.
+        // Kept in its real color even on the selected row: the whole point
+        // is to stay legible while browsing, not just once you land on it.
+        if (kItems[i].ready) {
+            bool r = kItems[i].ready();
+            gfx.fillCircle(gfx.width() - 12, y + (kRowH - 2) / 2, 2, r ? theme::GREEN : theme::RED);
+        }
     }
 
     chrome::drawScrollMarkers(gfx, kTop, kTop + (int16_t)kMaxRows * kRowH, first > 0, (first + kMaxRows) < kCount);

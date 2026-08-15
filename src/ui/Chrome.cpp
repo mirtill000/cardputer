@@ -283,9 +283,10 @@ void chrome::drawHeader(M5Canvas& gfx, const char* title) {
 
     // Background-activity indicator, right-aligned just left of the
     // battery block (draws nothing when nothing is running) — see
-    // ActivityStatus.h for why this lives on every screen's header.
-    activity::draw(gfx, (int16_t)(x - 4), 4);
-
-    gfx.setTextColor(theme::GREY, theme::BG);
-    gfx.drawFastHLine(4, 15, gfx.width() - 8, theme::GREY);
+    // ActivityStatus.h for why this lives on every screen's header. Also
+    // decides the separator line's color below: normally grey, escalating
+    // when enough is running at once that the compact tag alone is easy
+    // to miss (Fase 37) — see activity::draw's own doc comment.
+    uint16_t separatorColor = activity::draw(gfx, (int16_t)(x - 4), 4);
+    gfx.drawFastHLine(4, 15, gfx.width() - 8, separatorColor);
 }

@@ -5,6 +5,7 @@
 #include "../../scan/PmkidSweepManager.h"
 #include "../../scan/WardrivingManager.h"
 #include "../../net/WifiManager.h"
+#include <vector>
 
 PmkidSweepScreen& PmkidSweepScreen::instance() {
     static PmkidSweepScreen s;
@@ -85,7 +86,15 @@ void PmkidSweepScreen::draw(M5Canvas& gfx) {
         gfx.print("not running");
     }
 
-    drawResults(gfx, 28);
+    // Fase 37: before the sweep has ever run, show what it WOULD hit
+    // instead of a bare "no results yet" - lets the user check the
+    // target list and signal strength before committing to a run that
+    // takes ~8s per AP.
+    if (!running && g_pmkidSweepManager.resultCount() == 0) {
+        drawPreview(gfx, 28);
+    } else {
+        drawResults(gfx, 28);
+    }
 
     gfx.setTextColor(theme::MAGENTA, theme::BG);
     gfx.setCursor(6, gfx.height() - 20);
@@ -137,4 +146,39 @@ void PmkidSweepScreen::drawResults(M5Canvas& gfx, int16_t top) {
     }
 
     chrome::drawScrollMarkers(gfx, top + 2, top + 2 + (int16_t)kMaxRows * kRowH, first > 0, (first + kMaxRows) < count);
+}
+
+void PmkidSweepScreen::drawPreview(M5Canvas& gfx, int16_t top) {
+    std::vector<PmkidSweepManager::TargetPreview> preview;
+    g_pmkidSweepManager.previewTargets(preview);
+    if (preview.empty()) {
+        chrome::drawEmptyState(gfx, "no eligible AP yet", "needs a non-open WAR DRIVING sighting");
+        return;
+    }
+
+    gfx.setTextColor(theme::GREY, theme::BG);
+    gfx.drawFastHLine(4, top, gfx.width() - 8, theme::GREY);
+
+    constexpr int16_t kRowH = 10;
+    constexpr size_t kMaxRows = 6;
+    size_t shown = preview.size() < kMaxRows ? preview.size() : kMaxRows;
+    for (size_t i = 0; i < shown; i++) {
+        int16_t y = top + 2 + (int16_t)i * kRowH;
+        gfx.setTextColor(theme::GREEN, theme::BG);
+        gfx.setCursor(6, y);
+        String label = preview[i].ssid;
+        if (label.length() > 18) label = label.substring(0, 18);
+        gfx.print(label);
+        chrome::drawSignalBars(gfx, 190, y + 8, preview[i].rssi);
+        gfx.setTextColor(theme::GREY, theme::BG);
+        gfx.setCursor(212, y);
+        gfx.print(preview[i].channel);
+    }
+    if (preview.size() > kMaxRows) {
+        gfx.setTextColor(theme::CYAN, theme::BG);
+        gfx.setCursor(6, top + 2 + (int16_t)kMaxRows * kRowH);
+        gfx.print("+ ");
+        gfx.print((unsigned)(preview.size() - kMaxRows));
+        gfx.print(" more");
+    }
 }

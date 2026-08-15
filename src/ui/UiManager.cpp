@@ -207,10 +207,12 @@ void UiManager::drawHelpOverlay(Screen* top) {
     const char* help = top->helpText();
     int16_t y = 26;
     if (help && help[0]) {
-        // Render '\n'-separated lines.
+        // Render '\n'-separated lines. Bounded to leave room for the
+        // global-conventions line below, which every screen's overlay
+        // shows regardless of what it says itself.
         const char* p = help;
         char line[42];
-        while (*p && y < _canvas.height() - 22) {
+        while (*p && y < _canvas.height() - 32) {
             size_t n = 0;
             while (*p && *p != '\n' && n < sizeof(line) - 1) line[n++] = *p++;
             line[n] = '\0';
@@ -232,6 +234,15 @@ void UiManager::drawHelpOverlay(Screen* top) {
         _canvas.setCursor(12, y);
         _canvas.print("DEL: back");
     }
+
+    // Universal-conventions reminder, shown on every screen's overlay
+    // regardless of its own helpText() above - 'I'/TAB aren't bound
+    // everywhere (each screen's own help lines above say whether they
+    // apply here), but this is where a user who's forgotten what they
+    // mean project-wide can always find the answer.
+    _canvas.setTextColor(theme::AMBER, theme::BG);
+    _canvas.setCursor(12, _canvas.height() - 26);
+    _canvas.print("I/TAB vary by screen  ?:this help");
 
     _canvas.setTextColor(theme::GREY, theme::BG);
     _canvas.setCursor(12, _canvas.height() - 16);

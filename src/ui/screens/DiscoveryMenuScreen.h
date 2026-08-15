@@ -18,7 +18,7 @@ public:
 
     const char* title() const override { return "DISC"; }
     const char* helpText() const override {
-        return "DISCOVERY\n\nAll network-discovery tools\nin one place.\nArrows: move   ENTER: open\nDEL: back to NETWORK SCAN\n\nSNMP/DATASTORE/LDAP want a\nNETWORK SCAN run first.\nNTLM DISCLOSURE also wants\na PORT SCAN (needs a known\nHTTP port per host).";
+        return "DISCOVERY\n\nAll network-discovery tools\nin one place.\nArrows: move   ENTER: open\nDEL: back to NETWORK SCAN\n\nDot: green=ready red=waiting\non its NETWORK/PORT SCAN.";
     }
 
 private:

@@ -8,11 +8,14 @@
 // known-vulnerable banners (from ScanManager's host table), plaintext
 // services (telnet/ftp), suspicious rogue-DHCP servers (from
 // RogueDhcpDetector), APs with WPS enabled and unlocked (from
-// BeaconProbeSniffer), and deauth/disassoc floods in progress (from
-// DeauthWatcher/GUARD MODE). Read-only; it re-derives the list from the
-// live data on every draw, so it reflects whatever the background
-// scanners have found so far. It's the on-device counterpart to the
-// report's ATTACK SURFACE section.
+// BeaconProbeSniffer), deauth/disassoc floods in progress (from
+// DeauthWatcher/GUARD MODE and separately from SENTINEL MODE's own
+// folded-in detector), new/gone devices on a SENTINEL MODE-watched
+// network, and a status note when PMKID SWEEP has captured at least one
+// PMKID this session. Read-only; it re-derives the list from the live
+// data on every draw, so it reflects whatever the background scanners
+// have found so far. It's the on-device counterpart to the report's
+// ATTACK SURFACE section.
 class ThreatsScreen : public Screen {
 public:
     static ThreatsScreen& instance();
