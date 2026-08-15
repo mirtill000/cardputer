@@ -86,7 +86,7 @@ void AssessmentRunner::run() {
     // --- Phase 3: report (90-100%) ---
     setPhase(Phase::Report, "generating report...");
     fs::FS& fs = sdcard::exportFs();
-    String path = netrunner::reportBase(fs) + ".html";
+    String path = netrunner::reportBase(fs, g_wifi.currentSsid()) + ".html";
     bool ok = ReportGenerator::generate(fs, path.c_str());
     _reportOk = ok;
     if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {

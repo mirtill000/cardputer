@@ -1,6 +1,5 @@
 #include "NetrunnerPaths.h"
 #include "../net/TimeSync.h"
-#include "../net/WifiManager.h"
 
 namespace {
 String sanitizeForFilename(String s) {
@@ -12,14 +11,11 @@ String sanitizeForFilename(String s) {
 }
 }  // namespace
 
-String netrunner::reportBase(fs::FS& fs) {
+String netrunner::reportBase(fs::FS& fs, const String& label) {
     fs.mkdir("/netrunner");
 
     String stamp = TimeSync::isSynced() ? TimeSync::nowFilenameString() : ("uptime-" + String(millis() / 1000));
+    String safeLabel = label.length() ? sanitizeForFilename(label) : String("no-network");
 
-    String ssid = g_wifi.currentSsid();
-    if (ssid.isEmpty()) ssid = "no-network";
-    ssid = sanitizeForFilename(ssid);
-
-    return "/netrunner/" + stamp + "_" + ssid;
+    return "/netrunner/" + stamp + "_" + safeLabel;
 }

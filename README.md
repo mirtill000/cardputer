@@ -758,7 +758,9 @@ la 10 — non sono state richieste dall'utente e non sono state fatte).
   distinti), fa il lookup vendor sull'OUI del BSSID riusando
   `OuiDatabase` già esistente, e appende ogni AP mai visto prima come
   riga CSV su `/wardrive/wardrive.csv` (SD se presente, altrimenti
-  LittleFS — riusa `sdcard::exportFs()` della Fase 10). Per un AP aperto
+  LittleFS — riusa `sdcard::exportFs()` della Fase 10; **path spostato in
+  `/netrunner/wardrive.csv` dalla Fase 29** — vedi quella sezione). Per
+  un AP aperto
   E in allowlist E non ancora scoperto in questa sessione: si
   disconnette da dove si trovava, si collega alla rete aperta (mai
   salvata tra le reti WiFi — non deve mai spodestare le reti vere
@@ -768,8 +770,10 @@ la 10 — non sono state richieste dall'utente e non sono state fatte).
   moduli usati da `NETWORK SCAN`/`PORT SCANNER`**, nessuna logica di
   scansione duplicata — poi esporta i risultati con `ResultStore` sotto
   `/wardrive/scans/<ssid>_<bssid>.json|csv` (namespace separato dalla
-  cronologia scan dell'utente, per non mischiare le due cose) e infine
-  richiama `WifiManager::autoConnect()` per tornare alla propria rete.
+  cronologia scan dell'utente, per non mischiare le due cose; **path
+  spostato in `/netrunner/<timestamp>_<ssid>_<bssid>.json|csv` dalla
+  Fase 29**) e infine richiama `WifiManager::autoConnect()` per tornare
+  alla propria rete.
 - **Allowlist NVS-backed**: `scan/WardrivingManager` gestisce un proprio
   namespace NVS (`wardrive_al`, fino a 10 SSID, stesso pattern di
   storage MRU-semplice già usato da `WifiManager` per le reti salvate).
@@ -1786,13 +1790,45 @@ i file a mano prima del run successivo.
   cerca più i vecchi nomi fissi ma elenca `/netrunner/` come cartella
   (stesso trattamento già riservato a `/handshakes/`, dato che il nome
   file esatto ora varia per ogni run).
-- **Deliberatamente NON toccato**: l'export per-AP del war driving
-  (`/wardrive/scans/<ssid>_<bssid>.json/.csv`) resta nel proprio
-  namespace separato, come già era — vedi il commento in
-  `WardrivingManager.cpp` sul perché è tenuto distinto dallo storico di
-  `NETWORK SCAN`. `ScanHistory` (i suoi snapshot interni per il diff
-  "nuovo host mai visto") resta anch'esso un meccanismo separato, non un
-  report pensato per l'utente.
+- **Deliberatamente NON toccato in questa fase (poi spostato in Fase
+  29 su richiesta esplicita)**: l'export per-AP del war driving restava
+  inizialmente nel proprio namespace separato (`/wardrive/scans/`) — vedi
+  la sezione "Fase 29" sotto per il ripensamento. `ScanHistory` (i suoi
+  snapshot interni per il diff "nuovo host mai visto") resta invece un
+  meccanismo separato, non un report pensato per l'utente — quello non è
+  cambiato.
+
+### Fase 29: anche i file del war driving sotto /netrunner
+
+Su richiesta esplicita dell'utente, la separazione decisa in Fase 28 tra
+i report di `NETWORK SCAN`/`AUTO ASSESS` e quelli di `WardrivingManager`
+è stata rimossa: ora tutto vive sotto `/netrunner`.
+
+- **`storage/NetrunnerPaths::reportBase` ora prende un `label` esplicito**
+  invece di leggere sempre `g_wifi.currentSsid()` al suo interno: i
+  chiamanti di `NETWORK SCAN`/`AUTO ASSESS` passano `g_wifi.currentSsid()`
+  loro stessi (comportamento identico a prima), mentre
+  `WardrivingManager::handleOpenAllowlistedAp` passa esplicitamente
+  `ap.ssid + "_" + ap.bssid` — non può affidarsi al SSID "corrente" del
+  WiFi perché nel momento in cui l'export parte il dispositivo potrebbe
+  già essere in fase di riconnessione alla propria rete salvata. Il
+  suffisso BSSID (non solo SSID) resta per continuare a distinguere due
+  AP con lo stesso nome — lo stesso scenario di evil twin che questo
+  modulo già segnala altrove (`ApSighting::suspicious`).
+- **`wardrive.csv`** (il log continuo, sempre in append, di ogni AP
+  incontrato in sessione) si sposta da `/wardrive/wardrive.csv` a
+  `/netrunner/wardrive.csv` — stesso file, stesso comportamento
+  (accumula per tutta la vita del dispositivo, non un file per run),
+  solo cartella diversa.
+- **Gli export per-AP** (discovery + port scan su un AP aperto in
+  allowlist) si spostano da `/wardrive/scans/<ssid>_<bssid>.json/.csv` a
+  `/netrunner/<timestamp>_<ssid>_<bssid>.json/.csv` — ora con timestamp
+  come ogni altro report, invece di essere tenuti a un solo file per AP
+  (una seconda incursione sullo stesso AP non sovrascrive più la prima).
+- **`ReportGenerator`**: rimossa la voce fissa `/wardrive/wardrive.csv`
+  da COMPANION ARTIFACTS (non esiste più a quel path) — già coperta dalla
+  voce generica `/netrunner/` aggiunta in Fase 28, il cui testo ora
+  menziona esplicitamente anche il log di war driving.
 
 ## Compilare e flashare
 
@@ -2007,6 +2043,12 @@ originale.
       `/report.html`) ma finiscono uno per run in `/netrunner/`, col nome
       `<timestamp>_<SSID>.<ext>` (`storage/NetrunnerPaths`) — storico
       completo invece di un solo snapshot sempre sovrascritto.
+- [x] **Fase 29 — Anche i file del war driving sotto `/netrunner`**: su
+      richiesta esplicita, il log continuo `wardrive.csv` e gli export
+      per-AP di `WardrivingManager` (prima in `/wardrive/`) si spostano
+      anch'essi sotto `/netrunner/` — un solo posto per ogni artefatto di
+      scansione. Gli export per-AP guadagnano anche un timestamp, che
+      prima non avevano.
 
 ## Test plan — Fase 1
 
@@ -2402,8 +2444,9 @@ laboratorio isolato) — non in giro per strada con reti di sconosciuti.
 1. **War driving passivo**: da `WAR DRIVING`, `ENTER` per avviare — i
    contatori `seen`/`open` devono crescere man mano che vengono trovati
    AP nei dintorni, e la tabella sotto deve popolarsi (verde = cifrata,
-   ambra = aperta). Verificare che compaia `/wardrive/wardrive.csv` su
-   SD/LittleFS con una riga per AP.
+   ambra = aperta). Verificare che compaia `/netrunner/wardrive.csv`
+   (path dalla Fase 29 — era `/wardrive/wardrive.csv`) su SD/LittleFS
+   con una riga per AP.
 2. **Nessuna connessione senza allowlist**: con la allowlist vuota,
    lasciare il war driving attivo vicino a una rete aperta di test — deve
    comparire nella tabella (ambra) ma il device non deve mai risultare
@@ -2417,9 +2460,10 @@ laboratorio isolato) — non in giro per strada con reti di sconosciuti.
    e aperto, riavviare il war driving — il log deve mostrare
    "connecting to allow-listed AP", poi "discovered N host(s)", poi
    "reconnecting to your own network"; verificare che
-   `/wardrive/scans/<ssid>_<bssid>.json` e `.csv` compaiano su SD, e che
-   al termine il device sia di nuovo connesso alla rete di sempre (non a
-   quella di test).
+   `/netrunner/<timestamp>_<ssid>_<bssid>.json` e `.csv` compaiano su SD
+   (path dalla Fase 29 — era `/wardrive/scans/<ssid>_<bssid>.json|csv`),
+   e che al termine il device sia di nuovo connesso alla rete di sempre
+   (non a quella di test).
 5. **`MAIN MENU` a 7 voci**: verificare che tutte e 7 le voci (inclusa
    `WAR DRIVING`) siano leggibili senza sovrapporsi alla status bar in
    fondo.
@@ -2799,6 +2843,22 @@ verificare su hardware, in un ambiente **autorizzato**:
    in pratica (l'export richiede una rete scansionata), ma verificare
    comunque che senza sync l'export usi il fallback `uptime-<secondi>`
    invece di fallire o produrre un nome vuoto.
+
+## Test plan — Fase 29 (war driving su /netrunner)
+
+1. **Log continuo**: avviare `WAR DRIVING`, lasciarlo girare finché non
+   viene loggata almeno una AP, verificare che compaia
+   `/netrunner/wardrive.csv` (non più `/wardrive/wardrive.csv`) e che
+   righe di sessioni precedenti (se il file esisteva già) siano ancora
+   presenti (append, non troncamento).
+2. **Export per-AP**: con una AP aperta in allowlist nei paraggi,
+   verificare che l'incursione produca
+   `/netrunner/<timestamp>_<ssid>_<bssid>.json` e `.csv`; una seconda
+   incursione sulla stessa AP in un momento diverso deve produrre un
+   NUOVO file (timestamp diverso), non sovrascrivere il primo.
+3. **COMPANION ARTIFACTS**: un report HTML generato dopo il punto 1 o 2
+   deve elencare `/netrunner/` (non più una voce `/wardrive/wardrive.csv`
+   separata) nella sezione COMPANION ARTIFACTS.
 
 ## Limiti noti e tagli di scope deliberati
 

@@ -98,7 +98,7 @@ void HostListScreen::onScanEvent(const ScanNotification& ev) {
             ScanHistory::diffNewHosts(fs, _newHostIps);
 
             if (g_config.autoExportOnScanFinish) {
-                String base = netrunner::reportBase(fs);
+                String base = netrunner::reportBase(fs, g_wifi.currentSsid());
                 bool okJson = ResultStore::exportJson(fs, (base + ".json").c_str());
                 bool okCsv = ResultStore::exportCsv(fs, (base + ".csv").c_str());
                 _statusLine = (okJson && okCsv)
@@ -191,14 +191,14 @@ void HostListScreen::onKey(UiKey key, char ch) {
         case UiKey::Char:
             if (ch == 'e' || ch == 'E') {
                 fs::FS& fs = sdcard::exportFs();
-                String base = netrunner::reportBase(fs);
+                String base = netrunner::reportBase(fs, g_wifi.currentSsid());
                 bool okJson = ResultStore::exportJson(fs, (base + ".json").c_str());
                 bool okCsv = ResultStore::exportCsv(fs, (base + ".csv").c_str());
                 _statusLine = (okJson && okCsv) ? (String("exported to /netrunner (") + sdcard::exportFsLabel() + ")")
                                                  : "export FAILED (see serial log)";
             } else if (ch == 'r' || ch == 'R') {
                 fs::FS& fs = sdcard::exportFs();
-                String path = netrunner::reportBase(fs) + ".html";
+                String path = netrunner::reportBase(fs, g_wifi.currentSsid()) + ".html";
                 bool ok = ReportGenerator::generate(fs, path.c_str());
                 _statusLine = ok ? (String("report saved to /netrunner (") + sdcard::exportFsLabel() + ")")
                                  : "report FAILED (see serial log)";
