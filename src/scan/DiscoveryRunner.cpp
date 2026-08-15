@@ -3,6 +3,8 @@
 #include "ServiceEnumerator.h"
 #include "SnmpSweep.h"
 #include "DataStoreProbe.h"
+#include "LdapProbe.h"
+#include "NtlmHttpProbe.h"
 #include "CdpLldpSniffer.h"
 #include "PassiveHostDiscovery.h"
 #include "RogueDhcpDetector.h"
@@ -69,7 +71,7 @@ void DiscoveryRunner::run() {
         waitOneShot([]() { return g_ssdpDiscovery.isRunning(); });
     }
     if (_running) {
-        setPhase(Phase::Services, "mDNS service scan...", 20);
+        setPhase(Phase::Services, "mDNS service scan...", 15);
         g_serviceEnumerator.start();
         waitOneShot([]() { return g_serviceEnumerator.isRunning(); });
 
@@ -85,19 +87,35 @@ void DiscoveryRunner::run() {
         }
     }
     if (_running) {
-        setPhase(Phase::Snmp, "SNMP public sweep...", 35);
+        setPhase(Phase::Snmp, "SNMP public sweep...", 25);
         g_snmpSweep.start();
         waitOneShot([]() { return g_snmpSweep.isRunning(); });
     }
     if (_running) {
-        setPhase(Phase::DataStore, "data-store sweep...", 50);
+        setPhase(Phase::DataStore, "data-store sweep...", 35);
         g_dataStoreProbe.start();
         waitOneShot([]() { return g_dataStoreProbe.isRunning(); });
+    }
+    if (_running) {
+        setPhase(Phase::Ldap, "LDAP anon-bind/rootDSE sweep...", 45);
+        g_ldapProbe.start();
+        waitOneShot([]() { return g_ldapProbe.isRunning(); });
+    }
+    if (_running) {
+        // Needs per-host PORT SCAN results (HostInfo::ports), which a
+        // NETWORK SCAN alone doesn't produce - see NtlmHttpProbe.h. Not
+        // skipped here: if any host already has a known HTTP port from
+        // an earlier session action (a manual port scan, AUTO ASSESS),
+        // this still checks it; otherwise it just reports none and
+        // moves on, same graceful "nothing to do" as every other phase.
+        setPhase(Phase::NtlmHttp, "NTLM-over-HTTP disclosure...", 55);
+        g_ntlmHttpProbe.start();
+        waitOneShot([]() { return g_ntlmHttpProbe.isRunning(); });
     }
 
     // --- Promiscuous listeners, one at a time (shared radio callback) ---
     if (_running) {
-        setPhase(Phase::LanTopology, "LAN topology (CDP/LLDP)...", 65);
+        setPhase(Phase::LanTopology, "LAN topology (CDP/LLDP)...", 68);
         g_cdpLldpSniffer.start();
         sleepWindow(kPromiscWindowMs);
         g_cdpLldpSniffer.stop();

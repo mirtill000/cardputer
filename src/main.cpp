@@ -31,6 +31,8 @@
 #include "scan/AssessmentRunner.h"
 #include "scan/DataStoreProbe.h"
 #include "scan/ServiceAuditManager.h"
+#include "scan/LdapProbe.h"
+#include "scan/NtlmHttpProbe.h"
 #include "scan/DiscoveryRunner.h"
 #include "net/WifiManager.h"
 #include "net/CaptivePortalDetector.h"
@@ -121,6 +123,8 @@ void setup() {
     g_captivePortalDetector.begin(g_ui.scanQueue());
     g_dataStoreProbe.begin(g_ui.scanQueue());
     g_serviceAuditManager.begin(g_ui.scanQueue());
+    g_ldapProbe.begin(g_ui.scanQueue());
+    g_ntlmHttpProbe.begin(g_ui.scanQueue());
     g_discoveryRunner.begin(g_ui.scanQueue());
 
     // Non-blocking: if a network was saved from a previous WIFI SCAN

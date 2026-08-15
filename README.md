@@ -1830,6 +1830,67 @@ i report di `NETWORK SCAN`/`AUTO ASSESS` e quelli di `WardrivingManager`
   voce generica `/netrunner/` aggiunta in Fase 28, il cui testo ora
   menziona esplicitamente anche il log di war driving.
 
+### Fase 30: sweep LDAP (anon-bind + rootDSE) e disclosure NTLM-over-HTTP
+
+Tre proposte (su dieci per l'area "offensive security", poi ristrette
+alle sole LDAP/NTLM su richiesta dell'utente) implementate nel sotto-menu
+DISCOVERY, stesso registro read-only/non gated di SNMP SWEEP e DATASTORE
+SWEEP — mai scritture, mai credenziali vere, mai un handshake completato:
+
+- **`LDAP SWEEP`** (`scan/LdapProbe`, `net/LdapWire`): per ogni host vivo
+  che risponde sulla porta 389, tenta un **bind anonimo semplice** (DN e
+  password vuoti) e, indipendentemente dal risultato, una **ricerca sul
+  rootDSE** (`namingContexts`, `defaultNamingContext`, `dnsHostName`) —
+  l'RFC 4511 §5.1 prevede che il rootDSE resti leggibile anche senza bind
+  riuscito, e molti DC reali lo rispettano pur rifiutando il bind
+  anonimo generico, quindi i due controlli sono deliberatamente
+  indipendenti, non in sequenza condizionata. `net/LdapWire.h` implementa
+  il minimo indispensabile di BER (ASN.1, RFC 4511 §5.1/X.690) per
+  costruire le due richieste e leggere le risposte — **verificato prima
+  di scrivere una riga di C++** codificando le stesse identiche richieste
+  con la libreria Python `ldap3` (il suo modulo `ldap3.protocol.rfc4511`,
+  un'implementazione ASN.1 reale, non una derivazione a mano) e
+  confrontando byte a byte; il parsing (bind response + search result
+  entry, incluse lunghezze BER long-form su un rootDSE realistico multi-
+  valore) è stato testato contro messaggi generati dalla stessa libreria
+  prima di considerarlo corretto. Nessun server LDAP reale né build ESP32
+  reale coinvolti — vedi "Limiti noti".
+- **`NTLM DISCLOSURE`** (`scan/NtlmHttpProbe`, `net/NtlmWire`): per ogni
+  host vivo con una porta HTTP già nota (da `PORT SCAN`/`AUTO ASSESS` —
+  `NETWORK SCAN` da sola non basta, vedi sotto), invia un messaggio NTLM
+  Type 1 (NEGOTIATE) in un header `Authorization: NTLM <...>` e, se il
+  server risponde con un Type 2 (CHALLENGE) in `WWW-Authenticate: NTLM
+  <...>`, ne decodifica i `TargetInfo` AV_PAIR per rivelare dominio
+  NetBIOS/DNS e nome macchina — spesso il dominio AD e l'hostname reali
+  dietro un'app web che altrimenti non li mostra. **Non completa mai
+  l'handshake** (nessun messaggio Type 3/AUTHENTICATE viene mai costruito
+  o inviato), **non usa mai una credenziale vera**: il Type 2 è la parte
+  del protocollo che ogni server invia a chiunque negozi NTLM, autenticato
+  o no — leggerlo è un banner grab evoluto, non furto di credenziali o
+  di hash. Anche qui, `net/NtlmWire.h` è stato verificato prima dell'uso:
+  il layout del messaggio Type 1 contro la libreria Python `ntlm-auth`,
+  e il parsing del Type 2 (incluso il decode UTF-16LE→ASCII dei campi)
+  contro un CHALLENGE_MESSAGE realistico costruito con le classi
+  `TargetInfo`/`AvId` della stessa libreria (stesso genere di AV_PAIR che
+  manda un vero domain controller/IIS). **Solo HTTP semplice** (porta/
+  servizio `"http"`) — HTTPS (`"https"`) è fuori scope: servirebbe un
+  client TLS, un'aggiunta non banale lasciata per una fase futura.
+- **`RUN ALL DISCOVERY`**: entrambi aggiunti alla sequenza (dopo
+  DATASTORE SWEEP) con le stesse percentuali di avanzamento
+  ridistribuite. `NTLM DISCLOSURE` in quel contesto trova quasi sempre
+  zero host (RUN ALL non fa un port scan per-host), a meno che uno scan
+  porte non sia già stato fatto in sessione — comportamento accettato,
+  non un bug: si degrada allo stesso "niente da fare" pulito di ogni
+  altra fase quando mancano i prerequisiti.
+
+Nessuna delle due tocca disponibilità del servizio, non tenta exploit,
+non intercetta né rilancia traffico di terzi — coerente con l'esclusione
+esplicita, già decisa in una fase precedente, di un modulo NTLM-relay/
+Responder-style (avvelenamento LLMNR/NBT-NS + cattura hash): quello
+raccoglierebbe credenziali di macchine terze che non hanno mai scelto di
+interagire col dispositivo sotto test, categoria di rischio diversa da
+tutto il resto di questo firmware — resta fuori scope.
+
 ## Compilare e flashare
 
 ```
@@ -2049,6 +2110,14 @@ originale.
       anch'essi sotto `/netrunner/` — un solo posto per ogni artefatto di
       scansione. Gli export per-AP guadagnano anche un timestamp, che
       prima non avevano.
+- [x] **Fase 30 — Sweep LDAP (anon-bind + rootDSE) e disclosure NTLM-
+      over-HTTP**: `LDAP SWEEP` (bind anonimo + lettura rootDSE, porta
+      389) e `NTLM DISCLOSURE` (negoziazione NTLM su HTTP, dominio/
+      hostname dal Type 2 challenge, mai un handshake completato) nel
+      sotto-menu DISCOVERY, entrambi non gated (read-only, nessuna
+      credenziale vera). `net/LdapWire` e `net/NtlmWire` implementano il
+      minimo di BER/NTLM necessario, verificati prima dell'uso contro
+      librerie Python reali (`ldap3`/`pyasn1`, `ntlm-auth`) — vedi sopra.
 
 ## Test plan — Fase 1
 
@@ -2860,6 +2929,42 @@ verificare su hardware, in un ambiente **autorizzato**:
    deve elencare `/netrunner/` (non più una voce `/wardrive/wardrive.csv`
    separata) nella sezione COMPANION ARTIFACTS.
 
+## Test plan — Fase 30 (LDAP sweep, NTLM disclosure)
+
+**Da testare SOLO in un ambiente autorizzato** — contro un DC/server
+LDAP e servizi web con NTLM abilitato di tua proprietà o esplicitamente
+autorizzati. Codice mai eseguito contro un server reale (solo verificato
+a tavolino contro librerie Python — vedi sopra):
+
+1. **LDAP, bind anonimo consentito**: contro un LDAP/AD di test con bind
+   anonimo abilitato (o un OpenLDAP di default), `LDAP SWEEP` → `ENTER`
+   deve mostrare l'host con "anon-bind OPEN" in rosso, e la seconda riga
+   deve mostrare `dnsHostName` o `defaultNamingContext` se il rootDSE è
+   stato letto.
+2. **LDAP, bind anonimo rifiutato ma rootDSE leggibile**: contro un AD
+   moderno con bind anonimo disabilitato (il default), deve comparire
+   "bind rejected" in verde ma la seconda riga deve comunque mostrare
+   `dnsHostName`/naming context se il server li espone senza bind —
+   verifica che i due controlli siano davvero indipendenti come
+   documentato, non che il secondo salti quando il primo fallisce.
+3. **LDAP, porta chiusa/non-LDAP**: un host senza nulla in ascolto sulla
+   389 (la maggioranza) non deve comparire affatto nell'elenco — non un
+   falso positivo con campi vuoti.
+4. **NTLM, servizio con NTLM abilitato**: contro un sito IIS/servizio con
+   autenticazione NTLM (es. un file share Windows esposto via WebDAV, o
+   un pannello interno configurato per Integrated Windows Auth), dopo un
+   `PORT SCAN` sull'host, `NTLM DISCLOSURE` → `ENTER` deve mostrare
+   IP:porta e, nella seconda riga, dominio/hostname disclosi dal Type 2.
+5. **NTLM, nessun NTLM offerto**: un servizio HTTP qualunque senza NTLM
+   (la maggioranza) non deve comparire nell'elenco.
+6. **NTLM senza PORT SCAN**: `NTLM DISCLOSURE` senza aver mai fatto un
+   port scan su nessun host deve mostrare "no HTTP hosts - run NETWORK
+   SCAN/PORT SCAN first", non restare bloccato o mostrare un elenco vuoto
+   senza spiegazione.
+7. **RUN ALL DISCOVERY**: verificare che le due nuove fasi compaiano
+   nell'etichetta di fase (`LDAP SWEEP`, `NTLM DISCLOSURE`) con la barra
+   di avanzamento che cresce correttamente tra DATASTORE e LAN TOPOLOGY.
+
 ## Limiti noti e tagli di scope deliberati
 
 Riepilogo di quanto già menzionato nelle sezioni sopra, in un unico
@@ -3051,7 +3156,12 @@ posto:
   era in una delle liste di proposte ed è stato escluso su istruzione
   esplicita dell'utente perché ad alto rischio (impersona servizi verso
   client di terzi per raccogliere hash). Implementabile in futuro solo su
-  richiesta esplicita e dietro il gate `OffensiveDisclaimerScreen`.
+  richiesta esplicita e dietro il gate `OffensiveDisclaimerScreen`. **Non
+  va confuso con `NTLM DISCLOSURE` (Fase 30)**, che non impersona nulla e
+  non cattura hash: si limita a leggere il Type 2 challenge che un
+  server invia comunque a chiunque negozi NTLM, senza mai completare
+  l'handshake — stessa categoria di rischio di un banner grab, non di
+  Responder.
 - **Auto-assess: catena volutamente parziale** (Fase 19): concatena solo
   i passi non-gated (discovery, port scan, report). L'audit credenziali
   NON è automatizzato — sta dietro un consenso per-sessione e lanciarlo su
@@ -3113,10 +3223,23 @@ posto:
   ROGUE DHCP) che restano sul canale già associato, questo salta su
   tutti i 13 canali 2.4GHz — un compromesso deliberato per una copertura
   reale, non un bug; la riconnessione allo stop è automatica.
+- **LDAP sweep: solo bind SIMPLE anonimo, mai SASL/Kerberos, mai LDAPS**
+  (Fase 30): `LdapProbe` prova solo un bind semplice DN/password vuoti su
+  porta 389 in chiaro — non tenta SASL, GSSAPI/Kerberos, né si connette
+  su 636 (LDAPS, richiederebbe un client TLS). Un server che risponde
+  solo su LDAPS o richiede SASL non verrà rilevato come "LDAP" da questo
+  sweep, anche se è pienamente in ascolto.
+- **NTLM disclosure: solo HTTP semplice, mai HTTPS** (Fase 30):
+  `NtlmHttpProbe` filtra sui soli host con un servizio di porta
+  classificato `"http"` dal port scan — endpoint NTLM su `"https"` (molto
+  comuni: OWA/Exchange, portali IIS interni) restano fuori scope finché
+  questo firmware non ha un client TLS.
 - **Nessuna build reale eseguita**: vale per ogni fase di questo
   progetto — il sandbox di sviluppo non ha accesso al registry
   PlatformIO. Tutto il codice è stato scritto con attenzione e, dove
   possibile, la logica non hardware-dipendente è stata verificata con
   test standalone su host (aritmetica IP, formato DB OUI, encoder
-  Base64) — ma **una build (`pio run`) e un test su hardware reale
-  restano il passo successivo prima di fidarsi di questo firmware.**
+  Base64, i messaggi BER/LDAP di `net/LdapWire` contro la libreria
+  Python `ldap3`, i messaggi NTLM di `net/NtlmWire` contro `ntlm-auth`)
+  — ma **una build (`pio run`) e un test su hardware reale restano il
+  passo successivo prima di fidarsi di questo firmware.**

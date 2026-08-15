@@ -8,6 +8,8 @@
 #include "SnmpScreen.h"
 #include "DataStoreScreen.h"
 #include "BeaconProbeScreen.h"
+#include "LdapScreen.h"
+#include "NtlmHttpScreen.h"
 #include "../UiManager.h"
 #include "../Theme.h"
 #include "../Chrome.h"
@@ -28,11 +30,14 @@ Screen* gRogue() { return &RogueDhcpScreen::instance(); }
 Screen* gSnmp() { return &SnmpScreen::instance(); }
 Screen* gData() { return &DataStoreScreen::instance(); }
 Screen* gBeaconProbe() { return &BeaconProbeScreen::instance(); }
+Screen* gLdap() { return &LdapScreen::instance(); }
+Screen* gNtlmHttp() { return &NtlmHttpScreen::instance(); }
 
 const DItem kItems[] = {
     {"RUN ALL DISCOVERY", gRunAll}, {"LAN TOPOLOGY", gCdp},       {"UPNP DISCOVERY", gSsdp},
     {"SERVICE SCAN", gSvc},         {"PASSIVE HOSTS", gPassive},  {"ROGUE DHCP", gRogue},
     {"SNMP SWEEP", gSnmp},          {"DATASTORE SWEEP", gData},   {"BEACON/PROBE INTEL", gBeaconProbe},
+    {"LDAP SWEEP", gLdap},          {"NTLM DISCLOSURE", gNtlmHttp},
 };
 constexpr size_t kCount = sizeof(kItems) / sizeof(kItems[0]);
 }  // namespace
@@ -69,10 +74,22 @@ void DiscoveryMenuScreen::draw(M5Canvas& gfx) {
     gfx.fillScreen(theme::BG);
     chrome::drawHeader(gfx, "DISCOVERY");
 
-    constexpr int16_t kRowH = 11;  // 9 items now (BEACON/PROBE INTEL added) - tighter rows to fit
+    // 11 items now (LDAP SWEEP / NTLM DISCLOSURE added) - too many to
+    // keep cramming into ever-shorter rows on a 135px-tall screen the
+    // way this list did up through 9 items. Scrolls instead, same
+    // first/kMaxRows windowing every findings list in this firmware
+    // already uses (CdpLldpScreen, ServiceScreen, DataStoreScreen, ...).
+    constexpr int16_t kRowH = 13;
     constexpr int16_t kTop = 18;
-    for (size_t i = 0; i < kCount; i++) {
-        int16_t y = kTop + (int16_t)i * kRowH;
+    constexpr size_t kMaxRows = 8;
+
+    size_t first = 0;
+    if (_selected >= kMaxRows) first = _selected - kMaxRows + 1;
+
+    for (size_t row = 0; row < kMaxRows; row++) {
+        size_t i = first + row;
+        if (i >= kCount) break;
+        int16_t y = kTop + (int16_t)row * kRowH;
         bool sel = (i == _selected);
         uint16_t rowBg = sel ? theme::PANEL_BG : theme::BG;
         gfx.drawRect(4, y, gfx.width() - 8, kRowH - 2, sel ? theme::CYAN : theme::GREY);

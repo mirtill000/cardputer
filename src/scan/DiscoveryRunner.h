@@ -30,6 +30,8 @@ public:
         Services,
         Snmp,
         DataStore,
+        Ldap,
+        NtlmHttp,
         LanTopology,
         PassiveHosts,
         RogueDhcp,

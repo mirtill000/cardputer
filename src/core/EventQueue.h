@@ -65,6 +65,8 @@ enum class ScanSource : uint8_t {
     ServiceAudit,
     DiscoveryAll,
     BeaconProbe,
+    Ldap,
+    NtlmHttp,
 };
 
 struct ScanNotification {
