@@ -1,6 +1,7 @@
 #include "SettingsScreen.h"
 #include "OtaScreen.h"
 #include "FileManagerScreen.h"
+#include "CapturesScreen.h"
 #include "DiagnosticsScreen.h"
 #include "../UiManager.h"
 #include "../Theme.h"
@@ -114,6 +115,9 @@ void SettingsScreen::onKey(UiKey key, char ch) {
             } else if (ch == 'f' || ch == 'F') {
                 g_config.save();
                 g_ui.pushScreen(&FileManagerScreen::instance());
+            } else if (ch == 'c' || ch == 'C') {
+                g_config.save();
+                g_ui.pushScreen(&CapturesScreen::instance());
             } else if (ch == 'd' || ch == 'D') {
                 g_config.save();
                 g_ui.pushScreen(&DiagnosticsScreen::instance());
@@ -171,5 +175,5 @@ void SettingsScreen::draw(M5Canvas& gfx) {
 
     gfx.setTextColor(theme::GREY, theme::BG);
     gfx.setCursor(4, gfx.height() - 9);
-    gfx.print("</>adj O:ota F:files D:diag ?:help");
+    gfx.print("</>adj O:ota F:files C:caps D:diag");
 }

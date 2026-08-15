@@ -23,6 +23,7 @@ public:
     void onKey(UiKey key, char ch) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* title() const override { return "CHAN"; }
     const char* helpText() const override {
         return "CHANNEL SCAN\n\nLive AP count per 2.4GHz\nchannel - taller/redder bar =\nmore crowded. Cyan mark above\na bar = your own AP's channel.\nLeft/Right: select channel\nDEL: back";
     }

@@ -29,70 +29,88 @@
 #include <cstdio>
 #include <cstring>
 
-void activity::draw(M5Canvas& gfx, int16_t rightX, int16_t y) {
-    // Every promiscuous-mode consumer in the firmware. Short tags keep the
-    // header readable when one is active; the count is what matters when
-    // more than one is (radio-callback conflict).
-    const struct {
-        bool on;
-        const char* tag;
-    } prom[] = {
-        {g_arpSpoofManager.isRunning(), "ARP"},
-        {g_deauthManager.isRunning(), "DTH"},
-        {g_pmkidManager.isRunning(), "PMK"},
-        {g_cdpLldpSniffer.isRunning(), "CDP"},
-        {g_rogueDhcpDetector.isRunning(), "DHCP"},
-        {g_passiveHostDiscovery.isRunning(), "PSV"},
-        {g_beaconProbeSniffer.isRunning(), "BCN"},
-        {g_deauthWatcher.isRunning(), "GRD"},
-        {g_sentinelManager.isRunning(), "SNT"},
+namespace {
+struct TaskEntry {
+    bool on;
+    const char* shortTag;  // 3-6 chars, for the compact header widget
+    const char* label;     // full name, for the ACTIVITY screen
+    bool isRf;              // true = promiscuous-mode radio consumer
+};
+
+// Fase 37: single source of truth for every long-running manager this
+// firmware tracks, shared by draw() (the compact header tag) and
+// activity::list() (the full ACTIVITY screen) so the two can never drift
+// out of sync with each other. RF entries (promiscuous radio consumers)
+// first, then everything else - same grouping/order this file always
+// used before the two were split into separate literal tables.
+size_t buildTaskTable(TaskEntry* out, size_t cap) {
+    size_t n = 0;
+    auto add = [&](bool on, const char* shortTag, const char* label, bool isRf) {
+        if (n < cap) out[n++] = {on, shortTag, label, isRf};
     };
+    add(g_arpSpoofManager.isRunning(), "ARP", "ARP SPOOF DETECT", true);
+    add(g_deauthManager.isRunning(), "DTH", "PMKID/DEAUTH CAPTURE", true);
+    add(g_pmkidManager.isRunning(), "PMK", "PMKID CAPTURE", true);
+    add(g_cdpLldpSniffer.isRunning(), "CDP", "LAN TOPOLOGY", true);
+    add(g_rogueDhcpDetector.isRunning(), "DHCP", "ROGUE DHCP", true);
+    add(g_passiveHostDiscovery.isRunning(), "PSV", "PASSIVE HOSTS", true);
+    add(g_beaconProbeSniffer.isRunning(), "BCN", "BEACON/PROBE INTEL", true);
+    add(g_deauthWatcher.isRunning(), "GRD", "GUARD MODE", true);
+    add(g_sentinelManager.isRunning(), "SNT", "SENTINEL MODE", true);
+
+    add(g_discoveryRunner.isRunning(), "ALL", "RUN ALL DISCOVERY", false);
+    add(g_wardrivingManager.isRunning(), "WD", "WAR DRIVING", false);
+    add(g_scanManager.isRunning(), "SCN", "NETWORK SCAN", false);
+    add(g_portScanManager.isRunning(), "PORT", "PORT SCAN", false);
+    add(g_serviceEnumerator.isRunning(), "SVC", "SERVICE SCAN", false);
+    add(g_ssdpDiscovery.isRunning(), "UPNP", "UPNP DISCOVERY", false);
+    add(g_snmpSweep.isRunning(), "SNMP", "SNMP SWEEP", false);
+    add(g_dataStoreProbe.isRunning(), "DS", "DATASTORE SWEEP", false);
+    add(g_ldapProbe.isRunning(), "LDAP", "LDAP SWEEP", false);
+    add(g_ntlmHttpProbe.isRunning(), "NTLM", "NTLM DISCLOSURE", false);
+    add(g_serviceAuditManager.isRunning(), "AUD", "SERVICE AUDIT", false);
+    add(g_credAuditManager.isRunning(), "CRED", "CREDENTIAL AUDIT", false);
+    add(g_httpBruteforcer.isRunning(), "HTTP", "HTTP PATH BRUTEFORCE", false);
+    add(g_smbCheck.isRunning(), "SMB", "SMB NEGOTIATE CHECK", false);
+    add(g_assessmentRunner.isRunning(), "ASSESS", "AUTO ASSESS", false);
+    add(g_evilTwinManager.isRunning(), "TWIN", "EVIL TWIN", false);
+    add(g_pmkidSweepManager.isRunning(), "PSWP", "PMKID SWEEP", false);
+    return n;
+}
+}  // namespace
+
+size_t activity::list(TaskStatus* out, size_t outCapacity) {
+    TaskEntry table[32];
+    size_t n = buildTaskTable(table, 32);
+    size_t written = 0;
+    for (size_t i = 0; i < n && written < outCapacity; i++) {
+        out[written++] = {table[i].label, table[i].on, table[i].isRf};
+    }
+    return written;
+}
+
+uint16_t activity::draw(M5Canvas& gfx, int16_t rightX, int16_t y) {
+    TaskEntry table[32];
+    size_t n = buildTaskTable(table, 32);
+
     int promCount = 0;
     const char* promOnly = nullptr;
-    for (const auto& p : prom) {
-        if (p.on) {
-            promCount++;
-            promOnly = p.tag;
-        }
-    }
-
-    // Everything else that keeps running after you leave its own screen:
-    // war driving, the scanners, and the one-shot/audit sweeps. None of
-    // these compete for the promiscuous callback, but all of them are
-    // just as easy to forget about once you've navigated elsewhere.
-    const struct {
-        bool on;
-        const char* tag;
-    } bg[] = {
-        {g_discoveryRunner.isRunning(), "ALL"},
-        {g_wardrivingManager.isRunning(), "WD"},
-        {g_scanManager.isRunning(), "SCN"},
-        {g_portScanManager.isRunning(), "PORT"},
-        {g_serviceEnumerator.isRunning(), "SVC"},
-        {g_ssdpDiscovery.isRunning(), "UPNP"},
-        {g_snmpSweep.isRunning(), "SNMP"},
-        {g_dataStoreProbe.isRunning(), "DS"},
-        {g_ldapProbe.isRunning(), "LDAP"},
-        {g_ntlmHttpProbe.isRunning(), "NTLM"},
-        {g_serviceAuditManager.isRunning(), "AUD"},
-        {g_credAuditManager.isRunning(), "CRED"},
-        {g_httpBruteforcer.isRunning(), "HTTP"},
-        {g_smbCheck.isRunning(), "SMB"},
-        {g_assessmentRunner.isRunning(), "ASSESS"},
-        {g_evilTwinManager.isRunning(), "TWIN"},
-        {g_pmkidSweepManager.isRunning(), "PSWP"},
-    };
     int bgCount = 0;
     const char* bgOnly = nullptr;
-    for (const auto& b : bg) {
-        if (b.on) {
+    for (size_t i = 0; i < n; i++) {
+        if (!table[i].on) continue;
+        if (table[i].isRf) {
+            promCount++;
+            promOnly = table[i].shortTag;
+        } else {
             bgCount++;
-            bgOnly = b.tag;
+            bgOnly = table[i].shortTag;
         }
     }
 
     char buf[14];
     uint16_t color;
+    bool haveTag = true;
     if (promCount >= 2) {
         snprintf(buf, sizeof(buf), "RF:%d!", promCount);  // radio conflict — outranks everything
         color = theme::RED;
@@ -109,13 +127,28 @@ void activity::draw(M5Canvas& gfx, int16_t rightX, int16_t y) {
         snprintf(buf, sizeof(buf), "BG:%d", bgCount);
         color = theme::CYAN;
     } else {
-        return;  // nothing running in the background — leave the header clean
+        haveTag = false;  // nothing running in the background — leave the header clean
     }
 
-    int16_t w = (int16_t)strlen(buf) * theme::GLYPH_W;
-    int16_t x = rightX - w;
-    if (x < 0) return;
-    gfx.setTextColor(color, theme::BG);
-    gfx.setCursor(x, y);
-    gfx.print(buf);
+    if (haveTag) {
+        int16_t w = (int16_t)strlen(buf) * theme::GLYPH_W;
+        int16_t x = rightX - w;
+        if (x >= 0) {
+            gfx.setTextColor(color, theme::BG);
+            gfx.setCursor(x, y);
+            gfx.print(buf);
+        }
+    }
+
+    // Busy-header cue (Fase 37): escalate the header separator line's
+    // color when THREE OR MORE background/promiscuous tasks are running
+    // at once — the tag above only ever shows one name plus a count, an
+    // easy thing to skim past; a colored strip spanning the whole header
+    // is a stronger, harder-to-miss signal that a lot is going on right
+    // now. Red matches an actual radio conflict (same threshold as the
+    // RF:N! tag itself); amber otherwise; grey (normal) below threshold.
+    constexpr int kBusyThreshold = 3;
+    int totalActive = promCount + bgCount;
+    if (totalActive >= kBusyThreshold) return (promCount >= 2) ? theme::RED : theme::AMBER;
+    return theme::GREY;
 }
