@@ -15,8 +15,13 @@ public:
     void onScanEvent(const ScanNotification& ev) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* helpText() const override {
+        return "DATASTORE SWEEP\n\nChecks Redis/Memcached/\nElasticsearch/MongoDB for\nno-auth access on every host.\nENTER: sweep   I: full detail\nArrows: move   DEL: back";
+    }
+
 private:
     void drawFindings(M5Canvas& gfx, int16_t top);
 
     size_t _selected = 0;
+    bool _showDetail = false;
 };

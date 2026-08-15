@@ -17,6 +17,10 @@ public:
     void onScanEvent(const ScanNotification& ev) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* helpText() const override {
+        return "LAN TOPOLOGY\n\nPassive CDP/LLDP listen -\nreveals switch/router names\nand ports, no packet sent.\nENTER: start/stop  I: full name\nArrows: move   DEL: back";
+    }
+
 private:
     static constexpr uint8_t kLogLines = 4;
 
@@ -27,4 +31,5 @@ private:
     String _log[kLogLines];
     uint8_t _logCount = 0;
     size_t _selected = 0;
+    bool _showDetail = false;
 };

@@ -96,6 +96,10 @@ void PmkidScreen::draw(M5Canvas& gfx) {
             gfx.setCursor(6, 44);
             gfx.print("captured: ");
             gfx.print((unsigned)g_pmkidManager.capturedPackets());
+            if (g_pmkidManager.pmkidLikelyCaptured()) {
+                gfx.setTextColor(theme::GREEN, theme::BG);
+                gfx.print("  PMKID!");
+            }
 
             gfx.setTextColor(theme::GREY, theme::BG);
             gfx.drawFastHLine(4, 54, gfx.width() - 8, theme::GREY);
@@ -114,11 +118,13 @@ void PmkidScreen::draw(M5Canvas& gfx) {
             break;
         }
 
-        case State::Done:
-            gfx.setTextColor(theme::MAGENTA, theme::BG);
+        case State::Done: {
+            bool likely = g_pmkidManager.pmkidLikelyCaptured();
+            gfx.setTextColor(likely ? theme::GREEN : theme::AMBER, theme::BG);
             gfx.setCursor(6, 44);
-            gfx.print("capture finished");
-            gfx.setTextColor(theme::GREEN, theme::BG);
+            gfx.print(likely ? "PMKID likely captured!" : "no PMKID seen this time");
+
+            gfx.setTextColor(theme::GREY, theme::BG);
             gfx.setCursor(6, 56);
             gfx.print(String((unsigned)g_pmkidManager.capturedPackets()) + " packets saved to:");
             gfx.setCursor(6, 66);
@@ -130,10 +136,11 @@ void PmkidScreen::draw(M5Canvas& gfx) {
 
             gfx.setTextColor(theme::GREY, theme::BG);
             gfx.setCursor(6, 80);
-            gfx.print("check offline (hashcat -m 22000)");
+            gfx.print(likely ? "verify offline: hashcat -m 22000" : "try again, or a different AP");
 
             gfx.setCursor(4, gfx.height() - 9);
             gfx.print("ENTER/DEL:back");
             break;
+        }
     }
 }

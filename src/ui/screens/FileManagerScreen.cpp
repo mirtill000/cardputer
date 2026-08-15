@@ -128,6 +128,9 @@ void FileManagerScreen::draw(M5Canvas& gfx) {
                 gfx.print(sz);
             }
         }
+
+        chrome::drawScrollMarkers(gfx, 30, 30 + (int16_t)kMaxRows * kRowH, first > 0,
+                                   (first + kMaxRows) < _entries.size());
     }
 
     gfx.setTextColor(theme::GREY, theme::BG);

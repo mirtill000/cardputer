@@ -4,6 +4,29 @@
 #include "../Chrome.h"
 #include "../../scan/BeaconProbeSniffer.h"
 
+namespace {
+// Best-effort text summary of a WPS Config Methods bitmask (WSC spec) -
+// just the two groups relevant to what an attacker would actually try:
+// PBC (push-button, needs physical/virtual access to the AP) vs. PIN
+// (Label/Display/Keypad - the method Reaver/pixie-dust-style tools
+// target, since it can be attempted entirely over the air). A bitmask
+// of 0 means the Config Methods attribute wasn't found in this AP's
+// beacon, not necessarily that it offers nothing - see
+// BeaconProbeSniffer::parseWpsAttributes.
+String wpsConfigMethodsText(uint16_t m) {
+    if (m == 0) return "unknown";
+    bool pin = (m & (0x0004 | 0x0008 | 0x0100)) != 0;   // Label | Display | Keypad
+    bool pbc = (m & 0x0080) != 0;                       // PushButton
+    String s;
+    if (pbc) s += "PBC";
+    if (pin) {
+        if (s.length()) s += "+";
+        s += "PIN";
+    }
+    return s.length() ? s : String("other");
+}
+}  // namespace
+
 BeaconProbeScreen& BeaconProbeScreen::instance() {
     static BeaconProbeScreen s;
     return s;
@@ -28,7 +51,16 @@ void BeaconProbeScreen::onScanEvent(const ScanNotification& ev) {
     if (ev.type == ScanEventType::LogLine) pushLog(String(ev.text));
 }
 
-void BeaconProbeScreen::onKey(UiKey key, char /*ch*/) {
+void BeaconProbeScreen::onKey(UiKey key, char ch) {
+    if (_showDetail) {
+        _showDetail = false;
+        return;
+    }
+    if (key == UiKey::Char && (ch == 'i' || ch == 'I')) {
+        size_t count = (_view == View::Aps) ? g_beaconProbeSniffer.apCount() : g_beaconProbeSniffer.clientCount();
+        if (count > 0) _showDetail = true;
+        return;
+    }
     switch (key) {
         case UiKey::Enter:
             if (_running) {
@@ -64,6 +96,32 @@ void BeaconProbeScreen::onKey(UiKey key, char /*ch*/) {
 }
 
 void BeaconProbeScreen::draw(M5Canvas& gfx) {
+    if (_showDetail) {
+        if (_view == View::Aps) {
+            BeaconProbeSniffer::ApBeacon a;
+            if (g_beaconProbeSniffer.getAp(_apSelected, a)) {
+                String text = "SSID: " + (a.hidden ? String("<hidden>") : a.ssid) + " / BSSID: " + a.bssid +
+                              " / vendor: " + (a.vendor.length() ? a.vendor : String("unknown")) + " / WPS: " +
+                              (a.wpsEnabled ? ("enabled, " + String(a.wpsLocked ? "locked" : "unlocked") + ", " +
+                                                wpsConfigMethodsText(a.wpsConfigMethods))
+                                            : String("not seen"));
+                chrome::drawDetailOverlay(gfx, "AP DETAIL", text);
+            }
+        } else {
+            BeaconProbeSniffer::ProbeClient c;
+            if (g_beaconProbeSniffer.getClient(_clientSelected, c)) {
+                String ssids = "-";
+                for (size_t i = 0; i < c.probedSsids.size(); i++) {
+                    ssids = (i == 0) ? c.probedSsids[i] : (ssids + ", " + c.probedSsids[i]);
+                }
+                String text = "MAC: " + c.mac + (c.macRandomized ? " (randomized)" : "") + " / vendor: " +
+                              (c.vendor.length() ? c.vendor : String("unknown")) + " / probed SSIDs: " + ssids;
+                chrome::drawDetailOverlay(gfx, "CLIENT DETAIL", text);
+            }
+        }
+        return;
+    }
+
     gfx.fillScreen(theme::BG);
     chrome::drawHeader(gfx, "BEACON/PROBE");
 
@@ -106,7 +164,7 @@ void BeaconProbeScreen::draw(M5Canvas& gfx) {
 
     gfx.setTextColor(theme::GREY, theme::BG);
     gfx.setCursor(4, gfx.height() - 9);
-    gfx.print("TAB:view  DEL:back  ?:help");
+    gfx.print("TAB:view  I:detail  DEL:back");
 }
 
 void BeaconProbeScreen::drawAps(M5Canvas& gfx, int16_t top) {
@@ -138,11 +196,22 @@ void BeaconProbeScreen::drawAps(M5Canvas& gfx, int16_t top) {
         gfx.setTextColor(nameColor, rowBg);
         gfx.setCursor(6, y);
         String label = a.hidden ? String("<hidden>") : a.ssid;
-        if (label.length() > 17) label = label.substring(0, 17);
+        if (label.length() > 14) label = label.substring(0, 14);
         gfx.print(label);
 
+        // WPS flag: amber "W" when offered at all - red instead if it's
+        // also currently unlocked (still accepting PIN attempts), since
+        // that's the more actionable state. Blank when WPS wasn't seen
+        // in this AP's beacon (most APs today, and plenty that still
+        // have it just don't advertise it in every single frame).
+        if (a.wpsEnabled) {
+            gfx.setTextColor(sel ? theme::CYAN : (a.wpsLocked ? theme::AMBER : theme::RED), rowBg);
+            gfx.setCursor(94, y);
+            gfx.print("W");
+        }
+
         gfx.setTextColor(sel ? theme::CYAN : chrome::securityColor(a.encryption), rowBg);
-        gfx.setCursor(140, y);
+        gfx.setCursor(104, y);
         gfx.print(chrome::securityLabel(a.encryption));
 
         gfx.setTextColor(sel ? theme::CYAN : theme::GREY, rowBg);
@@ -150,6 +219,8 @@ void BeaconProbeScreen::drawAps(M5Canvas& gfx, int16_t top) {
         gfx.print("ch");
         gfx.print(a.channel);
     }
+
+    chrome::drawScrollMarkers(gfx, top + 2, top + 2 + (int16_t)kMaxRows * kRowH, first > 0, (first + kMaxRows) < count);
 }
 
 void BeaconProbeScreen::drawClients(M5Canvas& gfx, int16_t top) {
@@ -193,4 +264,6 @@ void BeaconProbeScreen::drawClients(M5Canvas& gfx, int16_t top) {
             gfx.print(s);
         }
     }
+
+    chrome::drawScrollMarkers(gfx, top + 2, top + 2 + (int16_t)kMaxRows * kRowH, first > 0, (first + kMaxRows) < count);
 }

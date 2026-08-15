@@ -28,7 +28,11 @@ void CdpLldpScreen::onScanEvent(const ScanNotification& ev) {
     if (ev.type == ScanEventType::LogLine) pushLog(String(ev.text));
 }
 
-void CdpLldpScreen::onKey(UiKey key, char /*ch*/) {
+void CdpLldpScreen::onKey(UiKey key, char ch) {
+    if (_showDetail) {
+        _showDetail = false;
+        return;
+    }
     if (key == UiKey::Enter) {
         if (_running) {
             g_cdpLldpSniffer.stop();
@@ -40,12 +44,23 @@ void CdpLldpScreen::onKey(UiKey key, char /*ch*/) {
         if (_selected > 0) _selected--;
     } else if (key == UiKey::Down) {
         if (_selected + 1 < g_cdpLldpSniffer.neighborCount()) _selected++;
+    } else if (key == UiKey::Char && (ch == 'i' || ch == 'I')) {
+        if (g_cdpLldpSniffer.neighborCount() > 0) _showDetail = true;
     } else if (key == UiKey::Back) {
         g_ui.popScreen();  // keeps running in the background - see CdpLldpSniffer
     }
 }
 
 void CdpLldpScreen::draw(M5Canvas& gfx) {
+    if (_showDetail) {
+        CdpLldpSniffer::Neighbor n;
+        if (g_cdpLldpSniffer.getNeighbor(_selected, n)) {
+            String text = "deviceId: " + n.deviceId + " / portId: " + (n.portId.length() ? n.portId : String("-"));
+            chrome::drawDetailOverlay(gfx, n.isCdp ? "CDP NEIGHBOR" : "LLDP NEIGHBOR", text);
+        }
+        return;
+    }
+
     gfx.fillScreen(theme::BG);
     chrome::drawHeader(gfx, "LAN TOPOLOGY");
 
@@ -63,7 +78,7 @@ void CdpLldpScreen::draw(M5Canvas& gfx) {
 
     gfx.setTextColor(theme::GREY, theme::BG);
     gfx.setCursor(4, gfx.height() - 9);
-    gfx.print("DEL:back");
+    gfx.print(g_cdpLldpSniffer.neighborCount() > 0 ? "I:full name  DEL:back" : "DEL:back");
 }
 
 void CdpLldpScreen::drawNeighbors(M5Canvas& gfx, int16_t top) {
@@ -99,4 +114,6 @@ void CdpLldpScreen::drawNeighbors(M5Canvas& gfx, int16_t top) {
         gfx.setCursor(210, y);
         gfx.print(n.isCdp ? "C" : "L");
     }
+
+    chrome::drawScrollMarkers(gfx, top + 2, top + 2 + (int16_t)kMaxRows * kRowH, first > 0, (first + kMaxRows) < count);
 }

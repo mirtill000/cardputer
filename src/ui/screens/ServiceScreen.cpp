@@ -30,19 +30,37 @@ void ServiceScreen::onScanEvent(const ScanNotification& ev) {
     }
 }
 
-void ServiceScreen::onKey(UiKey key, char /*ch*/) {
+void ServiceScreen::onKey(UiKey key, char ch) {
+    if (_showDetail) {
+        _showDetail = false;
+        return;
+    }
     if (key == UiKey::Enter) {
         if (!g_serviceEnumerator.isRunning()) g_serviceEnumerator.start();
     } else if (key == UiKey::Up) {
         if (_selected > 0) _selected--;
     } else if (key == UiKey::Down) {
         if (_selected + 1 < g_serviceEnumerator.count()) _selected++;
+    } else if (key == UiKey::Char && (ch == 'i' || ch == 'I')) {
+        if (g_serviceEnumerator.count() > 0) _showDetail = true;
     } else if (key == UiKey::Back) {
         g_ui.popScreen();
     }
 }
 
 void ServiceScreen::draw(M5Canvas& gfx) {
+    if (_showDetail) {
+        ServiceEnumerator::Service s;
+        if (g_serviceEnumerator.get(_selected, s)) {
+            bool haveIp = s.fromIp != IPAddress(0, 0, 0, 0);
+            String text = "instance: " + s.instance + " / type: " + s.type +
+                          (s.port ? (" / port: " + String(s.port)) : String("")) +
+                          (haveIp ? (" / from: " + s.fromIp.toString()) : String(""));
+            chrome::drawDetailOverlay(gfx, "SERVICE DETAIL", text);
+        }
+        return;
+    }
+
     gfx.fillScreen(theme::BG);
     chrome::drawHeader(gfx, "SERVICE SCAN");
 
@@ -61,7 +79,7 @@ void ServiceScreen::draw(M5Canvas& gfx) {
 
     gfx.setTextColor(theme::GREY, theme::BG);
     gfx.setCursor(4, gfx.height() - 9);
-    gfx.print("DEL:back");
+    gfx.print(g_serviceEnumerator.count() > 0 ? "I:full detail  DEL:back" : "DEL:back");
 }
 
 void ServiceScreen::drawServices(M5Canvas& gfx, int16_t top) {
@@ -106,4 +124,6 @@ void ServiceScreen::drawServices(M5Canvas& gfx, int16_t top) {
             gfx.print(s.port);
         }
     }
+
+    chrome::drawScrollMarkers(gfx, top + 2, top + 2 + (int16_t)kMaxRows * kRowH, first > 0, (first + kMaxRows) < count);
 }

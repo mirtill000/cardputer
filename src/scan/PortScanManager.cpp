@@ -3,6 +3,7 @@
 #include "ScanManager.h"
 #include "UdpProbe.h"
 #include "VulnSignatures.h"
+#include "WellKnownHighPorts.h"
 #include "../core/Config.h"
 #include "../storage/ScanHistory.h"
 #include "../storage/SdCard.h"
@@ -19,7 +20,16 @@ void PortScanManager::startScan(const IPAddress& target, uint16_t portStart, uin
     if (_running) return;
     if (portEnd < portStart) return;
 
-    uint32_t total = (uint32_t)portEnd - portStart + 1;
+    _portList.clear();
+    _portList.reserve((size_t)(portEnd - portStart + 1) + kWellKnownHighPortsCount);
+    for (uint32_t p = portStart; p <= portEnd; p++) _portList.push_back((uint16_t)p);
+    // Common ports above 1024 (see WellKnownHighPorts.h) that a plain
+    // range sweep would otherwise miss entirely - skip any already
+    // covered by the configured range instead of probing it twice.
+    for (size_t i = 0; i < kWellKnownHighPortsCount; i++) {
+        uint16_t p = kWellKnownHighPorts[i];
+        if (p < portStart || p > portEnd) _portList.push_back(p);
+    }
 
     if (xSemaphoreTake(_mutex, portMAX_DELAY) == pdTRUE) {
         _openPorts.clear();
@@ -29,7 +39,7 @@ void PortScanManager::startScan(const IPAddress& target, uint16_t portStart, uin
     _target = target;
     _portStart = portStart;
     _portEnd = portEnd;
-    _totalPorts = total;
+    _totalPorts = (uint32_t)_portList.size();
     _portsProbed = 0;
     _progressPct = 0;
     _scanGeneration++;
@@ -81,7 +91,7 @@ void PortScanManager::runWorker(uint8_t workerIndex, uint8_t workerCount) {
 
     for (uint32_t i = workerIndex; i < total; i += workerCount) {
         if (_scanGeneration != myGeneration) break;
-        probePort((uint16_t)(_portStart + i));
+        probePort(_portList[i]);
         vTaskDelay(pdMS_TO_TICKS(g_config.interProbeDelayMs));
     }
 

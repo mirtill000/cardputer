@@ -1830,6 +1830,372 @@ i report di `NETWORK SCAN`/`AUTO ASSESS` e quelli di `WardrivingManager`
   voce generica `/netrunner/` aggiunta in Fase 28, il cui testo ora
   menziona esplicitamente anche il log di war driving.
 
+### Fase 30: sweep LDAP (anon-bind + rootDSE) e disclosure NTLM-over-HTTP
+
+Tre proposte (su dieci per l'area "offensive security", poi ristrette
+alle sole LDAP/NTLM su richiesta dell'utente) implementate nel sotto-menu
+DISCOVERY, stesso registro read-only/non gated di SNMP SWEEP e DATASTORE
+SWEEP — mai scritture, mai credenziali vere, mai un handshake completato:
+
+- **`LDAP SWEEP`** (`scan/LdapProbe`, `net/LdapWire`): per ogni host vivo
+  che risponde sulla porta 389, tenta un **bind anonimo semplice** (DN e
+  password vuoti) e, indipendentemente dal risultato, una **ricerca sul
+  rootDSE** (`namingContexts`, `defaultNamingContext`, `dnsHostName`) —
+  l'RFC 4511 §5.1 prevede che il rootDSE resti leggibile anche senza bind
+  riuscito, e molti DC reali lo rispettano pur rifiutando il bind
+  anonimo generico, quindi i due controlli sono deliberatamente
+  indipendenti, non in sequenza condizionata. `net/LdapWire.h` implementa
+  il minimo indispensabile di BER (ASN.1, RFC 4511 §5.1/X.690) per
+  costruire le due richieste e leggere le risposte — **verificato prima
+  di scrivere una riga di C++** codificando le stesse identiche richieste
+  con la libreria Python `ldap3` (il suo modulo `ldap3.protocol.rfc4511`,
+  un'implementazione ASN.1 reale, non una derivazione a mano) e
+  confrontando byte a byte; il parsing (bind response + search result
+  entry, incluse lunghezze BER long-form su un rootDSE realistico multi-
+  valore) è stato testato contro messaggi generati dalla stessa libreria
+  prima di considerarlo corretto. Nessun server LDAP reale né build ESP32
+  reale coinvolti — vedi "Limiti noti".
+- **`NTLM DISCLOSURE`** (`scan/NtlmHttpProbe`, `net/NtlmWire`): per ogni
+  host vivo con una porta HTTP già nota (da `PORT SCAN`/`AUTO ASSESS` —
+  `NETWORK SCAN` da sola non basta, vedi sotto), invia un messaggio NTLM
+  Type 1 (NEGOTIATE) in un header `Authorization: NTLM <...>` e, se il
+  server risponde con un Type 2 (CHALLENGE) in `WWW-Authenticate: NTLM
+  <...>`, ne decodifica i `TargetInfo` AV_PAIR per rivelare dominio
+  NetBIOS/DNS e nome macchina — spesso il dominio AD e l'hostname reali
+  dietro un'app web che altrimenti non li mostra. **Non completa mai
+  l'handshake** (nessun messaggio Type 3/AUTHENTICATE viene mai costruito
+  o inviato), **non usa mai una credenziale vera**: il Type 2 è la parte
+  del protocollo che ogni server invia a chiunque negozi NTLM, autenticato
+  o no — leggerlo è un banner grab evoluto, non furto di credenziali o
+  di hash. Anche qui, `net/NtlmWire.h` è stato verificato prima dell'uso:
+  il layout del messaggio Type 1 contro la libreria Python `ntlm-auth`,
+  e il parsing del Type 2 (incluso il decode UTF-16LE→ASCII dei campi)
+  contro un CHALLENGE_MESSAGE realistico costruito con le classi
+  `TargetInfo`/`AvId` della stessa libreria (stesso genere di AV_PAIR che
+  manda un vero domain controller/IIS). **Solo HTTP semplice** (porta/
+  servizio `"http"`) — HTTPS (`"https"`) è fuori scope: servirebbe un
+  client TLS, un'aggiunta non banale lasciata per una fase futura.
+- **`RUN ALL DISCOVERY`**: entrambi aggiunti alla sequenza (dopo
+  DATASTORE SWEEP) con le stesse percentuali di avanzamento
+  ridistribuite. `NTLM DISCLOSURE` in quel contesto trova quasi sempre
+  zero host (RUN ALL non fa un port scan per-host), a meno che uno scan
+  porte non sia già stato fatto in sessione — comportamento accettato,
+  non un bug: si degrada allo stesso "niente da fare" pulito di ogni
+  altra fase quando mancano i prerequisiti.
+
+Nessuna delle due tocca disponibilità del servizio, non tenta exploit,
+non intercetta né rilancia traffico di terzi — coerente con l'esclusione
+esplicita, già decisa in una fase precedente, di un modulo NTLM-relay/
+Responder-style (avvelenamento LLMNR/NBT-NS + cattura hash): quello
+raccoglierebbe credenziali di macchine terze che non hanno mai scelto di
+interagire col dispositivo sotto test, categoria di rischio diversa da
+tutto il resto di questo firmware — resta fuori scope.
+
+### Fase 31: seconda passata UX/UI trasversale (scroll marker, dettaglio full-value, DISCOVERY raggruppato, attività in background)
+
+Seconda passata di usabilità (dopo la Fase 24), su un elenco di dieci aree
+individuate riguardando l'intero layer UI — cinque scelte dall'utente più
+la rimozione del donut chart ormai inutilizzato in `PORT SCAN`. Anche
+questa, come la Fase 24, è puramente additiva: nessuna firma di `Screen`
+cambiata, solo nuovi override opzionali e nuovi helper condivisi in
+`chrome::`.
+
+- **Indicatori di scorrimento ovunque**: la logica ^/v che prima esisteva
+  solo, inline, nel menu principale è stata estratta in
+  `chrome::drawScrollMarkers()` e applicata a tutte le 21 schermate con
+  liste scorrevoli (`first`/`kMaxRows`) che prima non davano alcun segnale
+  di "ci sono altre righe sopra/sotto" — port scan, host list, service
+  scan, beacon/probe intel, SNMP/SSDP/LDAP/NTLM sweep, war driving, threats,
+  cronologia scan, ricerca, e altre.
+- **`helpText()` su tutte le schermate**: prima solo 12 delle 44 schermate
+  avevano una legenda tasti per l'overlay `?` introdotto in Fase 24; le
+  restanti 32 ora la hanno tutte, con la stessa convenzione (titolo, righe
+  vuote, poi comandi).
+- **Vista a valore completo per i campi troncati**: molte liste tagliano
+  banner/URL/attributi lunghi con `"..."` per stare nella riga. Il tasto
+  `I` (Info), libero su ogni schermata coinvolta, apre ora un overlay a
+  pagina intera (`chrome::drawDetailOverlay()`, riusa il word-wrap di
+  `TextWrap.h`) col valore per esteso, non troncato; un tasto qualsiasi lo
+  richiude, stessa convenzione dell'help. Cablato su `PORT SCAN`, `LDAP
+  SWEEP`, `NTLM DISCLOSURE`, `DATASTORE SWEEP`, `LAN TOPOLOGY` (CDP/LLDP),
+  `BEACON/PROBE INTEL`, `SERVICE SCAN`, `SNMP SWEEP`, `UPNP DISCOVERY`,
+  `WAR DRIVING` (che guadagna anche la navigazione su/giù degli
+  avvistamenti mentre è in esecuzione, prima assente) e `THREATS`.
+- **Sotto-menu DISCOVERY raggruppato**: gli 11 strumenti, prima un unico
+  elenco piatto senza alcuna gerarchia, sono ora organizzati in sezioni
+  (righe separatore non selezionabili, saltate automaticamente dalle
+  frecce su/giù): `RUN ALL DISCOVERY` da solo in cima, poi *ONE-SHOT*
+  (`UPNP DISCOVERY`, `SERVICE SCAN`), *NEEDS NETWORK SCAN* (`SNMP SWEEP`,
+  `DATASTORE SWEEP`, `LDAP SWEEP`), *NEEDS PORT SCAN* (`NTLM DISCLOSURE`),
+  *PASSIVE LISTENERS* (`LAN TOPOLOGY`, `PASSIVE HOSTS`, `ROGUE DHCP`,
+  `BEACON/PROBE INTEL`).
+- **Overview delle attività in background nell'header**: l'indicatore
+  `RF:xxx` esistente (`ui/ActivityStatus`) segnalava solo quale funzione
+  in modalità promiscua possiede il callback WiFi — nulla diceva se, per
+  esempio, uno SNMP SWEEP o il war driving continuavano a girare dopo aver
+  lasciato la loro schermata. L'indicatore ora copre anche quel caso con
+  un secondo tag `BG:xxx`/`BG:N` (ciano) per tutto il resto che gira in
+  background (war driving, `NETWORK`/`PORT`/`SERVICE SCAN`, SNMP/LDAP/
+  NTLM/DataStore/SMB/cred sweep, evil-twin, `RUN ALL DISCOVERY`); quando
+  sia un conflitto radio sia altre attività sono in corso insieme, il tag
+  `RF:` (che resta prioritario, essendo un vero conflitto) mostra anche il
+  conteggio delle altre (`RF:DHCP+2`) invece di provare a stare in due
+  posti sulla stessa riga.
+- **Donut chart rimosso da `PORT SCAN`**: il grafico a torta decorativo
+  nell'angolo in alto a destra (frazione porte aperte sul range
+  configurato) non veniva più guardato da nessuno una volta introdotta la
+  tabella risultati reale; rimosso insieme al suo helper dedicato,
+  liberando spazio perché il banner nella tabella non venga più troncato
+  dalla sovrapposizione.
+
+### Fase 32: PORT SCAN copre anche le porte comuni sopra la 1024
+
+Il range di default (1-1024, `SETTINGS`) è quello classico dei "well-known
+port" IANA, ma lascia fuori un bel po' di servizi reali molto comuni che
+vivono sopra quella soglia — database, pannelli d'amministrazione, accesso
+remoto. `PortScanManager::startScan` ora unisce sempre al range
+configurato un elenco curato di ~50 porte sopra la 1024
+(`scan/WellKnownHighPorts.h`): database (`3306` MySQL, `5432` Postgres,
+`6379` Redis, `27017`/`27018`/`28017` MongoDB, `9042` Cassandra, `11211`
+Memcached, `1433` MSSQL, `1521` Oracle), accesso remoto (`3389` RDP,
+`5900` VNC, `5985`/`5986` WinRM), pannelli/dev server (`8080`, `8000`,
+`8888`, `3000`, `9000`, `9090`, `8443`, ...), e qualche porta storicamente
+nota come backdoor/exotic (`31337`). L'elenco viene deduplicato contro il
+range configurato in `startScan` — se qualcuno alza manualmente
+`portRangeEnd` oltre 1024 fino a coprire tutto da sé, nessuna di queste
+porte viene sondata due volte.
+
+Nessuna modifica al comportamento per porta trovata aperta: banner
+grabbing (`BannerGrabber`), lookup nome servizio (`PortServiceDb`, ~12.000
+voci — già copre questi servizi per nome) e controllo firme vulnerabili
+(`VulnSignatures`) restano identici, semplicemente vengono eseguiti anche
+sulle porte nuove. La schermata `PORT MAPPING` mostra ora "+50 common
+ports >1024" sotto il range configurato quando è idle, così è chiaro cosa
+viene effettivamente sondato senza dover aprire `SETTINGS`. Effetto
+collaterale positivo non richiesto ma già presente nel codice: l'evidenza
+"legacy port" (ambra) su `3389`/RDP nella tabella risultati, che prima non
+poteva mai scattare col range di default (3389 > 1024, mai sondata), ora è
+raggiungibile.
+
+### Fase 33: primo lotto verso un sistema WiFi cyber security più evoluto
+
+Quattro delle quindici aree individuate riguardando l'intero firmware con
+l'obiettivo esplicito dell'utente di farlo evolvere verso "un sistema
+evoluto di WiFi cyber security" (punti 2, 4, 5, 7 di quella lista):
+
+- **Rilevamento WPS** (`BeaconProbeSniffer`): oltre a SSID/cifratura,
+  ogni beacon/probe-response viene ora controllato anche per l'IE
+  vendor-specific WPS (tag 221, OUI `00:50:F2`, sub-type `04`) — stessa
+  famiglia di IE già letta per il WPA1 legacy, solo un sub-type diverso.
+  Quando presente, ne legge anche `AP Setup Locked` (attributo `0x1057`
+  — un AP che si è già auto-bloccato dopo troppi PIN sbagliati, segno
+  che qualcuno ha già tentato un attacco) e `Config Methods` (`0x1008`,
+  bitmask PBC/PIN). **Solo detection**: questo firmware non implementa
+  la registrazione WPS né tenta mai un PIN (niente Reaver/pixie-dust) —
+  stessa linea "rileva, non attaccare un protocollo non verificato" già
+  seguita per SSH e NTLM-relay. In `BEACON/PROBE INTEL` un indicatore
+  "W" compare accanto agli AP con WPS visto (rosso se ancora sbloccato,
+  ambra se già locked); il dettaglio (`I`) mostra lock state e metodi.
+  Un AP con WPS sbloccato compare anche in `THREATS`.
+- **GUARD MODE** (`scan/DeauthWatcher`, nuovo sotto-menu DISCOVERY sotto
+  *PASSIVE LISTENERS*): il primo strumento **difensivo** invece che di
+  ricognizione/offensivo in questo firmware — conta i frame di
+  deauthentication/disassociation per BSSID, sul canale a cui il
+  dispositivo è già associato (non hopping, a differenza di BEACON/
+  PROBE INTEL — qui l'obiettivo è sorvegliare la rete su cui ti trovi
+  ora, non fare un survey). Una finestra scorrevole di 10s e una soglia
+  di 15 frame/finestra per BSSID separano un vero flood (uno strumento
+  tipo `aireplay-ng --deauth`, decine di frame/sec continui) dai
+  deauth/disassoc isolati che sono normale traffico 802.11 (un client
+  che si allontana). Riga rossa + allarme sonoro quando scatta. Mai
+  trasmette nulla — puro ascolto, nessun gate offensive necessario,
+  stessa logica di BEACON/PROBE INTEL. Un flood attivo compare anche in
+  `THREATS`.
+- **Euristica evil-twin rivista** (`WardrivingManager`): la versione
+  precedente (Fase 13) segnalava qualunque differenza nell'enum di
+  cifratura fra due sighting con lo stesso SSID — troppo grezzo (WPA2
+  puro vs WPA/WPA2 misto sullo stesso router reale scattava come falso
+  positivo) e troppo cieco (un clone con la stessa identica cifratura
+  non veniva mai rilevato). Ora confronta un **tier di sicurezza**
+  (open/wep/wpa-misto/wpa3/enterprise — vedi `securityTier()`) invece
+  dell'enum grezzo, e aggiunge un secondo segnale indipendente: **vendor
+  OUI diverso** fra due BSSID con lo stesso SSID e lo stesso tier
+  (confrontato solo quando entrambi i lookup OUI hanno dato un
+  risultato, per non generare rumore sui MAC non riconosciuti) — un
+  attaccante può facilmente copiare la cifratura di un AP, molto meno
+  facilmente il fatto che l'hardware reale sia dello stesso produttore.
+  Il canale resta deliberatamente fuori da questa euristica — vedi
+  "Limiti noti" per il perché.
+- **CHANNEL SCAN**: nuova voce del menu principale, grafico a barre live
+  dell'affollamento dei 13 canali 2.4GHz (quanti AP trasmettono su
+  ciascuno, colore verde/ambra/rosso in base al conteggio), con il
+  proprio canale connesso marcato per confronto — la stessa domanda "che
+  canale è più libero" di un'app WiFi-analyzer da telefono. Riusa lo
+  stesso pattern di scan continuo di `SIGNAL FINDER` (Fase 26/precedente
+  a questa lista: `WifiManager::beginScan()/scanStatus()/getScanResult()`
+  in loop), non introduce nessuna nuova capacità radio.
+
+Le altre dieci aree della lista (dictionary check on-device sui PMKID
+catturati, mappa client↔AP, sezione WIRELESS nel report, rilevamento
+KRACK, ecc. — la sentinel mode è stata implementata in Fase 34, sotto)
+restano proposte non implementate — vedi la conversazione che le ha
+originate; il punto sul dictionary check in particolare era stato
+segnalato come una scelta filosofica da confermare esplicitamente prima
+di implementarla, non scontata.
+
+### Fase 34: SENTINEL MODE
+
+Su richiesta esplicita dell'utente, il punto 13 della lista di Fase 33
+("sentinel mode sulla propria rete") diventa una voce a sé del menu
+principale — `scan/SentinelManager` — con due comportamenti in
+esecuzione insieme finché resta attiva:
+
+- **Ri-scoperta host periodica con allarme su dispositivo nuovo**:
+  rilancia lo stesso sweep di `NETWORK SCAN` (`g_scanManager`) ogni 30
+  secondi e confronta ogni host vivo con MAC noto contro la baseline
+  "mai visto su questa rete" già usata da `HOST LIST`
+  (`ScanHistory::loadKnownMacs`, fino a `kMaxEntries`=20 scan passati di
+  quella stessa rete). Un MAC che non compare in quella baseline è un
+  dispositivo nuovo: bip sonoro (`sound::playAlert`, stesso usato per
+  una rete aperta nuova in war driving) più una riga nel log con IP/MAC/
+  hostname/vendor, consultabile per esteso con `I`. Deliberatamente
+  **non** salva uno snapshot (`ScanHistory::saveSnapshot`) a ogni ciclo:
+  farlo ogni 30 secondi riempirebbe le 20 posizioni della cronologia
+  condivisa con scansioni quasi identiche, restringendo la finestra
+  reale della baseline "mai vista" a soli ~10 minuti invece che alla
+  vera storia dei scan manuali di quella rete — l'esatto contrario dello
+  scopo di una baseline stabile. La baseline viene caricata una sola
+  volta all'avvio e poi cresciuta solo in memoria per il resto della
+  sessione.
+- **Dump del traffico su pcap**: cattura ogni frame 802.11
+  management+data visto sul canale a cui il dispositivo è già associato
+  (niente channel-hopping, stesso principio "non disturbare la propria
+  connessione STA" di `CdpLldpSniffer`/`RogueDhcpDetector`/
+  `PassiveHostDiscovery`/`GUARD MODE` — a differenza di quelli, qui
+  vengono catturati anche i frame dati, non solo quelli di gestione, per
+  un vero dump di traffico) in un file `.pcap` sotto `/netrunner`,
+  troncato a 256 byte per frame come `DeauthManager`/`PmkidManager`.
+  **Non decripta nulla**: il payload di un frame dati su rete WPA2/WPA3
+  resta cifrato esattamente come lo era sull'aria — quello che finisce
+  nel pcap è comunque utile (chi parla, quanto, quando: header MAC
+  sempre leggibili in modalità promiscua indipendentemente dalla
+  cifratura), analizzabile offline con Wireshark/tshark, mai un modo per
+  leggere il contenuto reale di qualcosa. (Fase 35 aggiunge la rotazione
+  automatica per file, vedi sotto — resta comunque senza tetto sul
+  numero totale di parti in una sessione, vedi "Limiti noti".)
+
+Nessuna delle due parti tocca dispositivi di terzi in modo diverso da
+quanto fanno già `NETWORK SCAN`/`CDP LLDP`/`ROGUE DHCP`: solo ascolto e
+scansione della propria rete già connessa, mai nulla inviato a un
+dispositivo che non abbia già scelto di essere su quella rete. Nessun
+gate offensive richiesto per lo stesso motivo.
+
+### Fase 35: SENTINEL MODE si evolve — dispositivi scomparsi, deauth flood integrato, rotazione pcap, riepilogo di sessione
+
+Su richiesta esplicita dell'utente, quattro delle cinque funzionalità
+aggiuntive proposte per SENTINEL MODE dopo la Fase 34 (punti 1, 2, 3, 5
+— la 4, whitelist dispositivi fidati indipendente dalla cronologia, resta
+non implementata):
+
+- **Rilevamento "dispositivo scomparso"** — il simmetrico di
+  "dispositivo nuovo": `SentinelManager` ora tiene traccia (`_tracked`,
+  solo in memoria per la sessione) di ogni host visto vivo durante i
+  propri cicli, non solo di quelli marcati "nuovi". Un host tracciato
+  che manca per `kMissedCyclesThreshold`=2 cicli consecutivi (~60s)
+  genera un evento `DeviceGone` — stesso bip sonoro di un dispositivo
+  nuovo, così "la stampante si è spenta inaspettatamente" è visibile
+  quanto "un telefono nuovo si è unito alla rete". Non esiste un evento
+  di "ritorno": lo stato si azzera silenziosamente quando il dispositivo
+  ricompare — vedi "Limiti noti" per il ragionamento.
+- **Rilevamento flood deauth/disassoc integrato** — invece di dover
+  scegliere fra GUARD MODE e SENTINEL MODE (che condividerebbero comunque
+  lo stesso, unico, callback promiscuo e si ruberebbero i frame a
+  vicenda), la stessa logica a finestra scorrevole di `DeauthWatcher`
+  (10s, 15 frame/finestra per BSSID) è ora richiamata direttamente dentro
+  `SentinelManager::onCapturedFrame`, sullo stream di frame già in
+  ricezione per il dump del traffico — nessuna sessione promiscua
+  aggiuntiva necessaria. Un evento `DeauthFlood` genera lo stesso
+  allarme sonoro degli altri due tipi di evento. `GUARD MODE` resta
+  comunque disponibile come strumento a sé per chi vuole solo il
+  rilevamento flood senza il resto.
+- **Rotazione automatica del pcap** — ogni file `.pcap` di sessione è
+  ora limitato a `kMaxPcapBytes`=5MB; oltre quella soglia se ne apre uno
+  nuovo con lo stesso nome base (timestamp+SSID) e un suffisso
+  progressivo `_p1.pcap`, `_p2.pcap`, ecc. — nessun singolo file può più
+  crescere senza limite, anche se il totale su una sessione lunghissima
+  ancora non ha un tetto (vedi "Limiti noti").
+- **Riepilogo di fine sessione** — quando SENTINEL MODE si ferma
+  (`ENTER` o uscita dal firmware), `SentinelManager::writeSummary()`
+  scrive `<stesso base>_summary.txt` sotto `/netrunner`: durata sessione,
+  cicli eseguiti, frame catturati, elenco delle parti pcap prodotte, e
+  ogni evento (nuovo/scomparso/flood) con IP/MAC/hostname/vendor o BSSID
+  a seconda del tipo — un riepilogo leggibile senza dover essere rimasti
+  a guardare lo schermo in tempo reale durante la sessione.
+
+Nel frattempo la schermata `SENTINEL MODE` è stata aggiornata da una
+semplice lista "nuovi dispositivi" a un log eventi unificato (`I` per il
+dettaglio di ciascuno), con un'etichetta e un colore diversi per NEW
+(magenta), GONE (ambra) e FLOOD (rosso).
+
+### Fase 36: rilevamento EAPOL sul dispositivo + PMKID sweep su più AP
+
+Risposta a una domanda esplicita dell'utente ("cosa potresti implementare
+riguardo la raccolta di PMKID/handshake?"), con un vincolo dato altrettanto
+esplicitamente prima di scrivere una riga di codice: **"cattura solo, non
+craccare mai"**. Le due funzionalità implementate rispettano quella linea
+alla lettera — nessuna delle due deriva, indovina o verifica mai una
+passphrase.
+
+- **`net/EapolWire`: classificatore strutturale EAPOL-Key** — nuovo
+  parser che legge SOLO i bit di frame-control, l'EtherType LLC/SNAP
+  (0x888E), il byte Type dell'header EAPOL e i flag del campo Key
+  Information (Install/Ack/MIC/Secure) per capire quale dei quattro
+  messaggi del 4-way handshake un frame sembra essere — la stessa
+  euristica standard usata da Wireshark/aircrack-ng/hcxdumptool (Message1:
+  Ack=1,Install=0; Message3: Ack=1,Install=1; Message2: Ack=0,MIC=1,
+  Secure=0; Message4: Ack=0,MIC=1,Secure=1). Per il solo Message1, cerca
+  anche la presenza (non il valore) di un KDE PMKID (elemento vendor 0xDD,
+  OUI `00:0F:AC` tipo 4) nel Key Data. **Non legge mai** Nonce, MIC, IV,
+  RSC, Key ID, né i 16 byte del PMKID stesso una volta trovato il
+  marcatore — solo la sua presenza/assenza. Riusa
+  `ieee80211::parseDataFrame`/`parseSnap` già esistenti (stesso codice già
+  verificato e condiviso da CdpLldpSniffer/RogueDhcpDetector/
+  PassiveHostDiscovery), non ri-deriva l'header 802.11 da zero.
+- **`PmkidManager`/`DeauthManager`: verdetto "cattura riuscita" a bordo**
+  — ogni frame catturato viene ora classificato con `EapolWire` (sul
+  frame completo, prima del troncamento a 256 byte usato per il pcap —
+  un PMKID KDE tardivo nel Key Data non viene perso). `PmkidManager`
+  espone `pmkidLikelyCaptured()` (almeno un Message1 con KDE PMKID
+  visto); `DeauthManager` espone `handshakeLikelyCaptured()` (almeno un
+  Message1 E un Message2 visti — la coppia minima che hashcat/aircrack
+  richiedono per un attacco a dizionario offline). Le schermate `PMKID
+  CAPTURE`/`DEAUTH + CAPTURE` mostrano ora questo verdetto a fine cattura
+  (verde "likely captured!" / ambra "no PMKID/handshake seen"), invece di
+  lasciare che sia solo il numero di pacchetti a suggerire se è valsa la
+  pena. Il file pcap resta scritto verbatim esattamente come prima — la
+  classificazione è un'analisi aggiuntiva sullo stesso frame già in
+  arrivo, non un filtro su cosa viene salvato.
+- **PMKID SWEEP** (`scan/PmkidSweepManager`, nuovo tasto `S` da WAR
+  DRIVING) — invece di ripetere PMKID CAPTURE a mano su ogni sighting,
+  questo orchestratore (stesso schema di `DiscoveryRunner`/
+  `AssessmentRunner`: guida solo l'API pubblica di `PmkidManager`, non
+  reimplementa nulla della cattura) prende uno snapshot degli AP
+  attualmente noti a WAR DRIVING con cifratura reale (esclude le reti
+  aperte, che non hanno nulla da catturare, ed esclude gli SSID nascosti,
+  che `WiFi.begin()` non può raggiungere per nome) e ci gira PMKID CAPTURE
+  in sequenza, un AP alla volta — necessariamente sequenziale, non
+  parallelo, per lo stesso motivo di ogni altro modulo che condivide il
+  callback promiscuo (vedi `ui/ActivityStatus.h`). Ogni risultato (SSID,
+  BSSID, verdetto, conteggio frame, percorso pcap) resta consultabile
+  nella schermata `PMKID SWEEP` (`I` per il dettaglio). Stesso gate
+  `OffensiveDisclaimerScreen` di EVIL TWIN/DEAUTH/PMKID singolo.
+
+Le altre nove aree della lista originale di 15 restano proposte non
+implementate. Il dictionary-check on-device sui PMKID catturati in
+particolare — l'unica idea di quella lista che avrebbe cambiato il
+principio "mai craccare" — non è stato toccato, coerentemente col vincolo
+posto per questa fase.
+
 ## Compilare e flashare
 
 ```
@@ -2049,6 +2415,60 @@ originale.
       anch'essi sotto `/netrunner/` — un solo posto per ogni artefatto di
       scansione. Gli export per-AP guadagnano anche un timestamp, che
       prima non avevano.
+- [x] **Fase 30 — Sweep LDAP (anon-bind + rootDSE) e disclosure NTLM-
+      over-HTTP**: `LDAP SWEEP` (bind anonimo + lettura rootDSE, porta
+      389) e `NTLM DISCLOSURE` (negoziazione NTLM su HTTP, dominio/
+      hostname dal Type 2 challenge, mai un handshake completato) nel
+      sotto-menu DISCOVERY, entrambi non gated (read-only, nessuna
+      credenziale vera). `net/LdapWire` e `net/NtlmWire` implementano il
+      minimo di BER/NTLM necessario, verificati prima dell'uso contro
+      librerie Python reali (`ldap3`/`pyasn1`, `ntlm-auth`) — vedi sopra.
+- [x] **Fase 31 — Seconda passata UX/UI trasversale**: indicatori di
+      scorrimento (`chrome::drawScrollMarkers`) su tutte le 21 liste
+      scorrevoli, `helpText()` su tutte le 44 schermate, vista a valore
+      completo (tasto `I`) per i campi troncati su 11 schermate, sotto-
+      menu DISCOVERY raggruppato per prerequisito invece di elenco piatto,
+      indicatore `BG:xxx` nell'header per le attività in background non
+      promiscue, rimozione del donut chart inutilizzato da `PORT SCAN`.
+- [x] **Fase 32 — `PORT SCAN` copre anche le porte comuni sopra la
+      1024**: ~50 porte curate (`scan/WellKnownHighPorts.h`) — database,
+      RDP/VNC/WinRM, pannelli/dev server, `31337` — sondate su ogni scan
+      insieme al range configurato in `SETTINGS`, deduplicate contro di
+      esso. Nessuna modifica a banner grabbing/lookup servizio/firme
+      vulnerabili, che restano identici sulle porte nuove.
+- [x] **Fase 33 — Primo lotto verso un sistema WiFi cyber security più
+      evoluto**: rilevamento WPS (enabled/locked/config methods) su
+      `BEACON/PROBE INTEL`, nuovo `GUARD MODE` per il rilevamento
+      passivo di flood deauth/disassoc altrui, euristica evil-twin
+      rivista (tier di sicurezza + vendor OUI invece del solo confronto
+      di enum di cifratura), nuova schermata `CHANNEL SCAN` per
+      l'affollamento dei 13 canali 2.4GHz. Entrambi i nuovi rilevamenti
+      (WPS sbloccato, flood in corso) alimentano anche `THREATS`.
+- [x] **Fase 34 — SENTINEL MODE**: nuova voce del menu principale,
+      `scan/SentinelManager` — ri-scoperta periodica (30s) della propria
+      rete connessa con allarme sonoro su ogni dispositivo mai visto
+      prima (baseline `ScanHistory::loadKnownMacs`, caricata una volta e
+      tenuta solo in memoria per non inquinare la cronologia condivisa),
+      più un dump continuo del traffico 802.11 (management+data, header
+      sempre leggibili, payload mai decriptato) su `.pcap` sotto
+      `/netrunner`.
+- [x] **Fase 35 — SENTINEL MODE si evolve**: rilevamento "dispositivo
+      scomparso" (simmetrico al "dispositivo nuovo", 2 cicli mancati
+      consecutivi), rilevamento flood deauth/disassoc integrato
+      direttamente (stessa logica di GUARD MODE, nessuna sessione
+      promiscua separata), rotazione automatica del pcap ogni 5MB per
+      parte, riepilogo di sessione (`_summary.txt`) scritto allo stop
+      con ogni evento nuovo/scomparso/flood. Schermata aggiornata a un
+      log eventi unificato con colore per tipo.
+- [x] **Fase 36 — Rilevamento EAPOL a bordo + PMKID sweep**:
+      `net/EapolWire` classifica strutturalmente i frame EAPOL-Key
+      catturati (Message1-4, presenza KDE PMKID) senza mai leggere
+      nonce/MIC/PMKID stessi; `PmkidManager`/`DeauthManager` mostrano ora
+      un verdetto "cattura riuscita" a fine sessione; nuovo `PMKID SWEEP`
+      (`scan/PmkidSweepManager`, tasto `S` da WAR DRIVING) esegue PMKID
+      CAPTURE in sequenza su ogni AP non aperto già noto invece di uno
+      alla volta a mano. Vincolo esplicito rispettato: cattura solo, mai
+      craccare.
 
 ## Test plan — Fase 1
 
@@ -2860,6 +3280,260 @@ verificare su hardware, in un ambiente **autorizzato**:
    deve elencare `/netrunner/` (non più una voce `/wardrive/wardrive.csv`
    separata) nella sezione COMPANION ARTIFACTS.
 
+## Test plan — Fase 30 (LDAP sweep, NTLM disclosure)
+
+**Da testare SOLO in un ambiente autorizzato** — contro un DC/server
+LDAP e servizi web con NTLM abilitato di tua proprietà o esplicitamente
+autorizzati. Codice mai eseguito contro un server reale (solo verificato
+a tavolino contro librerie Python — vedi sopra):
+
+1. **LDAP, bind anonimo consentito**: contro un LDAP/AD di test con bind
+   anonimo abilitato (o un OpenLDAP di default), `LDAP SWEEP` → `ENTER`
+   deve mostrare l'host con "anon-bind OPEN" in rosso, e la seconda riga
+   deve mostrare `dnsHostName` o `defaultNamingContext` se il rootDSE è
+   stato letto.
+2. **LDAP, bind anonimo rifiutato ma rootDSE leggibile**: contro un AD
+   moderno con bind anonimo disabilitato (il default), deve comparire
+   "bind rejected" in verde ma la seconda riga deve comunque mostrare
+   `dnsHostName`/naming context se il server li espone senza bind —
+   verifica che i due controlli siano davvero indipendenti come
+   documentato, non che il secondo salti quando il primo fallisce.
+3. **LDAP, porta chiusa/non-LDAP**: un host senza nulla in ascolto sulla
+   389 (la maggioranza) non deve comparire affatto nell'elenco — non un
+   falso positivo con campi vuoti.
+4. **NTLM, servizio con NTLM abilitato**: contro un sito IIS/servizio con
+   autenticazione NTLM (es. un file share Windows esposto via WebDAV, o
+   un pannello interno configurato per Integrated Windows Auth), dopo un
+   `PORT SCAN` sull'host, `NTLM DISCLOSURE` → `ENTER` deve mostrare
+   IP:porta e, nella seconda riga, dominio/hostname disclosi dal Type 2.
+5. **NTLM, nessun NTLM offerto**: un servizio HTTP qualunque senza NTLM
+   (la maggioranza) non deve comparire nell'elenco.
+6. **NTLM senza PORT SCAN**: `NTLM DISCLOSURE` senza aver mai fatto un
+   port scan su nessun host deve mostrare "no HTTP hosts - run NETWORK
+   SCAN/PORT SCAN first", non restare bloccato o mostrare un elenco vuoto
+   senza spiegazione.
+7. **RUN ALL DISCOVERY**: verificare che le due nuove fasi compaiano
+   nell'etichetta di fase (`LDAP SWEEP`, `NTLM DISCLOSURE`) con la barra
+   di avanzamento che cresce correttamente tra DATASTORE e LAN TOPOLOGY.
+
+## Test plan — Fase 31 (scroll marker, dettaglio full-value, DISCOVERY raggruppato, attività background)
+
+1. **Scroll marker**: su qualunque lista che superi `kMaxRows` (es. `HOST
+   LIST` con più host di quanti ne stiano a schermo, `PORT SCAN` con molte
+   porte aperte), scorrere fino in cima e verificare che compaia solo `v`
+   (mai `^`); scorrere fino in fondo e verificare il contrario; a metà
+   lista devono comparire entrambi.
+2. **Help overlay su tutte le schermate**: aprire `?` da almeno una
+   schermata per gruppo (menu principale, DISCOVERY e ognuno dei suoi
+   sotto-strumenti, HOST DETAIL, SETTINGS, FILE MANAGER, ricerca,
+   cronologia, ecc.) e verificare che compaia sempre una legenda
+   specifica, mai il fallback generico "No screen-specific help.".
+3. **Dettaglio full-value (`I`)**: su `PORT SCAN` con almeno un risultato,
+   selezionare una riga con un banner lungo (troncato a schermo) e premere
+   `I` — deve aprirsi un overlay a schermo intero col banner per esteso,
+   non troncato; un tasto qualsiasi lo chiude e torna alla lista con la
+   stessa riga ancora selezionata. Ripetere su `LDAP SWEEP`, `NTLM
+   DISCLOSURE`, `THREATS` (finding con testo lungo) e `WAR DRIVING`
+   (verificare anche che le frecce su/giù muovano la selezione mentre lo
+   scan è ancora in esecuzione, cosa che prima non funzionava).
+4. **`I` su lista vuota**: su una schermata delle precedenti senza ancora
+   nessun risultato, premere `I` non deve aprire alcun overlay né causare
+   crash.
+5. **DISCOVERY raggruppato**: entrare in DISCOVERY e scorrere con le
+   frecce dall'inizio alla fine — la selezione deve saltare
+   automaticamente le righe separatore (`-- ONE-SHOT --` ecc.), mai
+   fermarsi su una di esse; `ENTER` su ogni voce reale deve continuare ad
+   aprire lo strumento corretto.
+6. **Indicatore `BG:` nell'header**: avviare `SNMP SWEEP` (o `LDAP SWEEP`/
+   `WAR DRIVING`) e, mentre è ancora in corso, tornare al menu principale
+   con `DEL` — l'header deve mostrare `BG:SNMP` (ciano) finché lo sweep
+   non termina. Avviare due sweep in sequenza rapida (prima di far
+   terminare il primo, se possibile) e verificare che diventi `BG:2`.
+7. **Indicatore `RF:` con attività di background insieme**: avviare una
+   funzione promiscua (es. `LAN TOPOLOGY`) e, mentre è attiva, uno sweep
+   non promiscuo (es. `LDAP SWEEP`) — l'header deve mostrare `RF:CDP+1`
+   (ambra), non provare a mostrare due tag separati.
+8. **Donut rimosso da PORT SCAN**: avviare un port scan con più porte
+   aperte di quante ne servano a riempire lo schermo — verificare che non
+   compaia più alcun grafico a torta nell'angolo in alto a destra e che il
+   testo del banner nella tabella non venga più tagliato da una
+   sovrapposizione.
+
+## Test plan — Fase 32 (porte comuni sopra la 1024)
+
+1. **Idle screen**: aprire `PORT MAPPING` su un host senza ancora scan
+   fatti — sotto "range: 1-1024" deve comparire "+50 common ports
+   >1024".
+2. **Porta comune sopra 1024 trovata**: contro un host di test con un
+   servizio in ascolto su una delle porte aggiunte (es. un MySQL/Postgres/
+   Redis locale su `3306`/`5432`/`6379`, o un web server su `8080`),
+   avviare `ENTER` e verificare che compaia nella tabella risultati con
+   nome servizio corretto (da `PortServiceDb`) anche se fuori dal range
+   configurato in `SETTINGS`.
+3. **Deduplica con range esteso**: in `SETTINGS`, alzare `portRangeEnd`
+   oltre una delle porte comuni (es. a 9000, che copre `8080`) e rifare lo
+   scan — verificare che il tempo totale di scan non aumenti in modo
+   percepibile e che quella porta compaia una sola volta nei risultati,
+   non due.
+4. **RDP ora raggiungibile**: contro un host con RDP (`3389`) aperto, col
+   range di default 1-1024, verificare che compaia nella tabella
+   evidenziato in ambra ("legacy port") — prima di questa fase non
+   sarebbe mai stato sondato.
+5. **Nessuna porta aperta tra quelle nuove**: su un host senza alcuno di
+   questi servizi, verificare che lo scan finisca comunque in tempo
+   ragionevole (le ~50 porte extra restano una piccola frazione del
+   totale) e che l'elenco risultati non contenga falsi positivi.
+
+## Test plan — Fase 33 (WPS, GUARD MODE, evil-twin v2, CHANNEL SCAN)
+
+**Solo in ambiente autorizzato**, stessa regola di ogni altro strumento
+che osserva o (per GUARD MODE, solo in ascolto) reagisce a traffico
+altrui:
+
+1. **WPS rilevato**: contro un AP di test con WPS attivo, avviare
+   `BEACON/PROBE INTEL` e lasciarlo girare finché l'AP compare — deve
+   mostrare una "W" accanto alla riga (rossa se WPS è sbloccato, ambra
+   se locked). `I` sulla riga deve mostrare lock state e metodi
+   (PBC/PIN) nel dettaglio.
+2. **WPS assente**: contro un AP senza WPS, nessuna "W" deve comparire
+   sulla riga, e il dettaglio deve mostrare "WPS: not seen".
+3. **WPS in THREATS**: con almeno un AP WPS-sbloccato visto in questa
+   sessione, `THREATS` deve elencare un finding "<ssid> WPS unlocked" in
+   ambra.
+4. **GUARD MODE, traffico normale**: avviarlo su una rete normale e
+   lasciarlo girare qualche minuto — non deve comparire "FLOOD
+   DETECTED" né alcuna riga rossa per un singolo/pochi deauth isolati
+   (roaming normale di un client).
+5. **GUARD MODE, flood reale**: contro un AP di test, generare un vero
+   flood di deauth (es. `aireplay-ng --deauth`, SOLO sulla propria rete)
+   — entro la finestra di 10s deve comparire "FLOOD DETECTED", la riga
+   del BSSID target deve diventare rossa, e deve suonare l'allarme.
+   Fermando il flood, verificare che dopo la finestra successiva la riga
+   torni verde (rate tornato sotto soglia).
+6. **GUARD MODE in THREATS**: durante un flood rilevato, `THREATS` deve
+   mostrare "<bssid> deauth flood" in rosso.
+7. **GUARD MODE nell'header**: avviandolo e navigando altrove, l'header
+   deve mostrare `RF:GRD` (ambra) — è un consumer promiscuo, non un
+   background sweep, quindi compare nel gruppo `RF:`, non `BG:`.
+8. **Evil-twin, stesso tier niente falso positivo**: in war driving,
+   simulare (o trovare) due BSSID con lo stesso SSID entrambi WPA2 (uno
+   puro, uno mixed WPA/WPA2) — nessuno dei due deve essere marcato
+   sospetto (stesso tier).
+9. **Evil-twin, downgrade rilevato**: due BSSID con lo stesso SSID, uno
+   WPA2 e uno OPEN — entrambi devono comparire sospetti, con la nota che
+   menziona la cifratura più debole/forte.
+10. **Evil-twin, vendor mismatch rilevato**: due BSSID con lo stesso
+    SSID, stessa cifratura, ma vendor OUI risolti diversi — entrambi
+    sospetti, con la nota che menziona i due vendor.
+11. **CHANNEL SCAN**: aprirlo vicino ad almeno un AP noto — la barra del
+    suo canale deve crescere nel giro di pochi secondi (scan continuo),
+    colorata in base al conteggio (verde/ambra/rosso). Se il dispositivo
+    è connesso a una rete, il canale di quella rete deve mostrare il
+    marcatore ciano "v" sopra la barra.
+12. **CHANNEL SCAN, selezione**: Left/Right deve muovere il riquadro di
+    selezione fra i 13 canali e la riga informativa in basso deve
+    aggiornarsi con conteggio ed RSSI medio del canale selezionato.
+
+## Test plan — Fase 34 (SENTINEL MODE)
+
+1. **Avvio senza WiFi**: da spento/scollegato, aprire `SENTINEL MODE` —
+   deve mostrare "connect to WiFi first" in ambra e `ENTER` non deve
+   avviare nulla (`isRunning()` resta false).
+2. **Avvio normale**: connesso a una rete, `ENTER` deve mostrare "net:
+   <ssid>" in ciano e l'header deve mostrare `RF:SNT` navigando altrove.
+3. **Dispositivo nuovo rilevato**: con Sentinel attivo, accendere/
+   connettere un dispositivo con MAC mai visto su questa rete (o
+   aspettare che uno esistente venga rilevato al primo ciclo se la
+   cronologia di questa rete non esiste ancora) — entro ~30s deve
+   comparire nella lista con un bip sonoro; `I` sulla riga deve mostrare
+   IP/MAC/hostname/vendor per esteso.
+4. **Nessun falso positivo dopo il primo ciclo**: lo stesso dispositivo
+   non deve ricomparire come "nuovo" in un ciclo successivo nella stessa
+   sessione.
+5. **Dump pcap**: dopo qualche minuto di esecuzione, fermare con `ENTER`
+   e verificare su SD/LittleFS che `/netrunner/<timestamp>_<ssid>_p1.pcap`
+   esista, abbia dimensione > 0 e si apra correttamente in Wireshark
+   (frame leggibili come 802.11 anche se il payload dati resta cifrato
+   su una rete WPA2/WPA3).
+6. **Convivenza con NETWORK SCAN manuale**: mentre Sentinel è attivo,
+   aprire `NETWORK SCAN` e avviare uno scan manuale — non deve bloccarsi
+   né corrompere nulla; uno dei due sweep semplicemente troverà
+   `g_scanManager` già occupato e riproverà al ciclo successivo (stessa
+   collisione già accettata per WAR DRIVING vs NETWORK SCAN).
+7. **DEL mantiene la sessione**: uscire con `DEL` e rientrare più tardi
+   — Sentinel deve essere ancora in esecuzione, con cicli/dispositivi/
+   frame accumulati nel frattempo.
+
+## Test plan — Fase 35 (dispositivo scomparso, flood integrato, rotazione pcap, riepilogo)
+
+1. **Dispositivo scomparso**: con Sentinel attivo e almeno un dispositivo
+   già rilevato (nuovo o presente al primo ciclo), spegnere/disconnettere
+   quel dispositivo — dopo ~2 cicli (~60s) deve comparire un evento
+   `GONE` in ambra con bip sonoro, consultabile per esteso con `I`.
+2. **Nessun evento GONE prematuro**: un dispositivo che manca per un
+   solo ciclo (es. un timeout ARP occasionale) non deve generare un
+   evento — solo dopo 2 mancati consecutivi.
+3. **Ritorno silenzioso**: far ricomparire un dispositivo già segnalato
+   `GONE` — non deve generare alcun evento di "ritorno"; se sparisce di
+   nuovo in seguito, deve poter essere ri-segnalato normalmente.
+4. **Deauth flood rilevato senza GUARD MODE**: con solo `SENTINEL MODE`
+   attivo (non `GUARD MODE`), generare un vero flood di deauth contro un
+   AP di test (SOLO sulla propria rete) — entro la finestra di 10s deve
+   comparire un evento `FLOOD` in rosso con allarme sonoro, stesso
+   comportamento di GUARD MODE ma senza doverlo avviare separatamente.
+5. **Rotazione pcap**: forzare (o attendere, su una rete molto
+   trafficata) il superamento dei 5MB sul file corrente — deve comparire
+   un nuovo file `..._p2.pcap` e il contatore "parts" nella schermata
+   deve salire a 2; il file `_p1.pcap` precedente deve restare valido e
+   apribile (chiuso correttamente, non troncato a metà record).
+6. **Riepilogo di sessione**: fermare Sentinel dopo aver accumulato
+   almeno un evento di ciascun tipo — verificare che
+   `..._summary.txt` esista sotto `/netrunner` e contenga durata, cicli,
+   frame totali, elenco delle parti pcap, e ogni evento con i suoi dati
+   (IP/MAC/hostname/vendor per new/gone, BSSID per flood).
+7. **Log eventi unificato nella UI**: con eventi di più tipi presenti,
+   verificare che ogni riga mostri l'etichetta corretta (NEW/GONE/FLOOD)
+   col colore giusto (magenta/ambra/rosso) e che `I` mostri il dettaglio
+   pertinente al tipo (BSSID per FLOOD, IP/MAC/hostname/vendor per gli
+   altri due).
+
+## Test plan — Fase 36 (rilevamento EAPOL, PMKID sweep)
+
+**Solo in ambiente autorizzato**, stessa regola di ogni altro strumento
+che tenta un'associazione/cattura verso un AP:
+
+1. **PMKID rilevato**: contro un AP di test WPA2-PSK che offre il PMKID
+   nel primo messaggio EAPOL (molti router consumer moderni), avviare
+   `PMKID CAPTURE` — a fine cattura deve mostrare "PMKID likely
+   captured!" in verde, non solo il conteggio pacchetti.
+2. **PMKID assente**: contro un AP che non lo offre (o WPA3-only/
+   Enterprise), la cattura deve terminare mostrando "no PMKID seen this
+   time" in ambra, senza falsi positivi.
+3. **Handshake rilevato**: contro un client reale connesso a un AP di
+   test, avviare `DEAUTH + CAPTURE` — se il client si riassocia entro la
+   finestra di cattura, deve mostrare "handshake likely captured!" in
+   verde (Message1 E Message2 entrambi visti).
+4. **Verifica incrociata col PC**: per almeno una cattura con verdetto
+   positivo, aprire il pcap risultante con Wireshark (filtro `eapol`) o
+   `hcxpcapngtool` e confermare che il verdetto del dispositivo era
+   corretto — non deve mai dichiarare un falso positivo (mai un vero
+   negativo dichiarato falso positivo).
+5. **PMKID SWEEP, nessun target**: da `WAR DRIVING` senza ancora nessun
+   sighting non-aperto, `S` deve mostrare "no WAR DRIVING sightings yet"
+   e non avviare nulla.
+6. **PMKID SWEEP, sequenza multi-AP**: con almeno due sighting non
+   aperti/non nascosti noti, avviare `S` — deve mostrare "1/N", poi
+   "2/N", ecc. via via che ogni AP viene provato in sequenza (mai in
+   parallelo), popolando la lista risultati con SSID/verdetto per
+   ciascuno.
+7. **PMKID SWEEP, header**: durante lo sweep, l'header deve mostrare
+   `RF:PMK` mentre una cattura per-AP è attiva (stesso tag del PMKID
+   CAPTURE singolo) — `PMKID SWEEP` stesso non è un consumer promiscuo,
+   solo un orchestratore.
+8. **PMKID SWEEP, DEL e rientro**: uscire con `DEL` mentre lo sweep gira
+   e rientrare — deve mostrare ancora il progresso corretto (indice/
+   totale/hit) accumulato nel frattempo.
+
 ## Limiti noti e tagli di scope deliberati
 
 Riepilogo di quanto già menzionato nelle sezioni sopra, in un unico
@@ -2968,13 +3642,22 @@ posto:
   per risparmiare spazio flash — vedi la sezione "Fase 14" sopra per il
   dettaglio (incluso lo storico dei tre bug API reali che il modulo
   aveva fatto emergere prima di essere tolto).
-- **Evil-twin: euristica su SSID+cifratura, non una prova crittografica**
-  (Fase 13): due AP con lo stesso nome ma cifratura diversa vengono
-  entrambi segnalati come sospetti, senza alcuna pretesa di stabilire
-  quale sia quello legittimo — un attaccante sufficientemente motivato
-  potrebbe clonare anche la cifratura (nel qual caso questa euristica
-  non lo rileva) o un ambiente con AP legittimi mal configurati
-  potrebbe generare falsi positivi.
+- **Evil-twin: euristica su SSID+tier di cifratura+vendor OUI, non una
+  prova crittografica** (Fase 13, euristica rivista in Fase 33): due AP
+  con lo stesso nome vengono segnalati come sospetti se il tier di
+  sicurezza differisce in modo significativo (vedi `securityTier()` in
+  `WardrivingManager.cpp` — WPA2 e WPA/WPA2 misto contano come lo stesso
+  tier apposta, per non generare falsi positivi su un singolo router
+  reale in mixed-mode) OPPURE se il vendor OUI risolto differisce fra i
+  due (solo quando entrambi i lookup hanno dato un risultato — un
+  vendor sconosciuto da solo non è un segnale). Nessuna pretesa di
+  stabilire quale dei due sia quello legittimo. Resta un'euristica, non
+  una prova: un attaccante che clona sia la cifratura sia usa hardware
+  dello stesso vendor (raro, ma non impossibile) non verrebbe rilevato,
+  e un ambiente con più vendor legittimi sullo stesso SSID (roaming
+  misto, raro ma esiste) potrebbe generare un falso positivo sul solo
+  segnale vendor. Il canale è stato deliberatamente escluso da questa
+  euristica — vedi il commento nel codice per il perché.
 - **Backup impostazioni: password WiFi in chiaro nel JSON su SD**
   (Fase 13): scelta deliberata (vedi sopra), ma significa che
   `/config_backup.json` va trattato con la stessa cura della SD stessa
@@ -3040,18 +3723,28 @@ posto:
   degli altri moduli — non esegue nuovi test né assegna punteggi CVSS.
   "Nessun finding" non significa "rete sicura", solo "niente ha fatto
   scattare le euristiche".
-- **Radio promiscua condivisa: il limite ora vale per SEI funzioni**
-  (Fase 18-19): `esp_wifi` accetta una sola callback promiscua alla volta
-  — ARP/MITM, deauth, PMKID, CDP/LLDP, rogue DHCP e (Fase 19) scoperta
-  host passiva non vanno usate in parallelo (l'ultima avviata ruba i frame
-  alle altre). Stesso genere di limite già accettato per WAR DRIVING vs
-  NETWORK SCAN. La barra di stato radio in header (Fase 19) esiste proprio
-  per rendere questo conflitto visibile invece che silenzioso.
+- **Radio promiscua condivisa: il limite ora vale per NOVE funzioni**
+  (Fase 18-19, poi Fase 27, 33 e 34): `esp_wifi` accetta una sola
+  callback promiscua alla volta — ARP/MITM, deauth, PMKID, CDP/LLDP,
+  rogue DHCP, scoperta host passiva (Fase 19), beacon/probe intel (Fase
+  27), GUARD MODE (Fase 33) e SENTINEL MODE (Fase 34) non vanno usate in
+  parallelo (l'ultima avviata ruba i frame alle altre). Stesso genere di
+  limite già accettato per WAR DRIVING vs NETWORK SCAN — con l'aggravante
+  che SENTINEL MODE guida anche cicli periodici di NETWORK SCAN al suo
+  interno, quindi usarlo insieme a un NETWORK SCAN manuale è lo stesso
+  tipo di collisione, non un problema nuovo. La barra di stato radio in
+  header (Fase 19, estesa in Fase 31) esiste proprio per rendere questo
+  conflitto visibile invece che silenzioso.
 - **Responder-lite/NetNTLM (punto 10) escluso di proposito** (Fase 19):
   era in una delle liste di proposte ed è stato escluso su istruzione
   esplicita dell'utente perché ad alto rischio (impersona servizi verso
   client di terzi per raccogliere hash). Implementabile in futuro solo su
-  richiesta esplicita e dietro il gate `OffensiveDisclaimerScreen`.
+  richiesta esplicita e dietro il gate `OffensiveDisclaimerScreen`. **Non
+  va confuso con `NTLM DISCLOSURE` (Fase 30)**, che non impersona nulla e
+  non cattura hash: si limita a leggere il Type 2 challenge che un
+  server invia comunque a chiunque negozi NTLM, senza mai completare
+  l'handshake — stessa categoria di rischio di un banner grab, non di
+  Responder.
 - **Auto-assess: catena volutamente parziale** (Fase 19): concatena solo
   i passi non-gated (discovery, port scan, report). L'audit credenziali
   NON è automatizzato — sta dietro un consenso per-sessione e lanciarlo su
@@ -3113,10 +3806,81 @@ posto:
   ROGUE DHCP) che restano sul canale già associato, questo salta su
   tutti i 13 canali 2.4GHz — un compromesso deliberato per una copertura
   reale, non un bug; la riconnessione allo stop è automatica.
+- **LDAP sweep: solo bind SIMPLE anonimo, mai SASL/Kerberos, mai LDAPS**
+  (Fase 30): `LdapProbe` prova solo un bind semplice DN/password vuoti su
+  porta 389 in chiaro — non tenta SASL, GSSAPI/Kerberos, né si connette
+  su 636 (LDAPS, richiederebbe un client TLS). Un server che risponde
+  solo su LDAPS o richiede SASL non verrà rilevato come "LDAP" da questo
+  sweep, anche se è pienamente in ascolto.
+- **NTLM disclosure: solo HTTP semplice, mai HTTPS** (Fase 30):
+  `NtlmHttpProbe` filtra sui soli host con un servizio di porta
+  classificato `"http"` dal port scan — endpoint NTLM su `"https"` (molto
+  comuni: OWA/Exchange, portali IIS interni) restano fuori scope finché
+  questo firmware non ha un client TLS.
+- **SENTINEL MODE: pcap ruota per file, ma senza limite sul totale della
+  sessione; mai decripta nulla** (Fase 34, rotazione aggiunta in Fase
+  35): ogni singolo file `.pcap` è ora limitato a 5MB (`kMaxPcapBytes`),
+  oltre i quali se ne apre uno nuovo con lo stesso nome base e un
+  suffisso `_pN` — ma non c'è ancora un tetto sul NUMERO di parti: una
+  sessione lasciata attiva per giorni su una rete trafficata continua a
+  produrre file aggiuntivi senza limite; fermare manualmente resta
+  l'unico modo di limitare lo spazio totale occupato. La baseline
+  "dispositivo mai visto" viene caricata una volta sola all'avvio dalla
+  cronologia già salvata da scan precedenti di quella rete
+  (`ScanHistory`, fino a 20 voci) e poi tenuta solo in memoria per il
+  resto della sessione — non scrive nuovi snapshot nella cronologia
+  condivisa a ogni ciclo (vedi la sezione "Fase 34" sopra per il
+  perché), quindi le proprie osservazioni non arricchiscono quella
+  baseline per sessioni Sentinel future, solo per quella in corso. Come
+  ogni cattura promiscua in questo firmware, il payload dei frame dati
+  resta cifrato esattamente come lo era sull'aria su una rete WPA2/WPA3
+  — nessun tentativo di decifrarlo, mai.
+- **SENTINEL MODE: "dispositivo scomparso" richiede due cicli mancati
+  (~60s), nessun evento di "ritorno"** (Fase 35): la soglia
+  `kMissedCyclesThreshold=2` evita falsi allarmi da un singolo sweep
+  ARP/ping fallito per motivi transitori, ma significa che un
+  dispositivo che sparisce e ritorna in meno di un minuto non genera mai
+  un evento. Quando un dispositivo già segnalato "gone" ricompare, lo
+  stato si azzera silenziosamente — non esiste un evento "device back"
+  dedicato, scelta deliberata per non raddoppiare gli allarmi su
+  qualcosa che di per sé non è una scoperta nuova; se sparisce di nuovo
+  in seguito, viene ri-segnalato normalmente.
+- **SENTINEL MODE: la fusione con GUARD MODE è logica duplicata, non
+  codice condiviso** (Fase 35): `SentinelManager::checkDeauthFlood`
+  reimplementa la stessa finestra scorrevole/soglia di
+  `DeauthWatcher::onManagementFrame` (10s, 15 frame/finestra) invece di
+  richiamare quella classe — le due classi restano indipendenti (GUARD
+  MODE resta utile da solo se si vuole solo il rilevamento flood senza
+  discovery/traffic dump), a costo di dover mantenere la stessa logica
+  in due punti se la soglia cambierà in futuro.
+- **`net/EapolWire`: euristica standard, non verificata contro una
+  cattura reale** (Fase 36): la classificazione Message1-4 usa gli stessi
+  bit del Key Information già documentati pubblicamente (IEEE 802.11-2020
+  §12.7.2) e usati da Wireshark/aircrack-ng/hcxdumptool, ma — a
+  differenza di `net/LdapWire`/`net/NtlmWire`, verificati byte-a-byte
+  contro `ldap3`/`ntlm-auth` prima dell'uso — qui non è stato possibile
+  costruire un handshake WPA2 reale a tavolino per un confronto
+  altrettanto diretto: serve un vero scambio EAPOL fra AP e client, non
+  solo una libreria che codifica messaggi. Il rischio pratico più
+  probabile in caso di bug: un frame classificato come tipo sbagliato (es.
+  Message2 scambiato per Message4), non un crash — la funzione fallisce
+  chiuso (bounds-check ovunque) su qualunque cosa più corta del previsto.
+  Il pcap scritto su SD resta comunque il dato originale, verbatim,
+  intatto anche se il verdetto a bordo fosse impreciso — verificabile
+  sempre con Wireshark/hashcat come prima di questa fase.
+- **PMKID SWEEP: nessuna soglia di RSSI/distanza, sequenziale non
+  parallelo** (Fase 36): prova ogni AP eleggibile indipendentemente da
+  quanto sia debole il segnale (una cattura contro un AP troppo lontano
+  probabilmente fallisce e basta, senza essere filtrata in anticipo), e
+  — come ogni altro modulo che condivide il callback promiscuo — un AP
+  alla volta, mai in parallelo: uno sweep su molti sighting può richiedere
+  diversi minuti (~8s + tempo di associazione per AP).
 - **Nessuna build reale eseguita**: vale per ogni fase di questo
   progetto — il sandbox di sviluppo non ha accesso al registry
   PlatformIO. Tutto il codice è stato scritto con attenzione e, dove
   possibile, la logica non hardware-dipendente è stata verificata con
   test standalone su host (aritmetica IP, formato DB OUI, encoder
-  Base64) — ma **una build (`pio run`) e un test su hardware reale
-  restano il passo successivo prima di fidarsi di questo firmware.**
+  Base64, i messaggi BER/LDAP di `net/LdapWire` contro la libreria
+  Python `ldap3`, i messaggi NTLM di `net/NtlmWire` contro `ntlm-auth`)
+  — ma **una build (`pio run`) e un test su hardware reale restano il
+  passo successivo prima di fidarsi di questo firmware.**

@@ -1,4 +1,5 @@
 #include "DeauthManager.h"
+#include "../net/EapolWire.h"
 #include "../storage/SdCard.h"
 #include "../storage/PcapWriter.h"
 #include <WiFi.h>
@@ -34,6 +35,10 @@ bool DeauthManager::start(const String& apBssid, uint8_t channel, const String& 
     _channel = channel;
     _framesSent = 0;
     _captured = 0;
+    _m1Count = 0;
+    _m2Count = 0;
+    _m3Count = 0;
+    _m4Count = 0;
 
     fs::FS& fs = sdcard::exportFs();
     fs.mkdir("/handshakes");
@@ -96,7 +101,7 @@ void DeauthManager::run() {
     vQueueDelete(_captureQueue);
     _captureQueue = nullptr;
 
-    notify("capture done: " + String((unsigned)_captured) + " frames -> " + _pcapPath);
+    notify(handshakeLikelyCaptured() ? "handshake likely captured!" : "capture done, no full handshake seen");
     _running = false;
 }
 
@@ -139,6 +144,18 @@ void DeauthManager::onCapturedFrame(const uint8_t* p, uint16_t len) {
                            memcmp(addr3, _apBssid, 6) == 0 || memcmp(addr1, _clientMac, 6) == 0 ||
                            memcmp(addr2, _clientMac, 6) == 0;
     if (!involvesTarget) return;
+
+    // Structural read-out on the FULL frame, before the 256-byte
+    // truncation below. See net/EapolWire.h for exactly what is and
+    // isn't read.
+    eapol::Classification c = eapol::classify(p, len);
+    switch (c.kind) {
+        case eapol::MessageKind::Message1: _m1Count++; break;
+        case eapol::MessageKind::Message2: _m2Count++; break;
+        case eapol::MessageKind::Message3: _m3Count++; break;
+        case eapol::MessageKind::Message4: _m4Count++; break;
+        default: break;
+    }
 
     CapturedFrame frame;
     frame.originalLen = len;

@@ -129,4 +129,6 @@ void ServiceAuditScreen::drawFindings(M5Canvas& gfx, int16_t top) {
         if (line.length() > 38) line = line.substring(0, 38);
         gfx.print(line);
     }
+
+    chrome::drawScrollMarkers(gfx, top + 2, top + 2 + (int16_t)kMaxRows * kRowH, first > 0, (first + kMaxRows) < count);
 }

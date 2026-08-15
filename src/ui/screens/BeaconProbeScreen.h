@@ -18,7 +18,7 @@ public:
 
     const char* title() const override { return "BCN"; }
     const char* helpText() const override {
-        return "BEACON/PROBE INTEL\n\nTAB: switch AP / CLIENTS view\nENTER: start/stop listening\nArrows: move selection\n\nHops all channels while on -\nyour own WiFi disconnects\nfor the duration (see help\nin scan/BeaconProbeSniffer.h)\nand reconnects on stop.\n\nDEL: back";
+        return "BEACON/PROBE INTEL\n\nTAB: switch AP / CLIENTS view\nENTER: start/stop listening\nI: full detail on selection\n  (incl. WPS state)\nArrows: move selection\n\n\"W\" on an AP row = WPS seen\n(red = unlocked, amber =\nlocked). Detection only,\nno PIN ever attempted.\n\nHops all channels while on -\nyour own WiFi disconnects\nfor the duration and\nreconnects on stop.\n\nDEL: back";
     }
 
 private:
@@ -36,4 +36,5 @@ private:
     uint8_t _logCount = 0;
     size_t _apSelected = 0;
     size_t _clientSelected = 0;
+    bool _showDetail = false;
 };

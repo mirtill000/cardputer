@@ -18,6 +18,10 @@ public:
     void onScanEvent(const ScanNotification& ev) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* helpText() const override {
+        return "SERVICE AUDIT\n\nAnon-access + default-creds\ncheck across this host's\nservices (FTP/SMB/DB/HTTP).\nY: authorize (first time)\nENTER: start   DEL: back";
+    }
+
 private:
     void drawFindings(M5Canvas& gfx, int16_t top);
     void beginAudit();

@@ -15,6 +15,10 @@ public:
     void onScanEvent(const ScanNotification& ev) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* helpText() const override {
+        return "AUTO ASSESS\n\nOne button: discovery -> port\nscan -> HTML report. Credential\naudit is NOT included.\nENTER: start/stop\nDEL: back (keeps running)";
+    }
+
 private:
     static constexpr uint8_t kLogLines = 5;
 

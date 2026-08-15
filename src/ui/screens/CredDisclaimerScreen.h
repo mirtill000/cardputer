@@ -19,6 +19,10 @@ public:
     void onKey(UiKey key, char ch) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* helpText() const override {
+        return "AUTHORIZATION REQUIRED\n\nCredential audit attempts real\nlogins against this host.\nY: I'm authorized, proceed\nDEL: cancel";
+    }
+
 private:
     IPAddress _pendingTarget;
 };

@@ -39,12 +39,17 @@
 // "private" esp_private/wifi.h on others (still exported, just not
 // advertised as public API). See the __has_include guard in the .cpp.
 // Shares ArpSpoofManager's promiscuous-capture machinery/uncertainty
-// (see its header) for the handshake-capture side, but is meaningfully
-// SAFER on the parsing front: this class never parses captured frame
-// contents at all, just writes their raw bytes into a pcap file
-// verbatim — the one piece of format here that has to be exactly right
-// is the pcap file layout itself, a small, fixed, unambiguous byte
-// layout, not 802.11/IP/TCP semantics.
+// (see its header) for the handshake-capture side.
+//
+// Since Fase 36, each captured frame is also run through
+// net/EapolWire.h's structural classifier, purely to say "this capture
+// looks like it has a usable handshake" (Message 1 AND Message 2 both
+// seen — the minimum pair an offline dictionary attack needs) right on
+// the device. This still never reads the nonce/MIC bytes those messages
+// carry, and never attempts to derive, guess, or verify a passphrase
+// from anything captured — the one piece of format that has to be
+// exactly right for cracking to even be POSSIBLE later is the pcap file
+// layout itself, still written verbatim, unparsed, exactly as before.
 class DeauthManager {
 public:
     void begin(QueueHandle_t outQueue);
@@ -59,6 +64,17 @@ public:
     uint32_t framesSent() const { return _framesSent; }
     uint32_t capturedPackets() const { return _captured; }
     String pcapPath() const { return _pcapPath; }
+
+    // Structural EAPOL read-out for the capture just finished (or in
+    // progress) - see net/EapolWire.h. handshakeLikelyCaptured() is the
+    // headline verdict: at least one Message 1 AND one Message 2 were
+    // both seen, the minimum pair hashcat/aircrack need to attempt an
+    // offline dictionary attack later.
+    bool handshakeLikelyCaptured() const { return _m1Count > 0 && _m2Count > 0; }
+    uint32_t message1Count() const { return _m1Count; }
+    uint32_t message2Count() const { return _m2Count; }
+    uint32_t message3Count() const { return _m3Count; }
+    uint32_t message4Count() const { return _m4Count; }
 
 private:
     static constexpr uint8_t kDeauthBurst = 4;           // 2 each direction — see class comment
@@ -87,6 +103,10 @@ private:
     uint8_t _channel = 1;
     std::atomic<uint32_t> _framesSent{0};
     std::atomic<uint32_t> _captured{0};
+    std::atomic<uint32_t> _m1Count{0};
+    std::atomic<uint32_t> _m2Count{0};
+    std::atomic<uint32_t> _m3Count{0};
+    std::atomic<uint32_t> _m4Count{0};
     String _pcapPath;
 };
 

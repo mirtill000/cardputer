@@ -91,4 +91,6 @@ void PassiveHostScreen::drawHosts(M5Canvas& gfx, int16_t top) {
         gfx.setCursor(210, y);
         gfx.print((unsigned)o.frames);
     }
+
+    chrome::drawScrollMarkers(gfx, top + 2, top + 2 + (int16_t)kMaxRows * kRowH, first > 0, (first + kMaxRows) < count);
 }

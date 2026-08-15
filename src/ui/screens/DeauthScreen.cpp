@@ -117,6 +117,10 @@ void DeauthScreen::draw(M5Canvas& gfx) {
             gfx.print((unsigned)g_deauthManager.framesSent());
             gfx.print(" captured:");
             gfx.print((unsigned)g_deauthManager.capturedPackets());
+            if (g_deauthManager.handshakeLikelyCaptured()) {
+                gfx.setTextColor(theme::GREEN, theme::BG);
+                gfx.print(" OK!");
+            }
 
             gfx.setTextColor(theme::GREY, theme::BG);
             gfx.drawFastHLine(4, 54, gfx.width() - 8, theme::GREY);
@@ -136,10 +140,12 @@ void DeauthScreen::draw(M5Canvas& gfx) {
         }
 
         case State::Done: {
-            gfx.setTextColor(theme::MAGENTA, theme::BG);
+            bool likely = g_deauthManager.handshakeLikelyCaptured();
+            gfx.setTextColor(likely ? theme::GREEN : theme::AMBER, theme::BG);
             gfx.setCursor(6, 44);
-            gfx.print("capture finished");
-            gfx.setTextColor(theme::GREEN, theme::BG);
+            gfx.print(likely ? "handshake likely captured!" : "no full handshake seen");
+
+            gfx.setTextColor(theme::GREY, theme::BG);
             gfx.setCursor(6, 56);
             gfx.print(String((unsigned)g_deauthManager.capturedPackets()) + " packets saved to:");
             gfx.setCursor(6, 66);
@@ -149,7 +155,7 @@ void DeauthScreen::draw(M5Canvas& gfx) {
 
             gfx.setTextColor(theme::GREY, theme::BG);
             gfx.setCursor(6, 80);
-            gfx.print("analyze offline (Wireshark/hashcat)");
+            gfx.print(likely ? "verify offline: hashcat -m 22000" : "client may not have reconnected");
 
             gfx.setCursor(4, gfx.height() - 9);
             gfx.print("ENTER/DEL:back");

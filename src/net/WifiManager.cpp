@@ -170,6 +170,7 @@ bool WifiManager::connectFailed() const {
 }
 
 String WifiManager::currentSsid() const { return WiFi.SSID(); }
+uint8_t WifiManager::currentChannel() const { return isConnected() ? (uint8_t)WiFi.channel() : 0; }
 IPAddress WifiManager::localIP() const { return WiFi.localIP(); }
 IPAddress WifiManager::subnetMask() const { return WiFi.subnetMask(); }
 IPAddress WifiManager::gatewayIP() const { return WiFi.gatewayIP(); }

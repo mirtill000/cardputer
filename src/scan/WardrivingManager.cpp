@@ -46,6 +46,25 @@ const char* encryptionName(wifi_auth_mode_t enc) {
     }
 }
 
+// Coarse relative-strength ranking for the evil-twin heuristic below -
+// deliberately NOT a fine-grained comparison of every wifi_auth_mode_t
+// value, just enough to tell "meaningfully weaker/stronger" from
+// "practically the same". WPA2_PSK and WPA_WPA2_PSK (mixed mode, very
+// common on real routers) land in the same tier on purpose: that
+// difference is normal AP configuration, not a downgrade attack, and
+// treating it as one was the biggest false-positive source in the
+// previous (any-enum-mismatch) version of this heuristic.
+int securityTier(wifi_auth_mode_t enc) {
+    switch (enc) {
+        case WIFI_AUTH_OPEN: return 0;
+        case WIFI_AUTH_WEP: return 1;
+        case WIFI_AUTH_WPA3_PSK:
+        case WIFI_AUTH_WPA2_WPA3_PSK: return 3;
+        case WIFI_AUTH_WPA2_ENTERPRISE: return 4;  // real per-user creds, not a static PSK - hardest to clone convincingly
+        default: return 2;                          // WPA/WPA2/mixed-PSK
+    }
+}
+
 // Mutates a local copy (doubling embedded quotes per RFC 4180) and
 // wraps in quotes only when actually needed - same approach as
 // ResultStore's csvAppendEscaped, duplicated locally rather than
@@ -165,20 +184,62 @@ void WardrivingManager::runScanCycle() {
                 if (parseMac(r.bssid, macBytes)) g_ouiDb.lookup(macBytes, rec.vendor);
 
                 // Evil-twin heuristic: another already-known sighting
-                // with the SAME SSID but a DIFFERENT encryption level -
-                // flag both, since which one (if either) is the
-                // impostor can't be told from this alone (see the class
-                // comment / ApSighting::suspicious). Skipped for hidden
-                // SSIDs - "<hidden>" isn't a real name to compare.
+                // with the SAME SSID but a DIFFERENT BSSID, and either a
+                // meaningfully different security tier OR a different
+                // (and known on both sides) OUI vendor - flag both,
+                // since which one (if either) is the impostor can't be
+                // told from this alone (see the class comment /
+                // ApSighting::suspicious). Skipped for hidden SSIDs -
+                // "<hidden>" isn't a real name to compare.
+                //
+                // Two signals instead of the original single "any
+                // encryption enum mismatch" check:
+                //  - security TIER differs (see securityTier() above) -
+                //    catches the classic downgrade (clone the name, drop
+                //    the password) without false-flagging WPA2 vs mixed-
+                //    mode WPA/WPA2 on the same real network.
+                //  - OUI vendor differs, tier being equal - catches an
+                //    attacker who matches the encryption exactly (easy:
+                //    it's just an AP config setting) but is running
+                //    different hardware than the real AP(s), which a
+                //    from-scratch rogue AP (a laptop, an ESP32, a Pi)
+                //    essentially always is. Only compared when BOTH
+                //    vendors resolved to something (empty OUI lookups
+                //    are common and not informative on their own -
+                //    flagging on "unknown vendor" alone would be noise,
+                //    not signal).
+                // Channel is deliberately NOT part of this check: a
+                // legitimate multi-AP/mesh deployment spans several
+                // channels by design, and there's no real-hardware
+                // capture available in this project's dev environment
+                // to validate a channel-based rule against - see README.
                 if (!isHidden) {
                     for (auto& s : _sightings) {
-                        if (s.ssid == rec.ssid && s.encryption != rec.encryption) {
-                            s.suspicious = true;
-                            s.suspiciousNote = "SSID also seen with different encryption (possible evil twin)";
-                            rec.suspicious = true;
-                            rec.suspiciousNote = s.suspiciousNote;
-                            break;
+                        if (s.ssid != rec.ssid) continue;
+
+                        int tierExisting = securityTier(s.encryption);
+                        int tierNew = securityTier(rec.encryption);
+                        bool vendorsKnown = s.vendor.length() > 0 && rec.vendor.length() > 0;
+                        bool vendorMismatch = vendorsKnown && s.vendor != rec.vendor;
+
+                        String note;
+                        if (tierNew < tierExisting) {
+                            note = "SSID also seen with stronger encryption on " + s.bssid +
+                                   " (possible evil twin - downgrade)";
+                        } else if (tierNew > tierExisting) {
+                            note = "SSID also seen with weaker encryption on " + s.bssid + " (possible evil twin)";
+                        } else if (vendorMismatch) {
+                            note = "SSID also broadcast by " + s.bssid + " (" + s.vendor +
+                                   " vs this AP's " + rec.vendor + ") - possible evil twin";
+                        } else {
+                            continue;  // same tier, same/unknown vendor - most likely a legitimate multi-AP/mesh setup
                         }
+
+                        s.suspicious = true;
+                        s.suspiciousNote = note;
+                        rec.suspicious = true;
+                        rec.suspiciousNote = note;
+                        break;
                     }
                 }
 

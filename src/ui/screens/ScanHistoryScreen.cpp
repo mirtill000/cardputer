@@ -137,6 +137,8 @@ void ScanHistoryScreen::drawList(M5Canvas& gfx, int16_t top) {
             gfx.print("latest");
         }
     }
+
+    chrome::drawScrollMarkers(gfx, top, top + kMaxRows * kRowH, first > 0, first + (size_t)kMaxRows < _entries.size());
 }
 
 void ScanHistoryScreen::drawDetail(M5Canvas& gfx, int16_t top) {
@@ -199,4 +201,7 @@ void ScanHistoryScreen::drawDetail(M5Canvas& gfx, int16_t top) {
         gfx.setCursor(kColVendor, y + 1);
         gfx.print(vendor);
     }
+
+    chrome::drawScrollMarkers(gfx, rowsTop, rowsTop + kMaxRows * kRowH, first > 0,
+                               first + (size_t)kMaxRows < _detailHosts.size());
 }

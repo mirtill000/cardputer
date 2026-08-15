@@ -51,11 +51,14 @@ public:
         bool discovered = false;   // true once an allow-listed open AP has had discovery run against it this session
 
         // Possible evil twin: another sighting exists with the SAME
-        // SSID but a DIFFERENT BSSID *and* a different encryption
-        // level - the classic "clone a real network's name but drop
-        // the password" attack. Deliberately not asserting which of
-        // the two (if either) is the impostor - see WardrivingManager
-        // for why order alone can't tell that apart.
+        // SSID but a DIFFERENT BSSID, and either a meaningfully weaker/
+        // stronger encryption tier or a different (known-on-both-sides)
+        // OUI vendor - the classic "clone a real network's name" attack,
+        // caught whether the clone matches the encryption or not. See
+        // WardrivingManager::runScanCycle for the exact rule (and why
+        // channel is deliberately not part of it). Deliberately not
+        // asserting which of the two (if either) is the impostor -
+        // order alone can't tell that apart.
         bool suspicious = false;
         String suspiciousNote;
     };

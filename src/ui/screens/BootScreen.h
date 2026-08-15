@@ -15,6 +15,10 @@ public:
     void update(uint32_t nowMs) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* helpText() const override {
+        return "CARDPUTER NETAUDIT\n\nBoot sequence.\nENTER: skip to main menu\n(once the boot log finishes)";
+    }
+
 private:
     uint32_t _enterMs = 0;
     uint8_t _linesShown = 0;

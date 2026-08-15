@@ -17,19 +17,34 @@ void DataStoreScreen::onScanEvent(const ScanNotification& ev) {
     (void)ev;  // list pulled live from the probe each draw
 }
 
-void DataStoreScreen::onKey(UiKey key, char /*ch*/) {
+void DataStoreScreen::onKey(UiKey key, char ch) {
+    if (_showDetail) {
+        _showDetail = false;
+        return;
+    }
     if (key == UiKey::Enter) {
         if (!g_dataStoreProbe.isRunning()) g_dataStoreProbe.start();
     } else if (key == UiKey::Up) {
         if (_selected > 0) _selected--;
     } else if (key == UiKey::Down) {
         if (_selected + 1 < g_dataStoreProbe.count()) _selected++;
+    } else if (key == UiKey::Char && (ch == 'i' || ch == 'I')) {
+        if (g_dataStoreProbe.count() > 0) _showDetail = true;
     } else if (key == UiKey::Back) {
         g_ui.popScreen();
     }
 }
 
 void DataStoreScreen::draw(M5Canvas& gfx) {
+    if (_showDetail) {
+        DataStoreProbe::Finding f;
+        if (g_dataStoreProbe.get(_selected, f)) {
+            String text = f.store + " @ " + f.ip.toString() + (f.noAuth ? " (NO-AUTH): " : ": ") + f.detail;
+            chrome::drawDetailOverlay(gfx, "DATASTORE FINDING", text);
+        }
+        return;
+    }
+
     gfx.fillScreen(theme::BG);
     chrome::drawHeader(gfx, "DATASTORE SWEEP");
 
@@ -56,7 +71,7 @@ void DataStoreScreen::draw(M5Canvas& gfx) {
 
     gfx.setTextColor(theme::GREY, theme::BG);
     gfx.setCursor(4, gfx.height() - 9);
-    gfx.print("DEL:back  (needs NETWORK SCAN first)");
+    gfx.print(g_dataStoreProbe.count() > 0 ? "I:full detail  DEL:back" : "DEL:back  (needs NETWORK SCAN first)");
 }
 
 void DataStoreScreen::drawFindings(M5Canvas& gfx, int16_t top) {
@@ -95,4 +110,7 @@ void DataStoreScreen::drawFindings(M5Canvas& gfx, int16_t top) {
         if (d.length() > 38) d = d.substring(0, 38);
         gfx.print(d);
     }
+
+    chrome::drawScrollMarkers(gfx, top + 2, top + 2 + (int16_t)kMaxRows * (kRowH * 2), first > 0,
+                               (first + kMaxRows) < count);
 }

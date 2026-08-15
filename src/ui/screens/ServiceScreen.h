@@ -14,8 +14,13 @@ public:
     void onScanEvent(const ScanNotification& ev) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* helpText() const override {
+        return "SERVICE SCAN\n\nBrowses mDNS/DNS-SD for\nservice instances on the LAN\n(type/instance/port).\nENTER: browse   I: full detail\nArrows: move   DEL: back";
+    }
+
 private:
     void drawServices(M5Canvas& gfx, int16_t top);
 
     size_t _selected = 0;
+    bool _showDetail = false;
 };

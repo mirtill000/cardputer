@@ -18,6 +18,10 @@ public:
     void onScanEvent(const ScanNotification& ev) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* helpText() const override {
+        return "WAR DRIVING\n\nENTER: start/stop passive scan\nA: allowlist   TAB: locate\nI: full SSID   C: join open\nE/X/P: evil twin/deauth/pmkid\nS: PMKID sweep (all non-open\n  sightings, not just this one)\n  (offensive gate applies)\nDEL: back (keeps running)";
+    }
+
 private:
     enum class State { Idle, Running, AllowlistView, AllowlistAddEntry, AllowlistAddConfirm };
 
@@ -35,4 +39,5 @@ private:
     size_t _sightingsSelected = 0;
     String _newSsid;
     uint32_t _recordStartMs = 0;  // when the current recording session began (for the TIME readout)
+    bool _showDetail = false;     // 'I' shows the selected sighting's full SSID, untruncated
 };

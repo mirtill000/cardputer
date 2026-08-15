@@ -18,6 +18,10 @@ public:
     void onScanEvent(const ScanNotification& ev) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* helpText() const override {
+        return "ROGUE DHCP\n\nWatches for DHCP servers on\nthe wire; red = IP differs\nfrom your own gateway.\nENTER: start/stop\nArrows: move   DEL: back";
+    }
+
 private:
     void drawSightings(M5Canvas& gfx, int16_t top);
 

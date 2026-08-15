@@ -19,6 +19,10 @@ public:
     void update(uint32_t nowMs) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* helpText() const override {
+        return "JOIN OPEN NET\n\nJoins this open network (no\npassword) and checks for a\ncaptive portal - never tries\nto bypass one.\nY: confirm join\nDEL: cancel / back";
+    }
+
 private:
     enum class State : uint8_t { Confirm, Connecting, Detecting, Done, Failed };
 

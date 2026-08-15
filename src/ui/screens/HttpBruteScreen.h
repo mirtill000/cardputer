@@ -16,6 +16,10 @@ public:
     void onScanEvent(const ScanNotification& ev) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* helpText() const override {
+        return "HTTP PATH BRUTE\n\ndirb-style path enumeration\nagainst this host's HTTP port.\nENTER: start\nDEL: back (keeps running)";
+    }
+
 private:
     static constexpr uint8_t kLogLines = 6;
 

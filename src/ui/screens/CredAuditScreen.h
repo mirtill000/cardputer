@@ -21,6 +21,10 @@ public:
     void onScanEvent(const ScanNotification& ev) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* helpText() const override {
+        return "CREDENTIAL GUESS\n\nBrute-forces default/wordlist\ncredentials against this host\n(HTTP/FTP/Telnet).\nENTER: start\nDEL: back (keeps running)";
+    }
+
 private:
     static constexpr uint8_t kLogLines = 5;
 

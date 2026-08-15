@@ -47,6 +47,8 @@ const char* phaseLabel(DiscoveryRunner::Phase p) {
         case DiscoveryRunner::Phase::Services: return "MDNS SERVICES";
         case DiscoveryRunner::Phase::Snmp: return "SNMP SWEEP";
         case DiscoveryRunner::Phase::DataStore: return "DATASTORE";
+        case DiscoveryRunner::Phase::Ldap: return "LDAP SWEEP";
+        case DiscoveryRunner::Phase::NtlmHttp: return "NTLM DISCLOSURE";
         case DiscoveryRunner::Phase::LanTopology: return "LAN TOPOLOGY";
         case DiscoveryRunner::Phase::PassiveHosts: return "PASSIVE HOSTS";
         case DiscoveryRunner::Phase::RogueDhcp: return "ROGUE DHCP";

@@ -50,6 +50,62 @@ bool hasVendorWpaIe(const uint8_t* p, uint16_t len, uint16_t start) {
     return false;
 }
 
+// Same vendor-specific IE (tag 221), same Microsoft/WFA OUI (00:50:F2),
+// but sub-type 4: the WPS (Wi-Fi Simple Config) attribute list. Detection
+// only - this firmware never implements WPS registration or attempts a
+// PIN against anything found here (Reaver/pixie-dust-style attacks are
+// out of scope, same "detect, don't attack an unverified protocol"
+// stance as the SSH/NTLM-relay exclusions elsewhere - see README).
+// Returns the offset/length of the attribute list AFTER the 4-byte
+// OUI+type header, ready for parseWpsAttributes() below.
+bool findWpsIe(const uint8_t* p, uint16_t len, uint16_t start, uint16_t& valOff, uint8_t& valLen) {
+    uint32_t pos = start;
+    while (pos + 2 <= len) {
+        uint8_t tag = p[pos];
+        uint8_t l = p[pos + 1];
+        if (pos + 2 + l > len) return false;
+        if (tag == 221 && l >= 4) {
+            const uint8_t* v = p + pos + 2;
+            if (v[0] == 0x00 && v[1] == 0x50 && v[2] == 0xF2 && v[3] == 0x04) {
+                valOff = (uint16_t)(pos + 2 + 4);
+                valLen = (uint8_t)(l - 4);
+                return true;
+            }
+        }
+        pos += 2 + l;
+    }
+    return false;
+}
+
+// Walks the WSC (Wi-Fi Simple Config) attribute TLVs inside a WPS IE's
+// payload (see findWpsIe): each is a 2-byte BIG-ENDIAN Attribute ID + a
+// 2-byte BIG-ENDIAN Length + that many value bytes (opposite byte order
+// from the 802.11 tagged-parameter IEs everything else here reads -
+// WSC attributes come from the separate Wi-Fi Alliance WSC spec, not
+// 802.11 itself). Only pulls the two attributes this firmware actually
+// surfaces: AP Setup Locked (0x1057, 1 byte - set once too many wrong
+// PINs have been tried, a sign someone already attempted a PIN attack
+// here) and Config Methods (0x1008, 2 bytes - which setup methods the
+// AP advertises, e.g. push-button vs. PIN-capable). Fails closed on
+// anything short/malformed, same convention as findIe. Doesn't handle
+// WPS IEs fragmented across multiple tag-221 elements (rare in
+// practice for a beacon's worth of attributes - the ones checked here
+// appear early in a typical real-world WPS IE).
+void parseWpsAttributes(const uint8_t* p, uint16_t len, bool& locked, uint16_t& configMethods) {
+    uint16_t pos = 0;
+    while (pos + 4 <= len) {
+        uint16_t id = ((uint16_t)p[pos] << 8) | p[pos + 1];
+        uint16_t l = ((uint16_t)p[pos + 2] << 8) | p[pos + 3];
+        if ((uint32_t)pos + 4 + l > len) return;  // malformed - stop rather than read past the IE
+        if (id == 0x1057 && l >= 1) {
+            locked = p[pos + 4] != 0;
+        } else if (id == 0x1008 && l >= 2) {
+            configMethods = ((uint16_t)p[pos + 4] << 8) | p[pos + 5];
+        }
+        pos += 4 + l;
+    }
+}
+
 // Best-effort printable-ASCII decode of an SSID element's raw bytes — an
 // SSID is technically an arbitrary byte string, not guaranteed text, so
 // non-printable bytes are shown as '?' rather than risking control
@@ -185,7 +241,17 @@ void BeaconProbeSniffer::handleApFrame(const uint8_t bssid[6], uint16_t bodyStar
         enc = hasRsn ? WIFI_AUTH_WPA2_PSK : (hasVendorWpaIe(p, len, bodyStart) ? WIFI_AUTH_WPA_PSK : WIFI_AUTH_WEP);
     }
 
-    updateAp(bssid, ssid, hasSsid, channel, enc, rssi);
+    bool wpsEnabled = false;
+    bool wpsLocked = false;
+    uint16_t wpsConfigMethods = 0;
+    uint16_t wpsOff;
+    uint8_t wpsLen;
+    if (findWpsIe(p, len, bodyStart, wpsOff, wpsLen)) {
+        wpsEnabled = true;
+        parseWpsAttributes(p + wpsOff, wpsLen, wpsLocked, wpsConfigMethods);
+    }
+
+    updateAp(bssid, ssid, hasSsid, channel, enc, rssi, wpsEnabled, wpsLocked, wpsConfigMethods);
 }
 
 void BeaconProbeSniffer::handleProbeRequest(const uint8_t clientMac[6], uint16_t bodyStart, const uint8_t* p,
@@ -205,11 +271,13 @@ void BeaconProbeSniffer::handleProbeRequest(const uint8_t clientMac[6], uint16_t
 }
 
 void BeaconProbeSniffer::updateAp(const uint8_t bssid[6], const String& ssid, bool hasSsid, uint8_t channel,
-                                   wifi_auth_mode_t enc, int8_t rssi) {
+                                   wifi_auth_mode_t enc, int8_t rssi, bool wpsEnabled, bool wpsLocked,
+                                   uint16_t wpsConfigMethods) {
     String bssidStr = macToString(bssid);
 
     bool isNewAp = false;
     bool revealedNow = false;
+    bool wpsNewlySeen = false;
     ApBeacon rec;
 
     if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
@@ -227,6 +295,10 @@ void BeaconProbeSniffer::updateAp(const uint8_t bssid[6], const String& ssid, bo
             existing->rssi = rssi;
             existing->channel = channel;
             existing->encryption = enc;
+            if (wpsEnabled && !existing->wpsEnabled) wpsNewlySeen = true;
+            existing->wpsEnabled = wpsEnabled;
+            existing->wpsLocked = wpsLocked;
+            existing->wpsConfigMethods = wpsConfigMethods;
             if (hasSsid) {
                 if (existing->hidden && existing->ssid.isEmpty()) {
                     existing->hiddenRevealed = true;
@@ -245,18 +317,22 @@ void BeaconProbeSniffer::updateAp(const uint8_t bssid[6], const String& ssid, bo
             rec.channel = channel;
             rec.encryption = enc;
             rec.rssi = rssi;
+            rec.wpsEnabled = wpsEnabled;
+            rec.wpsLocked = wpsLocked;
+            rec.wpsConfigMethods = wpsConfigMethods;
             rec.firstSeenMs = millis();
             rec.lastSeenMs = rec.firstSeenMs;
             rec.beaconCount = 1;
             g_ouiDb.lookup(bssid, rec.vendor);
             _aps.push_back(rec);
-            isNewAp = true;
+            isNewAp = true;  // covers WPS too - "AP: ..." below is the only notify a brand-new AP needs
         }
         xSemaphoreGive(_mutex);
     }
 
     if (isNewAp) notify(String("AP: ") + (rec.hidden ? String("<hidden>") : rec.ssid) + " " + bssidStr);
     if (revealedNow) notify("hidden SSID revealed: " + rec.ssid + " (" + bssidStr + ")");
+    if (!isNewAp && wpsNewlySeen) notify("WPS enabled: " + (rec.hidden ? String("<hidden>") : rec.ssid) + " " + bssidStr);
 }
 
 void BeaconProbeSniffer::updateClient(const uint8_t mac[6], const String& probedSsid, bool hasSsid, int8_t rssi) {

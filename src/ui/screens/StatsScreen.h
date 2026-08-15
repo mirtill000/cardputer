@@ -16,6 +16,10 @@ public:
     void onKey(UiKey key, char ch) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* helpText() const override {
+        return "STATS\n\nHost-count trend across your\nlast scans of this network.\nRed bar = a critical host was\nfound that scan.\nDEL: back";
+    }
+
 private:
     void drawChart(M5Canvas& gfx, int16_t top, int16_t bottom);
 

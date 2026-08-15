@@ -5,6 +5,8 @@
 #include "../../core/Types.h"
 #include "../../scan/ScanManager.h"
 #include "../../scan/RogueDhcpDetector.h"
+#include "../../scan/BeaconProbeSniffer.h"
+#include "../../scan/DeauthWatcher.h"
 #include <vector>
 
 ThreatsScreen& ThreatsScreen::instance() {
@@ -16,11 +18,17 @@ void ThreatsScreen::onEnter() {
     _selected = 0;
 }
 
-void ThreatsScreen::onKey(UiKey key, char /*ch*/) {
+void ThreatsScreen::onKey(UiKey key, char ch) {
+    if (_showDetail) {
+        _showDetail = false;
+        return;
+    }
     if (key == UiKey::Up) {
         if (_selected > 0) _selected--;
     } else if (key == UiKey::Down) {
         _selected++;  // clamped against the live count in draw()
+    } else if (key == UiKey::Char && (ch == 'i' || ch == 'I')) {
+        _showDetail = true;  // draw() no-ops it if there's nothing at _selected
     } else if (key == UiKey::Back) {
         g_ui.popScreen();
     }
@@ -70,17 +78,46 @@ void collectFindings(std::vector<Finding>& out) {
             out.push_back({s.serverIp.toString() + " rogue DHCP?", theme::RED});
         }
     }
+
+    // WPS still accepting PIN attempts (enabled, not locked) - a real
+    // exposure (Reaver/pixie-dust-style attacks target exactly this),
+    // surfaced here even though BEACON/PROBE INTEL has to have been run
+    // at least once this session to have seen it at all.
+    size_t apCount = g_beaconProbeSniffer.apCount();
+    BeaconProbeSniffer::ApBeacon ap;
+    for (size_t i = 0; i < apCount && out.size() < kMax; i++) {
+        if (g_beaconProbeSniffer.getAp(i, ap) && ap.wpsEnabled && !ap.wpsLocked) {
+            out.push_back({(ap.hidden ? String("<hidden>") : ap.ssid) + " WPS unlocked", theme::AMBER});
+        }
+    }
+
+    // Deauth/disassoc flood in progress against a BSSID - GUARD MODE has
+    // to be (or have been) running to catch this; see scan/DeauthWatcher.h.
+    size_t incCount = g_deauthWatcher.incidentCount();
+    DeauthWatcher::Incident inc;
+    for (size_t i = 0; i < incCount && out.size() < kMax; i++) {
+        if (g_deauthWatcher.getIncident(i, inc) && inc.flooding) {
+            out.push_back({inc.bssid + " deauth flood", theme::RED});
+        }
+    }
 }
 }  // namespace
 
 void ThreatsScreen::draw(M5Canvas& gfx) {
-    gfx.fillScreen(theme::BG);
-    chrome::drawHeader(gfx, "THREATS");
-
     std::vector<Finding> findings;
     collectFindings(findings);
 
     if (_selected >= findings.size()) _selected = findings.empty() ? 0 : findings.size() - 1;
+
+    if (_showDetail) {
+        if (_selected < findings.size()) {
+            chrome::drawDetailOverlay(gfx, "THREAT FINDING", findings[_selected].text);
+        }
+        return;
+    }
+
+    gfx.fillScreen(theme::BG);
+    chrome::drawHeader(gfx, "THREATS");
 
     gfx.setTextColor(findings.empty() ? theme::GREEN : theme::RED, theme::BG);
     gfx.setCursor(6, 18);
@@ -118,9 +155,12 @@ void ThreatsScreen::draw(M5Canvas& gfx) {
             if (t.length() > 38) t = t.substring(0, 38);
             gfx.print(t);
         }
+
+        chrome::drawScrollMarkers(gfx, top + 3, top + 3 + (int16_t)kMaxRows * kRowH, first > 0,
+                                   (first + kMaxRows) < findings.size());
     }
 
     gfx.setTextColor(theme::GREY, theme::BG);
     gfx.setCursor(4, gfx.height() - 9);
-    gfx.print("DEL:back  (red=critical amber=warn)");
+    gfx.print(findings.empty() ? "DEL:back" : "I:full text  DEL:back");
 }
