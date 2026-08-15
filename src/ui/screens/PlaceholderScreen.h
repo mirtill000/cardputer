@@ -13,6 +13,10 @@ public:
     void onKey(UiKey key, char ch) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* helpText() const override {
+        return "NOT YET IMPLEMENTED\n\nThis tool's real module lands\nin a later development phase.\nDEL/ENTER: back";
+    }
+
 private:
     const char* _title = "";
     const char* _description = "";

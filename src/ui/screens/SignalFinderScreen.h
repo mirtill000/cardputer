@@ -26,6 +26,10 @@ public:
     void onKey(UiKey key, char ch) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* helpText() const override {
+        return "SIGNAL FINDER\n\nLive RSSI meter for this AP -\nwalk around and watch the bar\nto physically locate it.\nDEL: back";
+    }
+
 private:
     String _ssid;
     String _bssid;

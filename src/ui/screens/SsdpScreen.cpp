@@ -17,19 +17,36 @@ void SsdpScreen::onScanEvent(const ScanNotification& ev) {
     (void)ev;  // just triggers a redraw via the normal event->draw cycle - no per-line log needed here
 }
 
-void SsdpScreen::onKey(UiKey key, char /*ch*/) {
+void SsdpScreen::onKey(UiKey key, char ch) {
+    if (_showDetail) {
+        _showDetail = false;
+        return;
+    }
     if (key == UiKey::Enter) {
         if (!g_ssdpDiscovery.isRunning()) g_ssdpDiscovery.start();
     } else if (key == UiKey::Up) {
         if (_selected > 0) _selected--;
     } else if (key == UiKey::Down) {
         if (_selected + 1 < g_ssdpDiscovery.deviceCount()) _selected++;
+    } else if (key == UiKey::Char && (ch == 'i' || ch == 'I')) {
+        if (g_ssdpDiscovery.deviceCount() > 0) _showDetail = true;
     } else if (key == UiKey::Back) {
         g_ui.popScreen();
     }
 }
 
 void SsdpScreen::draw(M5Canvas& gfx) {
+    if (_showDetail) {
+        SsdpDiscovery::Device d;
+        if (g_ssdpDiscovery.getDevice(_selected, d)) {
+            String text = "SERVER: " + (d.server.length() ? d.server : String("-")) + " / LOCATION: " +
+                          (d.location.length() ? d.location : String("-")) + " / USN: " +
+                          (d.usn.length() ? d.usn : String("-"));
+            chrome::drawDetailOverlay(gfx, d.fromIp.toString().c_str(), text);
+        }
+        return;
+    }
+
     gfx.fillScreen(theme::BG);
     chrome::drawHeader(gfx, "UPNP DISCOVERY");
 
@@ -48,7 +65,7 @@ void SsdpScreen::draw(M5Canvas& gfx) {
 
     gfx.setTextColor(theme::GREY, theme::BG);
     gfx.setCursor(4, gfx.height() - 9);
-    gfx.print("DEL:back");
+    gfx.print(g_ssdpDiscovery.deviceCount() > 0 ? "I:full detail  DEL:back" : "DEL:back");
 }
 
 void SsdpScreen::drawDevices(M5Canvas& gfx, int16_t top) {
@@ -89,4 +106,7 @@ void SsdpScreen::drawDevices(M5Canvas& gfx, int16_t top) {
         if (usn.length() > 37) usn = usn.substring(0, 37);
         gfx.print(usn);
     }
+
+    chrome::drawScrollMarkers(gfx, top + 2, top + 2 + (int16_t)kMaxRows * (kRowH * 2), first > 0,
+                               (first + kMaxRows) < count);
 }

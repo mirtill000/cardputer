@@ -28,7 +28,16 @@ void BeaconProbeScreen::onScanEvent(const ScanNotification& ev) {
     if (ev.type == ScanEventType::LogLine) pushLog(String(ev.text));
 }
 
-void BeaconProbeScreen::onKey(UiKey key, char /*ch*/) {
+void BeaconProbeScreen::onKey(UiKey key, char ch) {
+    if (_showDetail) {
+        _showDetail = false;
+        return;
+    }
+    if (key == UiKey::Char && (ch == 'i' || ch == 'I')) {
+        size_t count = (_view == View::Aps) ? g_beaconProbeSniffer.apCount() : g_beaconProbeSniffer.clientCount();
+        if (count > 0) _showDetail = true;
+        return;
+    }
     switch (key) {
         case UiKey::Enter:
             if (_running) {
@@ -64,6 +73,29 @@ void BeaconProbeScreen::onKey(UiKey key, char /*ch*/) {
 }
 
 void BeaconProbeScreen::draw(M5Canvas& gfx) {
+    if (_showDetail) {
+        if (_view == View::Aps) {
+            BeaconProbeSniffer::ApBeacon a;
+            if (g_beaconProbeSniffer.getAp(_apSelected, a)) {
+                String text = "SSID: " + (a.hidden ? String("<hidden>") : a.ssid) + " / BSSID: " + a.bssid +
+                              " / vendor: " + (a.vendor.length() ? a.vendor : String("unknown"));
+                chrome::drawDetailOverlay(gfx, "AP DETAIL", text);
+            }
+        } else {
+            BeaconProbeSniffer::ProbeClient c;
+            if (g_beaconProbeSniffer.getClient(_clientSelected, c)) {
+                String ssids = "-";
+                for (size_t i = 0; i < c.probedSsids.size(); i++) {
+                    ssids = (i == 0) ? c.probedSsids[i] : (ssids + ", " + c.probedSsids[i]);
+                }
+                String text = "MAC: " + c.mac + (c.macRandomized ? " (randomized)" : "") + " / vendor: " +
+                              (c.vendor.length() ? c.vendor : String("unknown")) + " / probed SSIDs: " + ssids;
+                chrome::drawDetailOverlay(gfx, "CLIENT DETAIL", text);
+            }
+        }
+        return;
+    }
+
     gfx.fillScreen(theme::BG);
     chrome::drawHeader(gfx, "BEACON/PROBE");
 
@@ -106,7 +138,7 @@ void BeaconProbeScreen::draw(M5Canvas& gfx) {
 
     gfx.setTextColor(theme::GREY, theme::BG);
     gfx.setCursor(4, gfx.height() - 9);
-    gfx.print("TAB:view  DEL:back  ?:help");
+    gfx.print("TAB:view  I:detail  DEL:back");
 }
 
 void BeaconProbeScreen::drawAps(M5Canvas& gfx, int16_t top) {
@@ -150,6 +182,8 @@ void BeaconProbeScreen::drawAps(M5Canvas& gfx, int16_t top) {
         gfx.print("ch");
         gfx.print(a.channel);
     }
+
+    chrome::drawScrollMarkers(gfx, top + 2, top + 2 + (int16_t)kMaxRows * kRowH, first > 0, (first + kMaxRows) < count);
 }
 
 void BeaconProbeScreen::drawClients(M5Canvas& gfx, int16_t top) {
@@ -193,4 +227,6 @@ void BeaconProbeScreen::drawClients(M5Canvas& gfx, int16_t top) {
             gfx.print(s);
         }
     }
+
+    chrome::drawScrollMarkers(gfx, top + 2, top + 2 + (int16_t)kMaxRows * kRowH, first > 0, (first + kMaxRows) < count);
 }

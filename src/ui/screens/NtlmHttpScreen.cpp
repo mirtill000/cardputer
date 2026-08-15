@@ -17,19 +17,38 @@ void NtlmHttpScreen::onScanEvent(const ScanNotification& ev) {
     (void)ev;  // list pulled live from the probe each draw
 }
 
-void NtlmHttpScreen::onKey(UiKey key, char /*ch*/) {
+void NtlmHttpScreen::onKey(UiKey key, char ch) {
+    if (_showDetail) {
+        _showDetail = false;
+        return;
+    }
     if (key == UiKey::Enter) {
         if (!g_ntlmHttpProbe.isRunning()) g_ntlmHttpProbe.start();
     } else if (key == UiKey::Up) {
         if (_selected > 0) _selected--;
     } else if (key == UiKey::Down) {
         if (_selected + 1 < g_ntlmHttpProbe.count()) _selected++;
+    } else if (key == UiKey::Char && (ch == 'i' || ch == 'I')) {
+        if (g_ntlmHttpProbe.count() > 0) _showDetail = true;
     } else if (key == UiKey::Back) {
         g_ui.popScreen();
     }
 }
 
 void NtlmHttpScreen::draw(M5Canvas& gfx) {
+    if (_showDetail) {
+        NtlmHttpProbe::Finding f;
+        if (g_ntlmHttpProbe.get(_selected, f)) {
+            String text = "netbiosDomain: " + (f.netbiosDomain.length() ? f.netbiosDomain : String("-")) +
+                          " / netbiosComputer: " + (f.netbiosComputer.length() ? f.netbiosComputer : String("-")) +
+                          " / dnsDomain: " + (f.dnsDomain.length() ? f.dnsDomain : String("-")) +
+                          " / dnsComputer: " + (f.dnsComputer.length() ? f.dnsComputer : String("-"));
+            String title = f.ip.toString() + ":" + String(f.port);
+            chrome::drawDetailOverlay(gfx, title.c_str(), text);
+        }
+        return;
+    }
+
     gfx.fillScreen(theme::BG);
     chrome::drawHeader(gfx, "NTLM DISCLOSURE");
 
@@ -56,7 +75,7 @@ void NtlmHttpScreen::draw(M5Canvas& gfx) {
 
     gfx.setTextColor(theme::GREY, theme::BG);
     gfx.setCursor(4, gfx.height() - 9);
-    gfx.print("DEL:back  (needs PORT SCAN first)");
+    gfx.print(g_ntlmHttpProbe.count() > 0 ? "I:full detail  DEL:back" : "DEL:back  (needs PORT SCAN first)");
 }
 
 void NtlmHttpScreen::drawFindings(M5Canvas& gfx, int16_t top) {
@@ -99,4 +118,7 @@ void NtlmHttpScreen::drawFindings(M5Canvas& gfx, int16_t top) {
         if (detail.length() > 38) detail = detail.substring(0, 38);
         gfx.print(detail);
     }
+
+    chrome::drawScrollMarkers(gfx, top + 2, top + 2 + (int16_t)kMaxRows * (kRowH * 2), first > 0,
+                               (first + kMaxRows) < count);
 }

@@ -17,19 +17,33 @@ void SnmpScreen::onScanEvent(const ScanNotification& ev) {
     (void)ev;  // list pulled live from the sweep each draw
 }
 
-void SnmpScreen::onKey(UiKey key, char /*ch*/) {
+void SnmpScreen::onKey(UiKey key, char ch) {
+    if (_showDetail) {
+        _showDetail = false;
+        return;
+    }
     if (key == UiKey::Enter) {
         if (!g_snmpSweep.isRunning()) g_snmpSweep.start();
     } else if (key == UiKey::Up) {
         if (_selected > 0) _selected--;
     } else if (key == UiKey::Down) {
         if (_selected + 1 < g_snmpSweep.count()) _selected++;
+    } else if (key == UiKey::Char && (ch == 'i' || ch == 'I')) {
+        if (g_snmpSweep.count() > 0) _showDetail = true;
     } else if (key == UiKey::Back) {
         g_ui.popScreen();
     }
 }
 
 void SnmpScreen::draw(M5Canvas& gfx) {
+    if (_showDetail) {
+        SnmpSweep::Responder r;
+        if (g_snmpSweep.get(_selected, r)) {
+            chrome::drawDetailOverlay(gfx, r.ip.toString().c_str(), r.sysDescr);
+        }
+        return;
+    }
+
     gfx.fillScreen(theme::BG);
     chrome::drawHeader(gfx, "SNMP SWEEP");
 
@@ -56,7 +70,7 @@ void SnmpScreen::draw(M5Canvas& gfx) {
 
     gfx.setTextColor(theme::GREY, theme::BG);
     gfx.setCursor(4, gfx.height() - 9);
-    gfx.print("DEL:back  (needs NETWORK SCAN first)");
+    gfx.print(g_snmpSweep.count() > 0 ? "I:full sysDescr  DEL:back" : "DEL:back  (needs NETWORK SCAN first)");
 }
 
 void SnmpScreen::drawResponders(M5Canvas& gfx, int16_t top) {
@@ -93,4 +107,7 @@ void SnmpScreen::drawResponders(M5Canvas& gfx, int16_t top) {
         if (d.length() > 38) d = d.substring(0, 38);
         gfx.print(d);
     }
+
+    chrome::drawScrollMarkers(gfx, top + 2, top + 2 + (int16_t)kMaxRows * (kRowH * 2), first > 0,
+                               (first + kMaxRows) < count);
 }

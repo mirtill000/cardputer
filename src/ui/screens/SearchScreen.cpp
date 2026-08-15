@@ -124,6 +124,8 @@ void SearchScreen::draw(M5Canvas& gfx) {
         gfx.print(label);
     }
 
+    chrome::drawScrollMarkers(gfx, 40, 40 + (int16_t)kMaxRows * kRowH, first > 0, (first + kMaxRows) < _results.size());
+
     gfx.setTextColor(theme::GREY, theme::BG);
     gfx.setCursor(4, gfx.height() - 9);
     gfx.print(_browsing ? "ENTER:open DEL:edit ?:help" : "type ENTER:browse DEL:back");

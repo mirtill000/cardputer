@@ -433,4 +433,7 @@ void WifiSetupScreen::drawNetworkList(M5Canvas& gfx, int16_t /*top*/) {
         gfx.print((unsigned)(_networks.size() - shownEnd));
         gfx.print(" more networks");
     }
+    // Only the "^" direction here - "more below" already has its own
+    // exact-count text above, more informative than the generic marker.
+    chrome::drawScrollMarkers(gfx, 27, kRowsTop, first > 0, false);
 }

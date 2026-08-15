@@ -89,4 +89,6 @@ void RogueDhcpScreen::drawSightings(M5Canvas& gfx, int16_t top) {
         gfx.print("-> ");
         gfx.print(s.offeredIp.toString());
     }
+
+    chrome::drawScrollMarkers(gfx, top + 2, top + 2 + (int16_t)kMaxRows * kRowH, first > 0, (first + kMaxRows) < count);
 }

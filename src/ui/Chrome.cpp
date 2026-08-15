@@ -2,6 +2,7 @@
 #include "Theme.h"
 #include "ActivityStatus.h"
 #include "UiManager.h"
+#include "TextWrap.h"
 #include "../net/WifiManager.h"
 #include <M5Unified.h>
 #include <cstdio>
@@ -180,6 +181,41 @@ void chrome::drawAlertHeader(M5Canvas& gfx, const char* title) {
     gfx.drawFastHLine(4, 15, gfx.width() - 8, theme::GREY);
 }
 
+void chrome::drawScrollMarkers(M5Canvas& gfx, int16_t top, int16_t bottom, bool moreAbove, bool moreBelow) {
+    // Right-margin corner markers, same position/color MainMenuScreen's
+    // own (now-shared) convention already established. setTextColor's
+    // bg arg means each glyph cell fills its own background as it
+    // prints, so this cleanly overlays whatever the list already drew
+    // underneath without needing a separate clear.
+    if (moreAbove) {
+        gfx.setTextColor(theme::CYAN, theme::BG);
+        gfx.setCursor(gfx.width() - 10, top);
+        gfx.print("^");
+    }
+    if (moreBelow) {
+        gfx.setTextColor(theme::CYAN, theme::BG);
+        gfx.setCursor(gfx.width() - 10, bottom - 8);
+        gfx.print("v");
+    }
+}
+
+void chrome::drawDetailOverlay(M5Canvas& gfx, const char* title, const String& text) {
+    gfx.fillRect(0, 0, gfx.width(), gfx.height(), theme::BG);
+    gfx.drawRect(6, 6, gfx.width() - 12, gfx.height() - 12, theme::CYAN);
+
+    gfx.setTextColor(theme::MAGENTA, theme::BG);
+    gfx.setCursor(12, 12);
+    gfx.print(">> ");
+    gfx.print(title);
+
+    gfx.setTextColor(theme::GREEN, theme::BG);
+    drawWrapped(gfx, text.c_str(), 12, 26, 10, 37);
+
+    gfx.setTextColor(theme::GREY, theme::BG);
+    gfx.setCursor(12, gfx.height() - 16);
+    gfx.print("any key: close");
+}
+
 void chrome::drawEmptyState(M5Canvas& gfx, const char* title, const char* hint) {
     gfx.setTextColor(theme::GREY, theme::BG);
     int16_t tx = (gfx.width() - (int16_t)strlen(title) * theme::GLYPH_W) / 2;
@@ -245,8 +281,8 @@ void chrome::drawHeader(M5Canvas& gfx, const char* title) {
     gfx.print(battBuf);
     gfx.print('%');
 
-    // Radio-owner indicator, right-aligned just left of the battery block
-    // (draws nothing unless a promiscuous feature is active) — see
+    // Background-activity indicator, right-aligned just left of the
+    // battery block (draws nothing when nothing is running) — see
     // ActivityStatus.h for why this lives on every screen's header.
     activity::draw(gfx, (int16_t)(x - 4), 4);
 

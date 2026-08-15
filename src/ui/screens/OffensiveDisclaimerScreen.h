@@ -23,6 +23,10 @@ public:
     void onKey(UiKey key, char ch) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* helpText() const override {
+        return "ACTIVE OFFENSIVE TOOL\n\nAffects a THIRD-PARTY device's\nconnectivity/traffic.\nType AUTHORIZED in full,\nthen ENTER to proceed.\nDEL: erase / cancel";
+    }
+
 private:
     Screen* _pendingTarget = nullptr;
     String _typed;

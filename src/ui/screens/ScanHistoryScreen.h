@@ -16,6 +16,10 @@ public:
     void onKey(UiKey key, char ch) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* helpText() const override {
+        return "SCAN HISTORY\n\nBrowse past NETWORK SCAN\nsnapshots.\nENTER: open   S: stats chart\nArrows: move   DEL: back";
+    }
+
 private:
     enum class State { List, Detail };
 

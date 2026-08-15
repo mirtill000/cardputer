@@ -16,11 +16,17 @@ void ThreatsScreen::onEnter() {
     _selected = 0;
 }
 
-void ThreatsScreen::onKey(UiKey key, char /*ch*/) {
+void ThreatsScreen::onKey(UiKey key, char ch) {
+    if (_showDetail) {
+        _showDetail = false;
+        return;
+    }
     if (key == UiKey::Up) {
         if (_selected > 0) _selected--;
     } else if (key == UiKey::Down) {
         _selected++;  // clamped against the live count in draw()
+    } else if (key == UiKey::Char && (ch == 'i' || ch == 'I')) {
+        _showDetail = true;  // draw() no-ops it if there's nothing at _selected
     } else if (key == UiKey::Back) {
         g_ui.popScreen();
     }
@@ -74,13 +80,20 @@ void collectFindings(std::vector<Finding>& out) {
 }  // namespace
 
 void ThreatsScreen::draw(M5Canvas& gfx) {
-    gfx.fillScreen(theme::BG);
-    chrome::drawHeader(gfx, "THREATS");
-
     std::vector<Finding> findings;
     collectFindings(findings);
 
     if (_selected >= findings.size()) _selected = findings.empty() ? 0 : findings.size() - 1;
+
+    if (_showDetail) {
+        if (_selected < findings.size()) {
+            chrome::drawDetailOverlay(gfx, "THREAT FINDING", findings[_selected].text);
+        }
+        return;
+    }
+
+    gfx.fillScreen(theme::BG);
+    chrome::drawHeader(gfx, "THREATS");
 
     gfx.setTextColor(findings.empty() ? theme::GREEN : theme::RED, theme::BG);
     gfx.setCursor(6, 18);
@@ -118,9 +131,12 @@ void ThreatsScreen::draw(M5Canvas& gfx) {
             if (t.length() > 38) t = t.substring(0, 38);
             gfx.print(t);
         }
+
+        chrome::drawScrollMarkers(gfx, top + 3, top + 3 + (int16_t)kMaxRows * kRowH, first > 0,
+                                   (first + kMaxRows) < findings.size());
     }
 
     gfx.setTextColor(theme::GREY, theme::BG);
     gfx.setCursor(4, gfx.height() - 9);
-    gfx.print("DEL:back  (red=critical amber=warn)");
+    gfx.print(findings.empty() ? "DEL:back" : "I:full text  DEL:back");
 }

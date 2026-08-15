@@ -83,4 +83,31 @@ void drawEmptyState(M5Canvas& gfx, const char* title, const char* hint);
 // consent screens share one definition.
 void drawAlertHeader(M5Canvas& gfx, const char* title);
 
+// --- Shared scroll-position indicator (Fase 31 UX pass) ---
+
+// Small ^/v markers in the right margin showing whether a scrolling
+// list has more rows above/below the currently-visible window — the
+// same "first/kMaxRows" windowing convention every list screen in this
+// app already uses (MainMenuScreen, HostListScreen, every DISCOVERY
+// findings screen, ...), which until now only MainMenuScreen actually
+// signaled to the user; every other screen left you guessing whether
+// scrolling further would reveal more. Call once after drawing the
+// list itself, with the list's own top/bottom y bounds (same `top`
+// passed to the list's own draw call, and either a fixed bottom or the
+// y of the last drawn row) — draws nothing in a direction with nothing
+// to indicate, so it's always safe to call unconditionally.
+void drawScrollMarkers(M5Canvas& gfx, int16_t top, int16_t bottom, bool moreAbove, bool moreBelow);
+
+// Full-screen popup showing the untruncated value for whatever row is
+// currently selected — same visual language as UiManager's own '?' help
+// overlay (dim panel, cyan border, "any key: close" hint), but owned and
+// triggered by the calling screen (a local bool toggled by 'I', not
+// global state): only the screen itself knows which row is selected and
+// what its complete, non-truncated text actually is. Standardizes on
+// 'I' ("info") as the key across every screen that wires this up, since
+// every other single letter is already spoken for by something in at
+// least one list screen (A/C/E/P/X/Tab in WAR DRIVING alone). Word-
+// wraps via the same drawWrapped() every disclaimer screen already uses.
+void drawDetailOverlay(M5Canvas& gfx, const char* title, const String& text);
+
 }  // namespace chrome

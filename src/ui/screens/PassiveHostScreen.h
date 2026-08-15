@@ -15,6 +15,10 @@ public:
     void onScanEvent(const ScanNotification& ev) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* helpText() const override {
+        return "PASSIVE HOSTS\n\nListens for traffic, no probes\nsent - hosts that never answer\nan active scan still show up.\nENTER: start/stop\nArrows: move   DEL: back";
+    }
+
 private:
     void drawHosts(M5Canvas& gfx, int16_t top);
 

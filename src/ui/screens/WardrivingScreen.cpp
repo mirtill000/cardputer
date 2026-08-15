@@ -55,9 +55,15 @@ void WardrivingScreen::onScanEvent(const ScanNotification& ev) {
 }
 
 void WardrivingScreen::onKey(UiKey key, char ch) {
+    if (_showDetail) {
+        _showDetail = false;
+        return;
+    }
     switch (_state) {
         case State::Idle:
-            if (key == UiKey::Enter) {
+            if (key == UiKey::Char && (ch == 'i' || ch == 'I')) {
+                if (g_wardrivingManager.sightingCount() > 0) _showDetail = true;
+            } else if (key == UiKey::Enter) {
                 g_wardrivingManager.start();
                 _logCount = 0;
                 _recordStartMs = millis();
@@ -130,6 +136,12 @@ void WardrivingScreen::onKey(UiKey key, char ch) {
             } else if (key == UiKey::Char && (ch == 'a' || ch == 'A')) {
                 _allowlistSelected = 0;
                 _state = State::AllowlistView;
+            } else if (key == UiKey::Char && (ch == 'i' || ch == 'I')) {
+                if (g_wardrivingManager.sightingCount() > 0) _showDetail = true;
+            } else if (key == UiKey::Up) {
+                if (_sightingsSelected > 0) _sightingsSelected--;
+            } else if (key == UiKey::Down) {
+                if (_sightingsSelected + 1 < g_wardrivingManager.sightingCount()) _sightingsSelected++;
             } else if (key == UiKey::Back) {
                 g_ui.popScreen();  // keeps running in the background - see WardrivingManager
             }
@@ -188,6 +200,17 @@ void WardrivingScreen::onKey(UiKey key, char ch) {
 }
 
 void WardrivingScreen::draw(M5Canvas& gfx) {
+    if (_showDetail) {
+        WardrivingManager::ApSighting ap;
+        if (g_wardrivingManager.getSighting(_sightingsSelected, ap)) {
+            String text = "SSID: " + ap.ssid + " / BSSID: " + ap.bssid + " / vendor: " +
+                          (ap.vendor.length() ? ap.vendor : String("unknown")) +
+                          (ap.suspiciousNote.length() ? (" / " + ap.suspiciousNote) : String(""));
+            chrome::drawDetailOverlay(gfx, "AP SIGHTING", text);
+        }
+        return;
+    }
+
     gfx.fillScreen(theme::BG);
 
     if (_state == State::AllowlistView || _state == State::AllowlistAddEntry || _state == State::AllowlistAddConfirm) {
@@ -393,4 +416,6 @@ void WardrivingScreen::drawSightings(M5Canvas& gfx, int16_t top) {
             gfx.print("!");
         }
     }
+
+    chrome::drawScrollMarkers(gfx, top + 3, top + 3 + (int16_t)kMaxRows * kRowH, first > 0, (first + kMaxRows) < count);
 }

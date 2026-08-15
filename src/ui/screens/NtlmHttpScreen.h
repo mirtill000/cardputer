@@ -15,8 +15,13 @@ public:
     void onScanEvent(const ScanNotification& ev) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* helpText() const override {
+        return "NTLM DISCLOSURE\n\nNegotiates NTLM on known HTTP\nports, reads domain/hostname\nfrom the Type 2 challenge.\nNever completes the handshake.\nENTER: sweep   I: full detail\nDEL: back";
+    }
+
 private:
     void drawFindings(M5Canvas& gfx, int16_t top);
 
     size_t _selected = 0;
+    bool _showDetail = false;  // 'I' shows the selected row's full domain/hostname text, untruncated
 };

@@ -17,19 +17,40 @@ void LdapScreen::onScanEvent(const ScanNotification& ev) {
     (void)ev;  // list pulled live from the probe each draw
 }
 
-void LdapScreen::onKey(UiKey key, char /*ch*/) {
+void LdapScreen::onKey(UiKey key, char ch) {
+    if (_showDetail) {
+        _showDetail = false;  // any key closes it, same convention as the '?' help overlay
+        return;
+    }
     if (key == UiKey::Enter) {
         if (!g_ldapProbe.isRunning()) g_ldapProbe.start();
     } else if (key == UiKey::Up) {
         if (_selected > 0) _selected--;
     } else if (key == UiKey::Down) {
         if (_selected + 1 < g_ldapProbe.count()) _selected++;
+    } else if (key == UiKey::Char && (ch == 'i' || ch == 'I')) {
+        if (g_ldapProbe.count() > 0) _showDetail = true;
     } else if (key == UiKey::Back) {
         g_ui.popScreen();
     }
 }
 
 void LdapScreen::draw(M5Canvas& gfx) {
+    if (_showDetail) {
+        LdapProbe::Finding f;
+        if (g_ldapProbe.get(_selected, f)) {
+            // drawWrapped() only breaks lines at spaces (see ui/TextWrap.h) -
+            // no embedded '\n' here, a " / " separator flows through its
+            // word-wrap the same way UiManager's own multi-field text does.
+            String text = "namingContexts: " + (f.namingContexts.length() ? f.namingContexts : String("-")) +
+                          " / defaultNamingContext: " +
+                          (f.defaultNamingContext.length() ? f.defaultNamingContext : String("-")) +
+                          " / dnsHostName: " + (f.dnsHostName.length() ? f.dnsHostName : String("-"));
+            chrome::drawDetailOverlay(gfx, f.ip.toString().c_str(), text);
+        }
+        return;
+    }
+
     gfx.fillScreen(theme::BG);
     chrome::drawHeader(gfx, "LDAP SWEEP");
 
@@ -56,7 +77,7 @@ void LdapScreen::draw(M5Canvas& gfx) {
 
     gfx.setTextColor(theme::GREY, theme::BG);
     gfx.setCursor(4, gfx.height() - 9);
-    gfx.print("DEL:back  (needs NETWORK SCAN first)");
+    gfx.print(g_ldapProbe.count() > 0 ? "I:full rootDSE  DEL:back" : "DEL:back  (needs NETWORK SCAN first)");
 }
 
 void LdapScreen::drawFindings(M5Canvas& gfx, int16_t top) {
@@ -96,4 +117,7 @@ void LdapScreen::drawFindings(M5Canvas& gfx, int16_t top) {
         if (detail.length() > 38) detail = detail.substring(0, 38);
         gfx.print(detail);
     }
+
+    chrome::drawScrollMarkers(gfx, top + 2, top + 2 + (int16_t)kMaxRows * (kRowH * 2), first > 0,
+                               (first + kMaxRows) < count);
 }

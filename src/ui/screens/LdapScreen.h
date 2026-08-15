@@ -15,8 +15,13 @@ public:
     void onScanEvent(const ScanNotification& ev) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* helpText() const override {
+        return "LDAP SWEEP\n\nAnonymous bind + rootDSE read\non port 389 for every host -\nread-only, no real credential.\nENTER: sweep   I: full rootDSE\nArrows: move   DEL: back";
+    }
+
 private:
     void drawFindings(M5Canvas& gfx, int16_t top);
 
     size_t _selected = 0;
+    bool _showDetail = false;  // 'I' shows the selected row's full rootDSE text, untruncated
 };

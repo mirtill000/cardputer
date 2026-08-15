@@ -14,8 +14,13 @@ public:
     void onScanEvent(const ScanNotification& ev) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* helpText() const override {
+        return "SNMP SWEEP\n\nGETs sysDescr.0 with community\n'public' from every host -\nread-only, never SET.\nENTER: sweep   I: full sysDescr\nArrows: move   DEL: back";
+    }
+
 private:
     void drawResponders(M5Canvas& gfx, int16_t top);
 
     size_t _selected = 0;
+    bool _showDetail = false;
 };

@@ -402,4 +402,7 @@ void HostListScreen::drawTable(M5Canvas& gfx, int16_t top) {
         gfx.setCursor(kColVendor, y + 1);
         gfx.print(vendor);
     }
+
+    chrome::drawScrollMarkers(gfx, rowsTop, rowsTop + kMaxRows * kRowH, first > 0,
+                               first + (size_t)kMaxRows < _aliveIndices.size());
 }

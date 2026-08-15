@@ -1891,6 +1891,63 @@ raccoglierebbe credenziali di macchine terze che non hanno mai scelto di
 interagire col dispositivo sotto test, categoria di rischio diversa da
 tutto il resto di questo firmware — resta fuori scope.
 
+### Fase 31: seconda passata UX/UI trasversale (scroll marker, dettaglio full-value, DISCOVERY raggruppato, attività in background)
+
+Seconda passata di usabilità (dopo la Fase 24), su un elenco di dieci aree
+individuate riguardando l'intero layer UI — cinque scelte dall'utente più
+la rimozione del donut chart ormai inutilizzato in `PORT SCAN`. Anche
+questa, come la Fase 24, è puramente additiva: nessuna firma di `Screen`
+cambiata, solo nuovi override opzionali e nuovi helper condivisi in
+`chrome::`.
+
+- **Indicatori di scorrimento ovunque**: la logica ^/v che prima esisteva
+  solo, inline, nel menu principale è stata estratta in
+  `chrome::drawScrollMarkers()` e applicata a tutte le 21 schermate con
+  liste scorrevoli (`first`/`kMaxRows`) che prima non davano alcun segnale
+  di "ci sono altre righe sopra/sotto" — port scan, host list, service
+  scan, beacon/probe intel, SNMP/SSDP/LDAP/NTLM sweep, war driving, threats,
+  cronologia scan, ricerca, e altre.
+- **`helpText()` su tutte le schermate**: prima solo 12 delle 44 schermate
+  avevano una legenda tasti per l'overlay `?` introdotto in Fase 24; le
+  restanti 32 ora la hanno tutte, con la stessa convenzione (titolo, righe
+  vuote, poi comandi).
+- **Vista a valore completo per i campi troncati**: molte liste tagliano
+  banner/URL/attributi lunghi con `"..."` per stare nella riga. Il tasto
+  `I` (Info), libero su ogni schermata coinvolta, apre ora un overlay a
+  pagina intera (`chrome::drawDetailOverlay()`, riusa il word-wrap di
+  `TextWrap.h`) col valore per esteso, non troncato; un tasto qualsiasi lo
+  richiude, stessa convenzione dell'help. Cablato su `PORT SCAN`, `LDAP
+  SWEEP`, `NTLM DISCLOSURE`, `DATASTORE SWEEP`, `LAN TOPOLOGY` (CDP/LLDP),
+  `BEACON/PROBE INTEL`, `SERVICE SCAN`, `SNMP SWEEP`, `UPNP DISCOVERY`,
+  `WAR DRIVING` (che guadagna anche la navigazione su/giù degli
+  avvistamenti mentre è in esecuzione, prima assente) e `THREATS`.
+- **Sotto-menu DISCOVERY raggruppato**: gli 11 strumenti, prima un unico
+  elenco piatto senza alcuna gerarchia, sono ora organizzati in sezioni
+  (righe separatore non selezionabili, saltate automaticamente dalle
+  frecce su/giù): `RUN ALL DISCOVERY` da solo in cima, poi *ONE-SHOT*
+  (`UPNP DISCOVERY`, `SERVICE SCAN`), *NEEDS NETWORK SCAN* (`SNMP SWEEP`,
+  `DATASTORE SWEEP`, `LDAP SWEEP`), *NEEDS PORT SCAN* (`NTLM DISCLOSURE`),
+  *PASSIVE LISTENERS* (`LAN TOPOLOGY`, `PASSIVE HOSTS`, `ROGUE DHCP`,
+  `BEACON/PROBE INTEL`).
+- **Overview delle attività in background nell'header**: l'indicatore
+  `RF:xxx` esistente (`ui/ActivityStatus`) segnalava solo quale funzione
+  in modalità promiscua possiede il callback WiFi — nulla diceva se, per
+  esempio, uno SNMP SWEEP o il war driving continuavano a girare dopo aver
+  lasciato la loro schermata. L'indicatore ora copre anche quel caso con
+  un secondo tag `BG:xxx`/`BG:N` (ciano) per tutto il resto che gira in
+  background (war driving, `NETWORK`/`PORT`/`SERVICE SCAN`, SNMP/LDAP/
+  NTLM/DataStore/SMB/cred sweep, evil-twin, `RUN ALL DISCOVERY`); quando
+  sia un conflitto radio sia altre attività sono in corso insieme, il tag
+  `RF:` (che resta prioritario, essendo un vero conflitto) mostra anche il
+  conteggio delle altre (`RF:DHCP+2`) invece di provare a stare in due
+  posti sulla stessa riga.
+- **Donut chart rimosso da `PORT SCAN`**: il grafico a torta decorativo
+  nell'angolo in alto a destra (frazione porte aperte sul range
+  configurato) non veniva più guardato da nessuno una volta introdotta la
+  tabella risultati reale; rimosso insieme al suo helper dedicato,
+  liberando spazio perché il banner nella tabella non venga più troncato
+  dalla sovrapposizione.
+
 ## Compilare e flashare
 
 ```
@@ -2118,6 +2175,13 @@ originale.
       credenziale vera). `net/LdapWire` e `net/NtlmWire` implementano il
       minimo di BER/NTLM necessario, verificati prima dell'uso contro
       librerie Python reali (`ldap3`/`pyasn1`, `ntlm-auth`) — vedi sopra.
+- [x] **Fase 31 — Seconda passata UX/UI trasversale**: indicatori di
+      scorrimento (`chrome::drawScrollMarkers`) su tutte le 21 liste
+      scorrevoli, `helpText()` su tutte le 44 schermate, vista a valore
+      completo (tasto `I`) per i campi troncati su 11 schermate, sotto-
+      menu DISCOVERY raggruppato per prerequisito invece di elenco piatto,
+      indicatore `BG:xxx` nell'header per le attività in background non
+      promiscue, rimozione del donut chart inutilizzato da `PORT SCAN`.
 
 ## Test plan — Fase 1
 
@@ -2964,6 +3028,49 @@ a tavolino contro librerie Python — vedi sopra):
 7. **RUN ALL DISCOVERY**: verificare che le due nuove fasi compaiano
    nell'etichetta di fase (`LDAP SWEEP`, `NTLM DISCLOSURE`) con la barra
    di avanzamento che cresce correttamente tra DATASTORE e LAN TOPOLOGY.
+
+## Test plan — Fase 31 (scroll marker, dettaglio full-value, DISCOVERY raggruppato, attività background)
+
+1. **Scroll marker**: su qualunque lista che superi `kMaxRows` (es. `HOST
+   LIST` con più host di quanti ne stiano a schermo, `PORT SCAN` con molte
+   porte aperte), scorrere fino in cima e verificare che compaia solo `v`
+   (mai `^`); scorrere fino in fondo e verificare il contrario; a metà
+   lista devono comparire entrambi.
+2. **Help overlay su tutte le schermate**: aprire `?` da almeno una
+   schermata per gruppo (menu principale, DISCOVERY e ognuno dei suoi
+   sotto-strumenti, HOST DETAIL, SETTINGS, FILE MANAGER, ricerca,
+   cronologia, ecc.) e verificare che compaia sempre una legenda
+   specifica, mai il fallback generico "No screen-specific help.".
+3. **Dettaglio full-value (`I`)**: su `PORT SCAN` con almeno un risultato,
+   selezionare una riga con un banner lungo (troncato a schermo) e premere
+   `I` — deve aprirsi un overlay a schermo intero col banner per esteso,
+   non troncato; un tasto qualsiasi lo chiude e torna alla lista con la
+   stessa riga ancora selezionata. Ripetere su `LDAP SWEEP`, `NTLM
+   DISCLOSURE`, `THREATS` (finding con testo lungo) e `WAR DRIVING`
+   (verificare anche che le frecce su/giù muovano la selezione mentre lo
+   scan è ancora in esecuzione, cosa che prima non funzionava).
+4. **`I` su lista vuota**: su una schermata delle precedenti senza ancora
+   nessun risultato, premere `I` non deve aprire alcun overlay né causare
+   crash.
+5. **DISCOVERY raggruppato**: entrare in DISCOVERY e scorrere con le
+   frecce dall'inizio alla fine — la selezione deve saltare
+   automaticamente le righe separatore (`-- ONE-SHOT --` ecc.), mai
+   fermarsi su una di esse; `ENTER` su ogni voce reale deve continuare ad
+   aprire lo strumento corretto.
+6. **Indicatore `BG:` nell'header**: avviare `SNMP SWEEP` (o `LDAP SWEEP`/
+   `WAR DRIVING`) e, mentre è ancora in corso, tornare al menu principale
+   con `DEL` — l'header deve mostrare `BG:SNMP` (ciano) finché lo sweep
+   non termina. Avviare due sweep in sequenza rapida (prima di far
+   terminare il primo, se possibile) e verificare che diventi `BG:2`.
+7. **Indicatore `RF:` con attività di background insieme**: avviare una
+   funzione promiscua (es. `LAN TOPOLOGY`) e, mentre è attiva, uno sweep
+   non promiscuo (es. `LDAP SWEEP`) — l'header deve mostrare `RF:CDP+1`
+   (ambra), non provare a mostrare due tag separati.
+8. **Donut rimosso da PORT SCAN**: avviare un port scan con più porte
+   aperte di quante ne servano a riempire lo schermo — verificare che non
+   compaia più alcun grafico a torta nell'angolo in alto a destra e che il
+   testo del banner nella tabella non venga più tagliato da una
+   sovrapposizione.
 
 ## Limiti noti e tagli di scope deliberati
 

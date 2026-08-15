@@ -5,22 +5,6 @@
 #include "../../core/Config.h"
 #include "../../scan/PortScanManager.h"
 
-namespace {
-// Two real segments — open vs. rest-of-configured-range — not a
-// fabricated "filtered/closed" breakdown: telling those two apart
-// would need raw sockets we don't have (see README). fillArc() angle
-// convention: 0deg = 12 o'clock, increasing clockwise (LovyanGFX gauge
-// convention).
-void drawOpenPortsDonut(M5Canvas& gfx, int16_t cx, int16_t cy, int16_t rOuter, int16_t rInner, float openFrac) {
-    if (openFrac < 0.f) openFrac = 0.f;
-    if (openFrac > 1.f) openFrac = 1.f;
-    float openDeg = openFrac * 360.0f;
-
-    if (openDeg > 0.5f) gfx.fillArc(cx, cy, rInner, rOuter, 0, openDeg, theme::CYAN);
-    if (openDeg < 359.5f) gfx.fillArc(cx, cy, rInner, rOuter, openDeg, 360, theme::GREY);
-}
-}  // namespace
-
 PortScanScreen& PortScanScreen::instance() {
     static PortScanScreen s;
     return s;
@@ -43,7 +27,12 @@ void PortScanScreen::onScanEvent(const ScanNotification& ev) {
     (void)ev;
 }
 
-void PortScanScreen::onKey(UiKey key, char /*ch*/) {
+void PortScanScreen::onKey(UiKey key, char ch) {
+    if (_showDetail) {
+        _showDetail = false;
+        return;
+    }
+
     bool running = g_portScanManager.isRunning();
 
     if (!isForThisHost() && !running) {
@@ -68,6 +57,9 @@ void PortScanScreen::onKey(UiKey key, char /*ch*/) {
             // no-op while already running).
             if (!running) g_portScanManager.startScan(_target, g_config.portRangeStart, g_config.portRangeEnd);
             break;
+        case UiKey::Char:
+            if ((ch == 'i' || ch == 'I') && count > 0) _showDetail = true;
+            break;
         case UiKey::Back:
             g_ui.popScreen();
             break;
@@ -77,6 +69,18 @@ void PortScanScreen::onKey(UiKey key, char /*ch*/) {
 }
 
 void PortScanScreen::draw(M5Canvas& gfx) {
+    if (_showDetail) {
+        PortResult r;
+        if (g_portScanManager.getResult(_selected, r)) {
+            String text = String(r.port) + (r.isUdp ? "/udp" : "/tcp") + " " +
+                          (r.service.length() ? r.service : String("?")) + ": " +
+                          (r.banner.length() ? r.banner : String("(no banner)")) +
+                          (r.vulnNote.length() ? (" / " + r.vulnNote) : String(""));
+            chrome::drawDetailOverlay(gfx, _target.toString().c_str(), text);
+        }
+        return;
+    }
+
     gfx.fillScreen(theme::BG);
     chrome::drawHeader(gfx, "PORT MAPPING");
 
@@ -133,26 +137,9 @@ void PortScanScreen::draw(M5Canvas& gfx) {
 
     drawTopPortsFooter(gfx, count);
 
-    // Donut overlay, top-right corner — drawn last so its background
-    // fill also clears whatever table content spilled under it (only
-    // the first couple of rows' banner column, at worst).
-    {
-        constexpr int16_t kPanelX = 184, kPanelY = 17, kPanelW = 52, kPanelH = 46;
-        int16_t cx = kPanelX + kPanelW / 2;
-        int16_t cy = kPanelY + kPanelH / 2;
-        gfx.fillRect(kPanelX, kPanelY, kPanelW, kPanelH, theme::BG);
-
-        uint32_t totalRange = (uint32_t)g_config.portRangeEnd - g_config.portRangeStart + 1;
-        float openFrac = totalRange > 0 ? (float)count / (float)totalRange : 0.f;
-        // count/totalRange is already shown as text in the stat line
-        // above ("open:N") — the donut stays purely visual, no
-        // redundant label crammed into this small a panel.
-        drawOpenPortsDonut(gfx, cx, cy, 20, 12, openFrac);
-    }
-
     gfx.setTextColor(theme::GREY, theme::BG);
     gfx.setCursor(4, gfx.height() - 9);
-    gfx.print(running ? "DEL:back" : "ENTER:rescan  DEL:back");
+    gfx.print(running ? "DEL:back" : (count > 0 ? "ENTER:rescan I:banner DEL:back" : "ENTER:rescan  DEL:back"));
 }
 
 void PortScanScreen::drawResults(M5Canvas& gfx, int16_t top) {
@@ -199,6 +186,8 @@ void PortScanScreen::drawResults(M5Canvas& gfx, int16_t top) {
         if (banner.length() > 20) banner = banner.substring(0, 20);
         gfx.print(banner);
     }
+
+    chrome::drawScrollMarkers(gfx, top, top + kMaxRows * kRowH, first > 0, first + (size_t)kMaxRows < count);
 }
 
 void PortScanScreen::drawTopPortsFooter(M5Canvas& gfx, size_t count) {
