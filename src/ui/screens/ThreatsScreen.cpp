@@ -5,6 +5,8 @@
 #include "../../core/Types.h"
 #include "../../scan/ScanManager.h"
 #include "../../scan/RogueDhcpDetector.h"
+#include "../../scan/BeaconProbeSniffer.h"
+#include "../../scan/DeauthWatcher.h"
 #include <vector>
 
 ThreatsScreen& ThreatsScreen::instance() {
@@ -74,6 +76,28 @@ void collectFindings(std::vector<Finding>& out) {
     for (size_t i = 0; i < rc && out.size() < kMax; i++) {
         if (g_rogueDhcpDetector.getSighting(i, s) && s.suspicious) {
             out.push_back({s.serverIp.toString() + " rogue DHCP?", theme::RED});
+        }
+    }
+
+    // WPS still accepting PIN attempts (enabled, not locked) - a real
+    // exposure (Reaver/pixie-dust-style attacks target exactly this),
+    // surfaced here even though BEACON/PROBE INTEL has to have been run
+    // at least once this session to have seen it at all.
+    size_t apCount = g_beaconProbeSniffer.apCount();
+    BeaconProbeSniffer::ApBeacon ap;
+    for (size_t i = 0; i < apCount && out.size() < kMax; i++) {
+        if (g_beaconProbeSniffer.getAp(i, ap) && ap.wpsEnabled && !ap.wpsLocked) {
+            out.push_back({(ap.hidden ? String("<hidden>") : ap.ssid) + " WPS unlocked", theme::AMBER});
+        }
+    }
+
+    // Deauth/disassoc flood in progress against a BSSID - GUARD MODE has
+    // to be (or have been) running to catch this; see scan/DeauthWatcher.h.
+    size_t incCount = g_deauthWatcher.incidentCount();
+    DeauthWatcher::Incident inc;
+    for (size_t i = 0; i < incCount && out.size() < kMax; i++) {
+        if (g_deauthWatcher.getIncident(i, inc) && inc.flooding) {
+            out.push_back({inc.bssid + " deauth flood", theme::RED});
         }
     }
 }

@@ -93,6 +93,9 @@ public:
     // immediately instead of only after a fixed timeout.
     bool connectFailed() const;
     String currentSsid() const;
+    // 0 when not connected (2.4GHz channels are 1-13, never 0) - used by
+    // ChannelScanScreen to mark "your own AP's channel" on the chart.
+    uint8_t currentChannel() const;
 
     IPAddress localIP() const;
     IPAddress subnetMask() const;

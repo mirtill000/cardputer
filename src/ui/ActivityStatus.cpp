@@ -7,6 +7,7 @@
 #include "../scan/RogueDhcpDetector.h"
 #include "../scan/PassiveHostDiscovery.h"
 #include "../scan/BeaconProbeSniffer.h"
+#include "../scan/DeauthWatcher.h"
 #include "../scan/WardrivingManager.h"
 #include "../scan/ScanManager.h"
 #include "../scan/PortScanManager.h"
@@ -41,6 +42,7 @@ void activity::draw(M5Canvas& gfx, int16_t rightX, int16_t y) {
         {g_rogueDhcpDetector.isRunning(), "DHCP"},
         {g_passiveHostDiscovery.isRunning(), "PSV"},
         {g_beaconProbeSniffer.isRunning(), "BCN"},
+        {g_deauthWatcher.isRunning(), "GRD"},
     };
     int promCount = 0;
     const char* promOnly = nullptr;

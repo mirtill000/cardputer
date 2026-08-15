@@ -66,10 +66,10 @@
 //
 // Shares the single esp_wifi promiscuous callback with every other
 // promiscuous consumer in this firmware (ArpSpoofManager/DeauthManager/
-// PmkidManager/CdpLldpSniffer/RogueDhcpDetector/PassiveHostDiscovery) —
-// see ArpSpoofManager.h's RISK block. Running this alongside any of them
-// silently starves whichever started second; see ui/ActivityStatus.h for
-// the on-screen indicator.
+// PmkidManager/CdpLldpSniffer/RogueDhcpDetector/PassiveHostDiscovery/
+// DeauthWatcher) — see ArpSpoofManager.h's RISK block. Running this
+// alongside any of them silently starves whichever started second; see
+// ui/ActivityStatus.h for the on-screen indicator.
 class BeaconProbeSniffer {
 public:
     struct ApBeacon {
@@ -81,6 +81,12 @@ public:
         String vendor;         // OUI lookup off the BSSID, best-effort
         bool hidden = false;   // true if the most recent frame from this BSSID had an empty SSID element
         bool hiddenRevealed = false;  // true once a non-empty SSID was seen for a BSSID first recorded as hidden
+        // WPS (Wi-Fi Protected Setup), detection only - see findWpsIe()/
+        // parseWpsAttributes() in the .cpp. This firmware never attempts
+        // a PIN (Reaver/pixie-dust-style) against anything it finds here.
+        bool wpsEnabled = false;
+        bool wpsLocked = false;         // AP Setup Locked attribute - only meaningful when wpsEnabled
+        uint16_t wpsConfigMethods = 0;  // raw Config Methods bitmask, 0 if absent/not found
         uint32_t beaconCount = 0;
         uint32_t firstSeenMs = 0;
         uint32_t lastSeenMs = 0;
@@ -139,7 +145,7 @@ private:
     void handleProbeRequest(const uint8_t clientMac[6], uint16_t bodyStart, const uint8_t* p, uint16_t len,
                              int8_t rssi);
     void updateAp(const uint8_t bssid[6], const String& ssid, bool hasSsid, uint8_t channel, wifi_auth_mode_t enc,
-                  int8_t rssi);
+                  int8_t rssi, bool wpsEnabled, bool wpsLocked, uint16_t wpsConfigMethods);
     void updateClient(const uint8_t mac[6], const String& probedSsid, bool hasSsid, int8_t rssi);
     void notify(const String& text);
 

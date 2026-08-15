@@ -34,6 +34,7 @@
 #include "scan/LdapProbe.h"
 #include "scan/NtlmHttpProbe.h"
 #include "scan/DiscoveryRunner.h"
+#include "scan/DeauthWatcher.h"
 #include "net/WifiManager.h"
 #include "net/CaptivePortalDetector.h"
 #include "net/TimeSync.h"
@@ -42,6 +43,7 @@
 #include "ui/screens/WardrivingScreen.h"
 #include "ui/screens/ThreatsScreen.h"
 #include "ui/screens/AssessmentScreen.h"
+#include "ui/screens/ChannelScanScreen.h"
 // The discovery screens (LAN TOPOLOGY / UPNP DISCOVERY / SERVICE SCAN /
 // PASSIVE HOSTS / ROGUE DHCP / SNMP SWEEP / DATASTORE SWEEP) are no longer
 // top-level menu entries — they're grouped under NETWORK SCAN via
@@ -51,7 +53,7 @@
 namespace {
 BootScreen g_bootScreen;
 
-MenuItem g_menuItems[7];
+MenuItem g_menuItems[8];
 }  // namespace
 
 void setup() {
@@ -91,10 +93,11 @@ void setup() {
     g_menuItems[3] = {"THREATS", &ThreatsScreen::instance()};
     g_menuItems[4] = {"SCAN HISTORY", &ScanHistoryScreen::instance()};
     g_menuItems[5] = {"WAR DRIVING", &WardrivingScreen::instance()};
-    g_menuItems[6] = {"SETTINGS", &SettingsScreen::instance()};
-    // The seven discovery tools moved under NETWORK SCAN -> 'D' (see
+    g_menuItems[6] = {"CHANNEL SCAN", &ChannelScanScreen::instance()};
+    g_menuItems[7] = {"SETTINGS", &SettingsScreen::instance()};
+    // The discovery tools moved under NETWORK SCAN -> 'D' (see
     // DiscoveryMenuScreen); their managers are still begin()'d below.
-    MainMenuScreen::instance().configure(g_menuItems, 7);
+    MainMenuScreen::instance().configure(g_menuItems, 8);
 
     // MainMenuScreen must already be configured by this point: once the
     // render task starts, BootScreen can transition straight to it on
@@ -126,6 +129,7 @@ void setup() {
     g_ldapProbe.begin(g_ui.scanQueue());
     g_ntlmHttpProbe.begin(g_ui.scanQueue());
     g_discoveryRunner.begin(g_ui.scanQueue());
+    g_deauthWatcher.begin(g_ui.scanQueue());
 
     // Non-blocking: if a network was saved from a previous WIFI SCAN
     // run, this kicks the connection off immediately at boot instead of

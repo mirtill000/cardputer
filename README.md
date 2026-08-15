@@ -1977,6 +1977,72 @@ collaterale positivo non richiesto ma già presente nel codice: l'evidenza
 poteva mai scattare col range di default (3389 > 1024, mai sondata), ora è
 raggiungibile.
 
+### Fase 33: primo lotto verso un sistema WiFi cyber security più evoluto
+
+Quattro delle quindici aree individuate riguardando l'intero firmware con
+l'obiettivo esplicito dell'utente di farlo evolvere verso "un sistema
+evoluto di WiFi cyber security" (punti 2, 4, 5, 7 di quella lista):
+
+- **Rilevamento WPS** (`BeaconProbeSniffer`): oltre a SSID/cifratura,
+  ogni beacon/probe-response viene ora controllato anche per l'IE
+  vendor-specific WPS (tag 221, OUI `00:50:F2`, sub-type `04`) — stessa
+  famiglia di IE già letta per il WPA1 legacy, solo un sub-type diverso.
+  Quando presente, ne legge anche `AP Setup Locked` (attributo `0x1057`
+  — un AP che si è già auto-bloccato dopo troppi PIN sbagliati, segno
+  che qualcuno ha già tentato un attacco) e `Config Methods` (`0x1008`,
+  bitmask PBC/PIN). **Solo detection**: questo firmware non implementa
+  la registrazione WPS né tenta mai un PIN (niente Reaver/pixie-dust) —
+  stessa linea "rileva, non attaccare un protocollo non verificato" già
+  seguita per SSH e NTLM-relay. In `BEACON/PROBE INTEL` un indicatore
+  "W" compare accanto agli AP con WPS visto (rosso se ancora sbloccato,
+  ambra se già locked); il dettaglio (`I`) mostra lock state e metodi.
+  Un AP con WPS sbloccato compare anche in `THREATS`.
+- **GUARD MODE** (`scan/DeauthWatcher`, nuovo sotto-menu DISCOVERY sotto
+  *PASSIVE LISTENERS*): il primo strumento **difensivo** invece che di
+  ricognizione/offensivo in questo firmware — conta i frame di
+  deauthentication/disassociation per BSSID, sul canale a cui il
+  dispositivo è già associato (non hopping, a differenza di BEACON/
+  PROBE INTEL — qui l'obiettivo è sorvegliare la rete su cui ti trovi
+  ora, non fare un survey). Una finestra scorrevole di 10s e una soglia
+  di 15 frame/finestra per BSSID separano un vero flood (uno strumento
+  tipo `aireplay-ng --deauth`, decine di frame/sec continui) dai
+  deauth/disassoc isolati che sono normale traffico 802.11 (un client
+  che si allontana). Riga rossa + allarme sonoro quando scatta. Mai
+  trasmette nulla — puro ascolto, nessun gate offensive necessario,
+  stessa logica di BEACON/PROBE INTEL. Un flood attivo compare anche in
+  `THREATS`.
+- **Euristica evil-twin rivista** (`WardrivingManager`): la versione
+  precedente (Fase 13) segnalava qualunque differenza nell'enum di
+  cifratura fra due sighting con lo stesso SSID — troppo grezzo (WPA2
+  puro vs WPA/WPA2 misto sullo stesso router reale scattava come falso
+  positivo) e troppo cieco (un clone con la stessa identica cifratura
+  non veniva mai rilevato). Ora confronta un **tier di sicurezza**
+  (open/wep/wpa-misto/wpa3/enterprise — vedi `securityTier()`) invece
+  dell'enum grezzo, e aggiunge un secondo segnale indipendente: **vendor
+  OUI diverso** fra due BSSID con lo stesso SSID e lo stesso tier
+  (confrontato solo quando entrambi i lookup OUI hanno dato un
+  risultato, per non generare rumore sui MAC non riconosciuti) — un
+  attaccante può facilmente copiare la cifratura di un AP, molto meno
+  facilmente il fatto che l'hardware reale sia dello stesso produttore.
+  Il canale resta deliberatamente fuori da questa euristica — vedi
+  "Limiti noti" per il perché.
+- **CHANNEL SCAN**: nuova voce del menu principale, grafico a barre live
+  dell'affollamento dei 13 canali 2.4GHz (quanti AP trasmettono su
+  ciascuno, colore verde/ambra/rosso in base al conteggio), con il
+  proprio canale connesso marcato per confronto — la stessa domanda "che
+  canale è più libero" di un'app WiFi-analyzer da telefono. Riusa lo
+  stesso pattern di scan continuo di `SIGNAL FINDER` (Fase 26/precedente
+  a questa lista: `WifiManager::beginScan()/scanStatus()/getScanResult()`
+  in loop), non introduce nessuna nuova capacità radio.
+
+Le altre undici aree della lista (dictionary check on-device sui PMKID
+catturati, sentinel mode sulla propria rete, mappa client↔AP, sezione
+WIRELESS nel report, rilevamento KRACK, ecc.) restano proposte non
+implementate — vedi la conversazione che le ha originate; il punto sul
+dictionary check in particolare era stato segnalato come una scelta
+filosofica da confermare esplicitamente prima di implementarla, non
+scontata.
+
 ## Compilare e flashare
 
 ```
@@ -2217,6 +2283,14 @@ originale.
       insieme al range configurato in `SETTINGS`, deduplicate contro di
       esso. Nessuna modifica a banner grabbing/lookup servizio/firme
       vulnerabili, che restano identici sulle porte nuove.
+- [x] **Fase 33 — Primo lotto verso un sistema WiFi cyber security più
+      evoluto**: rilevamento WPS (enabled/locked/config methods) su
+      `BEACON/PROBE INTEL`, nuovo `GUARD MODE` per il rilevamento
+      passivo di flood deauth/disassoc altrui, euristica evil-twin
+      rivista (tier di sicurezza + vendor OUI invece del solo confronto
+      di enum di cifratura), nuova schermata `CHANNEL SCAN` per
+      l'affollamento dei 13 canali 2.4GHz. Entrambi i nuovi rilevamenti
+      (WPS sbloccato, flood in corso) alimentano anche `THREATS`.
 
 ## Test plan — Fase 1
 
@@ -3132,6 +3206,56 @@ a tavolino contro librerie Python — vedi sopra):
    ragionevole (le ~50 porte extra restano una piccola frazione del
    totale) e che l'elenco risultati non contenga falsi positivi.
 
+## Test plan — Fase 33 (WPS, GUARD MODE, evil-twin v2, CHANNEL SCAN)
+
+**Solo in ambiente autorizzato**, stessa regola di ogni altro strumento
+che osserva o (per GUARD MODE, solo in ascolto) reagisce a traffico
+altrui:
+
+1. **WPS rilevato**: contro un AP di test con WPS attivo, avviare
+   `BEACON/PROBE INTEL` e lasciarlo girare finché l'AP compare — deve
+   mostrare una "W" accanto alla riga (rossa se WPS è sbloccato, ambra
+   se locked). `I` sulla riga deve mostrare lock state e metodi
+   (PBC/PIN) nel dettaglio.
+2. **WPS assente**: contro un AP senza WPS, nessuna "W" deve comparire
+   sulla riga, e il dettaglio deve mostrare "WPS: not seen".
+3. **WPS in THREATS**: con almeno un AP WPS-sbloccato visto in questa
+   sessione, `THREATS` deve elencare un finding "<ssid> WPS unlocked" in
+   ambra.
+4. **GUARD MODE, traffico normale**: avviarlo su una rete normale e
+   lasciarlo girare qualche minuto — non deve comparire "FLOOD
+   DETECTED" né alcuna riga rossa per un singolo/pochi deauth isolati
+   (roaming normale di un client).
+5. **GUARD MODE, flood reale**: contro un AP di test, generare un vero
+   flood di deauth (es. `aireplay-ng --deauth`, SOLO sulla propria rete)
+   — entro la finestra di 10s deve comparire "FLOOD DETECTED", la riga
+   del BSSID target deve diventare rossa, e deve suonare l'allarme.
+   Fermando il flood, verificare che dopo la finestra successiva la riga
+   torni verde (rate tornato sotto soglia).
+6. **GUARD MODE in THREATS**: durante un flood rilevato, `THREATS` deve
+   mostrare "<bssid> deauth flood" in rosso.
+7. **GUARD MODE nell'header**: avviandolo e navigando altrove, l'header
+   deve mostrare `RF:GRD` (ambra) — è un consumer promiscuo, non un
+   background sweep, quindi compare nel gruppo `RF:`, non `BG:`.
+8. **Evil-twin, stesso tier niente falso positivo**: in war driving,
+   simulare (o trovare) due BSSID con lo stesso SSID entrambi WPA2 (uno
+   puro, uno mixed WPA/WPA2) — nessuno dei due deve essere marcato
+   sospetto (stesso tier).
+9. **Evil-twin, downgrade rilevato**: due BSSID con lo stesso SSID, uno
+   WPA2 e uno OPEN — entrambi devono comparire sospetti, con la nota che
+   menziona la cifratura più debole/forte.
+10. **Evil-twin, vendor mismatch rilevato**: due BSSID con lo stesso
+    SSID, stessa cifratura, ma vendor OUI risolti diversi — entrambi
+    sospetti, con la nota che menziona i due vendor.
+11. **CHANNEL SCAN**: aprirlo vicino ad almeno un AP noto — la barra del
+    suo canale deve crescere nel giro di pochi secondi (scan continuo),
+    colorata in base al conteggio (verde/ambra/rosso). Se il dispositivo
+    è connesso a una rete, il canale di quella rete deve mostrare il
+    marcatore ciano "v" sopra la barra.
+12. **CHANNEL SCAN, selezione**: Left/Right deve muovere il riquadro di
+    selezione fra i 13 canali e la riga informativa in basso deve
+    aggiornarsi con conteggio ed RSSI medio del canale selezionato.
+
 ## Limiti noti e tagli di scope deliberati
 
 Riepilogo di quanto già menzionato nelle sezioni sopra, in un unico
@@ -3240,13 +3364,22 @@ posto:
   per risparmiare spazio flash — vedi la sezione "Fase 14" sopra per il
   dettaglio (incluso lo storico dei tre bug API reali che il modulo
   aveva fatto emergere prima di essere tolto).
-- **Evil-twin: euristica su SSID+cifratura, non una prova crittografica**
-  (Fase 13): due AP con lo stesso nome ma cifratura diversa vengono
-  entrambi segnalati come sospetti, senza alcuna pretesa di stabilire
-  quale sia quello legittimo — un attaccante sufficientemente motivato
-  potrebbe clonare anche la cifratura (nel qual caso questa euristica
-  non lo rileva) o un ambiente con AP legittimi mal configurati
-  potrebbe generare falsi positivi.
+- **Evil-twin: euristica su SSID+tier di cifratura+vendor OUI, non una
+  prova crittografica** (Fase 13, euristica rivista in Fase 33): due AP
+  con lo stesso nome vengono segnalati come sospetti se il tier di
+  sicurezza differisce in modo significativo (vedi `securityTier()` in
+  `WardrivingManager.cpp` — WPA2 e WPA/WPA2 misto contano come lo stesso
+  tier apposta, per non generare falsi positivi su un singolo router
+  reale in mixed-mode) OPPURE se il vendor OUI risolto differisce fra i
+  due (solo quando entrambi i lookup hanno dato un risultato — un
+  vendor sconosciuto da solo non è un segnale). Nessuna pretesa di
+  stabilire quale dei due sia quello legittimo. Resta un'euristica, non
+  una prova: un attaccante che clona sia la cifratura sia usa hardware
+  dello stesso vendor (raro, ma non impossibile) non verrebbe rilevato,
+  e un ambiente con più vendor legittimi sullo stesso SSID (roaming
+  misto, raro ma esiste) potrebbe generare un falso positivo sul solo
+  segnale vendor. Il canale è stato deliberatamente escluso da questa
+  euristica — vedi il commento nel codice per il perché.
 - **Backup impostazioni: password WiFi in chiaro nel JSON su SD**
   (Fase 13): scelta deliberata (vedi sopra), ma significa che
   `/config_backup.json` va trattato con la stessa cura della SD stessa
@@ -3312,13 +3445,15 @@ posto:
   degli altri moduli — non esegue nuovi test né assegna punteggi CVSS.
   "Nessun finding" non significa "rete sicura", solo "niente ha fatto
   scattare le euristiche".
-- **Radio promiscua condivisa: il limite ora vale per SEI funzioni**
-  (Fase 18-19): `esp_wifi` accetta una sola callback promiscua alla volta
-  — ARP/MITM, deauth, PMKID, CDP/LLDP, rogue DHCP e (Fase 19) scoperta
-  host passiva non vanno usate in parallelo (l'ultima avviata ruba i frame
-  alle altre). Stesso genere di limite già accettato per WAR DRIVING vs
-  NETWORK SCAN. La barra di stato radio in header (Fase 19) esiste proprio
-  per rendere questo conflitto visibile invece che silenzioso.
+- **Radio promiscua condivisa: il limite ora vale per OTTO funzioni**
+  (Fase 18-19, poi Fase 27 e Fase 33): `esp_wifi` accetta una sola
+  callback promiscua alla volta — ARP/MITM, deauth, PMKID, CDP/LLDP,
+  rogue DHCP, scoperta host passiva (Fase 19), beacon/probe intel (Fase
+  27) e GUARD MODE (Fase 33) non vanno usate in parallelo (l'ultima
+  avviata ruba i frame alle altre). Stesso genere di limite già accettato
+  per WAR DRIVING vs NETWORK SCAN. La barra di stato radio in header
+  (Fase 19, estesa in Fase 31) esiste proprio per rendere questo
+  conflitto visibile invece che silenzioso.
 - **Responder-lite/NetNTLM (punto 10) escluso di proposito** (Fase 19):
   era in una delle liste di proposte ed è stato escluso su istruzione
   esplicita dell'utente perché ad alto rischio (impersona servizi verso

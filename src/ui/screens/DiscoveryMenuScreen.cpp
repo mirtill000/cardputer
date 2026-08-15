@@ -10,6 +10,7 @@
 #include "BeaconProbeScreen.h"
 #include "LdapScreen.h"
 #include "NtlmHttpScreen.h"
+#include "DeauthWatchScreen.h"
 #include "../UiManager.h"
 #include "../Theme.h"
 #include "../Chrome.h"
@@ -32,8 +33,9 @@ Screen* gData() { return &DataStoreScreen::instance(); }
 Screen* gBeaconProbe() { return &BeaconProbeScreen::instance(); }
 Screen* gLdap() { return &LdapScreen::instance(); }
 Screen* gNtlmHttp() { return &NtlmHttpScreen::instance(); }
+Screen* gGuardMode() { return &DeauthWatchScreen::instance(); }
 
-// Grouped by prerequisite so the now-11-tool list reads as sections
+// Grouped by prerequisite so the now-12-tool list reads as sections
 // instead of one flat run: standalone "run everything" first, then
 // one-shot active tools, tools that want a NETWORK SCAN's host table
 // first, the one tool that also wants a PORT SCAN, and finally the
@@ -54,6 +56,7 @@ const DItem kItems[] = {
     {"PASSIVE HOSTS", gPassive},
     {"ROGUE DHCP", gRogue},
     {"BEACON/PROBE INTEL", gBeaconProbe},
+    {"GUARD MODE", gGuardMode},
 };
 constexpr size_t kCount = sizeof(kItems) / sizeof(kItems[0]);
 }  // namespace
@@ -96,7 +99,7 @@ void DiscoveryMenuScreen::draw(M5Canvas& gfx) {
     gfx.fillScreen(theme::BG);
     chrome::drawHeader(gfx, "DISCOVERY");
 
-    // 11 tools plus 4 section-header rows now - too many to keep cramming
+    // 12 tools plus 4 section-header rows now - too many to keep cramming
     // into ever-shorter rows on a 135px-tall screen the way this list did
     // up through 9 items. Scrolls instead, same first/kMaxRows windowing
     // every findings list in this firmware already uses (CdpLldpScreen,
