@@ -67,9 +67,9 @@
 // Shares the single esp_wifi promiscuous callback with every other
 // promiscuous consumer in this firmware (ArpSpoofManager/DeauthManager/
 // PmkidManager/CdpLldpSniffer/RogueDhcpDetector/PassiveHostDiscovery/
-// DeauthWatcher) — see ArpSpoofManager.h's RISK block. Running this
-// alongside any of them silently starves whichever started second; see
-// ui/ActivityStatus.h for the on-screen indicator.
+// DeauthWatcher/SentinelManager) — see ArpSpoofManager.h's RISK block.
+// Running this alongside any of them silently starves whichever started
+// second; see ui/ActivityStatus.h for the on-screen indicator.
 class BeaconProbeSniffer {
 public:
     struct ApBeacon {

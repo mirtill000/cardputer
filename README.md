@@ -2035,13 +2035,61 @@ evoluto di WiFi cyber security" (punti 2, 4, 5, 7 di quella lista):
   a questa lista: `WifiManager::beginScan()/scanStatus()/getScanResult()`
   in loop), non introduce nessuna nuova capacità radio.
 
-Le altre undici aree della lista (dictionary check on-device sui PMKID
-catturati, sentinel mode sulla propria rete, mappa client↔AP, sezione
-WIRELESS nel report, rilevamento KRACK, ecc.) restano proposte non
-implementate — vedi la conversazione che le ha originate; il punto sul
-dictionary check in particolare era stato segnalato come una scelta
-filosofica da confermare esplicitamente prima di implementarla, non
-scontata.
+Le altre dieci aree della lista (dictionary check on-device sui PMKID
+catturati, mappa client↔AP, sezione WIRELESS nel report, rilevamento
+KRACK, ecc. — la sentinel mode è stata implementata in Fase 34, sotto)
+restano proposte non implementate — vedi la conversazione che le ha
+originate; il punto sul dictionary check in particolare era stato
+segnalato come una scelta filosofica da confermare esplicitamente prima
+di implementarla, non scontata.
+
+### Fase 34: SENTINEL MODE
+
+Su richiesta esplicita dell'utente, il punto 13 della lista di Fase 33
+("sentinel mode sulla propria rete") diventa una voce a sé del menu
+principale — `scan/SentinelManager` — con due comportamenti in
+esecuzione insieme finché resta attiva:
+
+- **Ri-scoperta host periodica con allarme su dispositivo nuovo**:
+  rilancia lo stesso sweep di `NETWORK SCAN` (`g_scanManager`) ogni 30
+  secondi e confronta ogni host vivo con MAC noto contro la baseline
+  "mai visto su questa rete" già usata da `HOST LIST`
+  (`ScanHistory::loadKnownMacs`, fino a `kMaxEntries`=20 scan passati di
+  quella stessa rete). Un MAC che non compare in quella baseline è un
+  dispositivo nuovo: bip sonoro (`sound::playAlert`, stesso usato per
+  una rete aperta nuova in war driving) più una riga nel log con IP/MAC/
+  hostname/vendor, consultabile per esteso con `I`. Deliberatamente
+  **non** salva uno snapshot (`ScanHistory::saveSnapshot`) a ogni ciclo:
+  farlo ogni 30 secondi riempirebbe le 20 posizioni della cronologia
+  condivisa con scansioni quasi identiche, restringendo la finestra
+  reale della baseline "mai vista" a soli ~10 minuti invece che alla
+  vera storia dei scan manuali di quella rete — l'esatto contrario dello
+  scopo di una baseline stabile. La baseline viene caricata una sola
+  volta all'avvio e poi cresciuta solo in memoria per il resto della
+  sessione.
+- **Dump del traffico su pcap**: cattura ogni frame 802.11
+  management+data visto sul canale a cui il dispositivo è già associato
+  (niente channel-hopping, stesso principio "non disturbare la propria
+  connessione STA" di `CdpLldpSniffer`/`RogueDhcpDetector`/
+  `PassiveHostDiscovery`/`GUARD MODE` — a differenza di quelli, qui
+  vengono catturati anche i frame dati, non solo quelli di gestione, per
+  un vero dump di traffico) in un file `.pcap` sotto `/netrunner`,
+  troncato a 256 byte per frame come `DeauthManager`/`PmkidManager`.
+  **Non decripta nulla**: il payload di un frame dati su rete WPA2/WPA3
+  resta cifrato esattamente come lo era sull'aria — quello che finisce
+  nel pcap è comunque utile (chi parla, quanto, quando: header MAC
+  sempre leggibili in modalità promiscua indipendentemente dalla
+  cifratura), analizzabile offline con Wireshark/tshark, mai un modo per
+  leggere il contenuto reale di qualcosa. Nessuna rotazione né limite di
+  dimensione: il file cresce per tutta la sessione, un uso prolungato su
+  una rete trafficata può occupare spazio SD non trascurabile — vedi
+  "Limiti noti".
+
+Nessuna delle due parti tocca dispositivi di terzi in modo diverso da
+quanto fanno già `NETWORK SCAN`/`CDP LLDP`/`ROGUE DHCP`: solo ascolto e
+scansione della propria rete già connessa, mai nulla inviato a un
+dispositivo che non abbia già scelto di essere su quella rete. Nessun
+gate offensive richiesto per lo stesso motivo.
 
 ## Compilare e flashare
 
@@ -2291,6 +2339,14 @@ originale.
       di enum di cifratura), nuova schermata `CHANNEL SCAN` per
       l'affollamento dei 13 canali 2.4GHz. Entrambi i nuovi rilevamenti
       (WPS sbloccato, flood in corso) alimentano anche `THREATS`.
+- [x] **Fase 34 — SENTINEL MODE**: nuova voce del menu principale,
+      `scan/SentinelManager` — ri-scoperta periodica (30s) della propria
+      rete connessa con allarme sonoro su ogni dispositivo mai visto
+      prima (baseline `ScanHistory::loadKnownMacs`, caricata una volta e
+      tenuta solo in memoria per non inquinare la cronologia condivisa),
+      più un dump continuo del traffico 802.11 (management+data, header
+      sempre leggibili, payload mai decriptato) su `.pcap` sotto
+      `/netrunner`.
 
 ## Test plan — Fase 1
 
@@ -3256,6 +3312,36 @@ altrui:
     selezione fra i 13 canali e la riga informativa in basso deve
     aggiornarsi con conteggio ed RSSI medio del canale selezionato.
 
+## Test plan — Fase 34 (SENTINEL MODE)
+
+1. **Avvio senza WiFi**: da spento/scollegato, aprire `SENTINEL MODE` —
+   deve mostrare "connect to WiFi first" in ambra e `ENTER` non deve
+   avviare nulla (`isRunning()` resta false).
+2. **Avvio normale**: connesso a una rete, `ENTER` deve mostrare "net:
+   <ssid>" in ciano e l'header deve mostrare `RF:SNT` navigando altrove.
+3. **Dispositivo nuovo rilevato**: con Sentinel attivo, accendere/
+   connettere un dispositivo con MAC mai visto su questa rete (o
+   aspettare che uno esistente venga rilevato al primo ciclo se la
+   cronologia di questa rete non esiste ancora) — entro ~30s deve
+   comparire nella lista con un bip sonoro; `I` sulla riga deve mostrare
+   IP/MAC/hostname/vendor per esteso.
+4. **Nessun falso positivo dopo il primo ciclo**: lo stesso dispositivo
+   non deve ricomparire come "nuovo" in un ciclo successivo nella stessa
+   sessione.
+5. **Dump pcap**: dopo qualche minuto di esecuzione, fermare con `ENTER`
+   e verificare su SD/LittleFS che `/netrunner/<timestamp>_<ssid>.pcap`
+   esista, abbia dimensione > 0 e si apra correttamente in Wireshark
+   (frame leggibili come 802.11 anche se il payload dati resta cifrato
+   su una rete WPA2/WPA3).
+6. **Convivenza con NETWORK SCAN manuale**: mentre Sentinel è attivo,
+   aprire `NETWORK SCAN` e avviare uno scan manuale — non deve bloccarsi
+   né corrompere nulla; uno dei due sweep semplicemente troverà
+   `g_scanManager` già occupato e riproverà al ciclo successivo (stessa
+   collisione già accettata per WAR DRIVING vs NETWORK SCAN).
+7. **DEL mantiene la sessione**: uscire con `DEL` e rientrare più tardi
+   — Sentinel deve essere ancora in esecuzione, con cicli/dispositivi/
+   frame accumulati nel frattempo.
+
 ## Limiti noti e tagli di scope deliberati
 
 Riepilogo di quanto già menzionato nelle sezioni sopra, in un unico
@@ -3445,14 +3531,17 @@ posto:
   degli altri moduli — non esegue nuovi test né assegna punteggi CVSS.
   "Nessun finding" non significa "rete sicura", solo "niente ha fatto
   scattare le euristiche".
-- **Radio promiscua condivisa: il limite ora vale per OTTO funzioni**
-  (Fase 18-19, poi Fase 27 e Fase 33): `esp_wifi` accetta una sola
+- **Radio promiscua condivisa: il limite ora vale per NOVE funzioni**
+  (Fase 18-19, poi Fase 27, 33 e 34): `esp_wifi` accetta una sola
   callback promiscua alla volta — ARP/MITM, deauth, PMKID, CDP/LLDP,
   rogue DHCP, scoperta host passiva (Fase 19), beacon/probe intel (Fase
-  27) e GUARD MODE (Fase 33) non vanno usate in parallelo (l'ultima
-  avviata ruba i frame alle altre). Stesso genere di limite già accettato
-  per WAR DRIVING vs NETWORK SCAN. La barra di stato radio in header
-  (Fase 19, estesa in Fase 31) esiste proprio per rendere questo
+  27), GUARD MODE (Fase 33) e SENTINEL MODE (Fase 34) non vanno usate in
+  parallelo (l'ultima avviata ruba i frame alle altre). Stesso genere di
+  limite già accettato per WAR DRIVING vs NETWORK SCAN — con l'aggravante
+  che SENTINEL MODE guida anche cicli periodici di NETWORK SCAN al suo
+  interno, quindi usarlo insieme a un NETWORK SCAN manuale è lo stesso
+  tipo di collisione, non un problema nuovo. La barra di stato radio in
+  header (Fase 19, estesa in Fase 31) esiste proprio per rendere questo
   conflitto visibile invece che silenzioso.
 - **Responder-lite/NetNTLM (punto 10) escluso di proposito** (Fase 19):
   era in una delle liste di proposte ed è stato escluso su istruzione
@@ -3536,6 +3625,21 @@ posto:
   classificato `"http"` dal port scan — endpoint NTLM su `"https"` (molto
   comuni: OWA/Exchange, portali IIS interni) restano fuori scope finché
   questo firmware non ha un client TLS.
+- **SENTINEL MODE: pcap senza rotazione né limite di dimensione, mai
+  decripta nulla** (Fase 34): il file di dump cresce per tutta la durata
+  della sessione — una sessione lunga su una rete trafficata può
+  occupare parecchio spazio SD, e non c'è un tetto automatico né una
+  suddivisione in più file; fermare manualmente è l'unico modo di
+  limitarlo per ora. La baseline "dispositivo mai visto" viene caricata
+  una volta sola all'avvio dalla cronologia già salvata da scan
+  precedenti di quella rete (`ScanHistory`, fino a 20 voci) e poi tenuta
+  solo in memoria per il resto della sessione — non scrive nuovi
+  snapshot nella cronologia condivisa a ogni ciclo (vedi la sezione
+  "Fase 34" sopra per il perché), quindi le proprie osservazioni non
+  arricchiscono quella baseline per sessioni Sentinel future, solo per
+  quella in corso. Come ogni cattura promiscua in questo firmware, il
+  payload dei frame dati resta cifrato esattamente come lo era sull'aria
+  su una rete WPA2/WPA3 — nessun tentativo di decifrarlo, mai.
 - **Nessuna build reale eseguita**: vale per ogni fase di questo
   progetto — il sandbox di sviluppo non ha accesso al registry
   PlatformIO. Tutto il codice è stato scritto con attenzione e, dove

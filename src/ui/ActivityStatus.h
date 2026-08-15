@@ -10,7 +10,8 @@
 //   RF:N!       allows only ONE promiscuous callback at a time, so N>=2
 //               active at once (ARP/MITM, deauth, PMKID, CDP-LLDP, rogue
 //               DHCP, passive-host-discovery, beacon/probe intel, guard
-//               mode) is a real conflict, shown in red instead of amber.
+//               mode, sentinel mode) is a real conflict, shown in red
+//               instead of amber.
 //   BG:<name>   one OTHER background sweep is running (war driving,
 //   BG:N        NETWORK/PORT/SERVICE scans, SNMP/LDAP/NTLM/DataStore/SMB/
 //               cred sweeps, evil-twin, ...). These don't fight over the
