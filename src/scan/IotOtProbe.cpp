@@ -27,6 +27,31 @@ size_t readSome(WiFiClient& c, uint16_t timeoutMs, uint8_t* buf, size_t maxLen) 
     return got;
 }
 
+// DNP3's Data Link Layer CRC-16 (IEEE 1815 Annex): polynomial 0xA6BC in
+// reversed/LSB-first form, initial value 0, one's-complemented result -
+// the same well-published algorithm every open DNP3 stack (opendnp3,
+// pydnp3, ...) implements. Operates over one block at a time (<=16
+// bytes); this firmware only ever sends a 6-byte header block, so no
+// multi-block chunking is needed. NOT verified against a real DNP3
+// outstation in this environment (no hardware/simulator available here
+// - see README "Limiti noti") - if the CRC is wrong, compliant devices
+// silently drop the frame, which fails safe (a missed finding, never a
+// false one) rather than corrupting anything on the wire.
+uint16_t dnp3Crc(const uint8_t* data, size_t len) {
+    uint16_t crc = 0x0000;
+    for (size_t i = 0; i < len; i++) {
+        crc ^= data[i];
+        for (int b = 0; b < 8; b++) {
+            if (crc & 0x0001) {
+                crc = (uint16_t)((crc >> 1) ^ 0xA6BC);
+            } else {
+                crc = (uint16_t)(crc >> 1);
+            }
+        }
+    }
+    return (uint16_t)(~crc);
+}
+
 }  // namespace
 
 void IotOtProbe::begin(QueueHandle_t outQueue) {
@@ -82,6 +107,8 @@ void IotOtProbe::probeHost(const IPAddress& ip) {
     probeMqtt(ip);
     probeModbus(ip);
     probeCoap(ip);
+    probeBacnet(ip);
+    probeDnp3(ip);
 }
 
 void IotOtProbe::probeMqtt(const IPAddress& ip) {
@@ -227,6 +254,83 @@ void IotOtProbe::probeCoap(const IPAddress& ip) {
     } else {
         udp.stop();
     }
+}
+
+void IotOtProbe::probeBacnet(const IPAddress& ip) {
+    WiFiUDP udp;
+    if (!udp.begin(0)) return;
+
+    // BVLC Original-Unicast-NPDU wrapping an Unconfirmed-Request/Who-Is
+    // - the same "who's out there" request every BACnet workstation
+    // sends, addressed to one host instead of the whole segment. No
+    // device-instance range given, so any device answers its own I-Am
+    // regardless of its configured instance number.
+    static const uint8_t kWhoIs[] = {
+        0x81, 0x0A, 0x00, 0x08,  // BVLC: type=BACnet/IP, function=Original-Unicast-NPDU, length=8
+        0x01, 0x00,              // NPDU: version 1, control 0 (no network-layer message)
+        0x10, 0x08,              // APDU: Unconfirmed-Request PDU, service choice = Who-Is
+    };
+    udp.beginPacket(ip, 47808);
+    udp.write(kWhoIs, sizeof(kWhoIs));
+    udp.endPacket();
+
+    uint32_t start = millis();
+    int packetSize = 0;
+    while ((millis() - start) < kReadTimeoutMs) {
+        packetSize = udp.parsePacket();
+        if (packetSize > 0) break;
+        delay(10);
+    }
+    if (packetSize >= 8) {
+        uint8_t reply[32];
+        int got = udp.read(reply, (int)sizeof(reply));
+        udp.stop();
+        // Structural check only (not a full BACnet tag-value parser,
+        // same "extract just enough to be sure" approach as the rest of
+        // this file): BVLC type 0x81, an Unconfirmed-Request PDU (0x10)
+        // carrying service choice 0x00 (I-Am) at the expected offset.
+        if (got >= 8 && reply[0] == 0x81 && reply[6] == 0x10 && reply[7] == 0x00) {
+            addFinding(ip, "bacnet", "responds (I-Am)", true);
+        }
+    } else {
+        udp.stop();
+    }
+}
+
+void IotOtProbe::probeDnp3(const IPAddress& ip) {
+    WiFiClient c;
+    if (!c.connect(ip, 20000, kConnectTimeoutMs)) return;
+
+    // Data Link Layer Link Status Request: header-only frame (no
+    // application-layer data), broadcast destination (0xFFFF) so it
+    // doesn't depend on knowing the outstation's configured address -
+    // same technique nmap's dnp3-info script uses. DNP3's link layer has
+    // no authentication at all (Secure Authentication is optional and
+    // rarely deployed), so any reply carrying the DNP3 sync bytes is
+    // itself the finding.
+    uint8_t frame[10] = {
+        0x05, 0x64,              // sync bytes
+        0x05,                    // length: control+dest(2)+src(2) = 5 bytes follow
+        0xC9,                    // control: DIR=1(from master) PRM=1 FCB=0 FCV=0 FC=9(REQUEST_LINK_STATUS)
+        0xFF, 0xFF,              // destination: 0xFFFF (broadcast)
+        0x01, 0x00,              // source: 0x0001 (this probe's arbitrary master address)
+        0x00, 0x00,              // CRC, filled in below
+    };
+    uint16_t crc = dnp3Crc(frame + 2, 6);  // covers length+control+dest+src, not the sync bytes
+    frame[8] = (uint8_t)(crc & 0xFF);
+    frame[9] = (uint8_t)((crc >> 8) & 0xFF);
+    c.write(frame, sizeof(frame));
+
+    uint8_t reply[16] = {0};
+    size_t got = readSome(c, kReadTimeoutMs, reply, sizeof(reply));
+    // Response content is deliberately NOT validated beyond the sync
+    // bytes - see the class doc comment for why (cross-vendor reply-
+    // format variance would otherwise cost real findings to false
+    // negatives).
+    if (got >= 2 && reply[0] == 0x05 && reply[1] == 0x64) {
+        addFinding(ip, "dnp3", "responds (link status)", true);
+    }
+    c.stop();
 }
 
 void IotOtProbe::addFinding(const IPAddress& ip, const char* service, const String& detail, bool noAuth) {

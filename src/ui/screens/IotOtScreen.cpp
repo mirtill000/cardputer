@@ -67,7 +67,7 @@ void IotOtScreen::draw(M5Canvas& gfx) {
 
     gfx.setTextColor(theme::MAGENTA, theme::BG);
     gfx.setCursor(6, gfx.height() - 20);
-    gfx.print(running ? "probing hosts..." : "ENTER: sweep (mqtt/modbus/coap)");
+    gfx.print(running ? "probing hosts..." : "ENTER: sweep (mqtt/modbus/...)");
 
     gfx.setTextColor(theme::GREY, theme::BG);
     gfx.setCursor(4, gfx.height() - 9);

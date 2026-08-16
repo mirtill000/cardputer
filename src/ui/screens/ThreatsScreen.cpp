@@ -9,6 +9,7 @@
 #include "../../scan/DeauthWatcher.h"
 #include "../../scan/SentinelManager.h"
 #include "../../scan/PmkidSweepManager.h"
+#include "../../scan/IotOtProbe.h"
 #include <vector>
 
 ThreatsScreen& ThreatsScreen::instance() {
@@ -123,6 +124,24 @@ void collectFindings(std::vector<Finding>& out) {
                 out.push_back({ev.mac + " deauth flood (sentinel)", theme::RED});
                 break;
         }
+    }
+
+    // IOT/OT SWEEP: unauthenticated access on protocols found on IoT/OT
+    // segments (Fase 39). OT protocols (Modbus/BACnet/DNP3) rank
+    // Critical/RED - none of the three has ANY authentication concept
+    // in the protocol itself, so exposure here is never "someone left
+    // auth off", it's the protocol design being reachable outside a
+    // properly segmented OT network. IoT protocols (MQTT/CoAP) rank
+    // Warning/AMBER since those DO have an auth mechanism that was left
+    // disabled - a real but lesser finding than an inherently
+    // unauthenticatable OT device answering on the LAN.
+    size_t iotCount = g_iotOtProbe.count();
+    IotOtProbe::Finding iotFind;
+    for (size_t i = 0; i < iotCount && out.size() < kMax; i++) {
+        if (!g_iotOtProbe.get(i, iotFind) || !iotFind.noAuth) continue;
+        bool isOt = (iotFind.service == "modbus" || iotFind.service == "bacnet" || iotFind.service == "dnp3");
+        out.push_back(
+            {iotFind.ip.toString() + " " + iotFind.service + " no-auth", isOt ? theme::RED : theme::AMBER});
     }
 
     // PMKID SWEEP: not a threat by itself (the user ran it deliberately

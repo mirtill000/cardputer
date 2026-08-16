@@ -2349,6 +2349,43 @@ completo).
   gira; `DEL` esce lasciandolo attivo in background, stesso pattern di
   ogni altro orchestratore in questo firmware.
 
+### Fase 39: IOT/OT SWEEP copre anche BACnet/DNP3 + integrazione in THREATS
+
+Due delle evoluzioni proposte dopo la Fase 38, implementate su richiesta
+esplicita:
+
+- **`IotOtProbe` esteso a BACnet/IP e DNP3** — stesso principio già
+  applicato a MQTT/Modbus/CoAP:
+  - **BACnet/IP (47808/UDP)**: un Who-Is unicast (BVLC
+    Original-Unicast-NPDU, Unconfirmed-Request/Who-Is) — lo stesso "chi
+    c'è" che ogni workstation BACnet invia, solo indirizzato a un host
+    invece che a tutto il segmento. Una risposta I-Am strutturalmente
+    valida (verificata solo per i campi BVLC/APDU rilevanti, non un
+    parser TAG-value BACnet completo) conferma un dispositivo live.
+    BACnet, come Modbus, non richiede alcuna autenticazione per questo
+    scambio.
+  - **DNP3 (20000/TCP)**: una Link Status Request a livello Data Link
+    (function code 9, indirizzo di destinazione broadcast `0xFFFF` —
+    stessa tecnica usata dallo script `dnp3-info` di nmap), con un CRC-16
+    specifico di DNP3 (polinomio 0xA6BC, IEEE 1815) calcolato
+    correttamente sull'header. Il Data Link Layer di DNP3 non ha
+    autenticazione (Secure Authentication è un'estensione opzionale,
+    raramente distribuita), quindi qualunque risposta che inizia con i
+    byte di sync DNP3 (`0x05 0x64`) è già il finding — il CONTENUTO della
+    risposta non viene validato oltre questo, deliberatamente, per non
+    perdere finding reali per la variabilità di formato tra vendor
+    diversi (stesso principio "una risposta è prova sufficiente" già
+    usato da `UdpProbe`).
+- **`THREATS` integra `IOT/OT SWEEP`** — i finding non autenticati sui
+  protocolli OT (Modbus/BACnet/DNP3) vengono mostrati Critical/rosso: a
+  differenza di un servizio applicativo con l'autenticazione
+  semplicemente disattivata, questi tre protocolli non hanno ALCUN
+  concetto di autenticazione nella loro progettazione — la loro sola
+  raggiungibilità è già il problema, non una configurazione. I
+  protocolli IoT (MQTT/CoAP) restano Warning/ambra, dato che questi
+  possiedono un meccanismo di autenticazione reale che è stato lasciato
+  disattivato — un finding vero ma di un ordine diverso.
+
 ## Compilare e flashare
 
 ```
@@ -2641,6 +2678,12 @@ originale.
       (AUTO ASSESS poi RUN ALL DISCOVERY), QUICK IOT/OT (network scan +
       SNMP/datastore/IoT-OT), WIRELESS SURVEY (war driving + beacon/
       probe, l'unico senza bisogno di WiFi connesso).
+- [x] **Fase 39 — IOT/OT SWEEP copre BACnet/DNP3 + integrazione THREATS**:
+      `IotOtProbe` rileva anche BACnet/IP (Who-Is/I-Am) e DNP3 (Link
+      Status Request con CRC-16 nativo del protocollo), entrambi
+      protocolli OT senza alcuna autenticazione per progettazione;
+      `THREATS` ora integra tutti i finding IOT/OT SWEEP (Critical per
+      Modbus/BACnet/DNP3, Warning per MQTT/CoAP).
 
 ## Test plan — Fase 1
 
@@ -3809,6 +3852,36 @@ di questo firmware:
     fermare il preset alla fine dello step corrente (non a metà) e
     mostrare "cancelled" nel log.
 
+## Test plan — Fase 39 (BACnet/DNP3, integrazione THREATS)
+
+**Solo in ambiente autorizzato**, stessa regola di ogni altro strumento
+di questo firmware:
+
+1. **BACnet I-Am**: contro un dispositivo/simulatore BACnet di test (es.
+   BACnet stack di riferimento, o un building controller reale SOLO se
+   autorizzato), `IOT/OT SWEEP` deve mostrare `bacnet` con "responds
+   (I-Am)".
+2. **DNP3 link status**: contro un outstation/simulatore DNP3 di test
+   (es. `pydnp3` in modalità outstation), deve mostrare `dnp3` con
+   "responds (link status)". Se non risponde nulla nonostante
+   l'outstation sia raggiungibile: verificare innanzitutto se il CRC
+   calcolato da questo firmware è quello che il dispositivo si aspetta
+   (vedi "Limiti noti" — non verificato contro hardware reale in fase
+   di sviluppo).
+3. **BACnet/DNP3 senza risposta**: contro un host che non parla nessuno
+   dei due protocolli, `IOT/OT SWEEP` non deve produrre alcun finding
+   `bacnet`/`dnp3` per quell'host (nessun falso positivo).
+4. **`THREATS` mostra i finding OT in rosso**: dopo un `IOT/OT SWEEP`
+   con almeno un finding Modbus/BACnet/DNP3, aprire `THREATS` — quel
+   finding deve comparire in rosso (Critical), non in ambra.
+5. **`THREATS` mostra i finding IoT in ambra**: dopo un `IOT/OT SWEEP`
+   con almeno un finding MQTT/CoAP no-auth, aprire `THREATS` — deve
+   comparire in ambra (Warning), non in rosso.
+6. **`THREATS` non mostra i finding "auth required"**: un finding
+   `IOT/OT SWEEP` con `noAuth=false` (es. MQTT che ha rifiutato la
+   connessione anonima) non deve comparire affatto in `THREATS` — solo
+   i finding realmente senza autenticazione sono un "threat".
+
 ## Limiti noti e tagli di scope deliberati
 
 Riepilogo di quanto già menzionato nelle sezioni sopra, in un unico
@@ -4195,6 +4268,30 @@ posto:
   diversi minuti su uno step lungo prima di scattare al successivo.
   Aprire la schermata dedicata di quello step (es. `AUTO ASSESS` stessa,
   che continua a girare in background) mostra il progresso fine.
+- **DNP3: CRC-16 nativo del protocollo NON verificato contro un
+  outstation reale** (Fase 39): a differenza di `net/LdapWire`/
+  `net/NtlmWire` (verificati byte-a-byte contro librerie Python di
+  riferimento) e persino del Modbus/BACnet appena aggiunti (protocolli
+  più semplici, meno a rischio di un singolo bit sbagliato), il calcolo
+  del CRC-16 specifico di DNP3 (polinomio 0xA6BC, IEEE 1815) è stato
+  implementato seguendo l'algoritmo pubblicato ma non testato contro un
+  vero outstation o simulatore in questo ambiente di sviluppo — nessun
+  hardware/simulatore DNP3 disponibile qui. Se il CRC calcolato non è
+  quello che un dispositivo si aspetta, il dispositivo scarta
+  silenziosamente la richiesta (fallisce "chiuso": un finding mancato,
+  mai un falso positivo, e nessun impatto sul dispositivo target) — ma
+  il probe DNP3 andrebbe considerato non verificato fino a un test reale.
+  BACnet e Modbus non condividono questo rischio: le loro risposte sono
+  verificate strutturalmente byte per byte, non serve calcolare nulla
+  lato client.
+- **`IOT/OT SWEEP`: BACnet I-Am verificato solo strutturalmente, non un
+  parser TAG-value completo** (Fase 39): il probe controlla che i byte
+  BVLC/APDU della risposta siano quelli attesi per un I-Am (stesso
+  principio "estrai/verifica solo quanto serve" già usato per CoAP), ma
+  non decodifica Device Instance, Vendor ID o gli altri parametri BACnet
+  tag-encoded — la schermata mostra solo "responds (I-Am)", non un
+  vendor o un instance number come invece avviene per Modbus (che ha un
+  formato di risposta più semplice da estrarre in sicurezza).
 - **Nessuna build reale eseguita**: vale per ogni fase di questo
   progetto — il sandbox di sviluppo non ha accesso al registry
   PlatformIO. Tutto il codice è stato scritto con attenzione e, dove

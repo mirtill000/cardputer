@@ -9,9 +9,10 @@
 #include "freertos/semphr.h"
 
 // Unauthenticated IoT/OT protocol detection: sweeps the alive-host list
-// and checks the three protocols most commonly found exposed with no
+// and checks the protocols most commonly found exposed with no
 // authentication on IoT/OT-adjacent network segments:
-//   MQTT (1883/TCP), Modbus TCP (502/TCP), CoAP (5683/UDP).
+//   MQTT (1883/TCP), Modbus TCP (502/TCP), CoAP (5683/UDP),
+//   BACnet/IP (47808/UDP), DNP3 (20000/TCP).
 // Same risk tier and design as DataStoreProbe (read-only, no gate) -
 // this is the same kind of finding (unauthenticated data-plane access),
 // just for the protocol family that shows up on building-automation/
@@ -31,11 +32,26 @@
 // discovery path (/.well-known/core, RFC 6690) — the read-only
 // "what do you offer" request every CoAP client is expected to be able
 // to send.
+// BACnet/IP: sends a unicast Who-Is (BVLC Original-Unicast-NPDU,
+// Unconfirmed-Request/Who-Is) — the same benign "who's out there"
+// broadcast every BACnet workstation issues, just addressed to one
+// host instead of the whole segment; a structurally valid I-Am reply
+// confirms a live BACnet device. Like Modbus, BACnet has no mandatory
+// authentication for this exchange.
+// DNP3: sends a Data Link Layer Link Status Request (function code 9,
+// primary/from-master, broadcast destination address 0xFFFF — same
+// technique nmap's dnp3-info script uses) with a correctly-computed
+// DNP3 CRC-16. DNP3's Data Link Layer itself has no authentication
+// (Secure Authentication is an optional, rarely-deployed add-on), so
+// any reply starting with the DNP3 sync bytes (0x05 0x64) is treated as
+// live — response CONTENT is deliberately not validated further, same
+// "a reply at all is strong enough evidence" principle UdpProbe uses,
+// to avoid false negatives from cross-vendor reply-format variance.
 class IotOtProbe {
 public:
     struct Finding {
         IPAddress ip;
-        String service;  // "mqtt" / "modbus" / "coap"
+        String service;  // "mqtt" / "modbus" / "coap" / "bacnet" / "dnp3"
         String detail;   // vendor/resource string or a short note
         bool noAuth = false;  // answered without requiring any credential
     };
@@ -60,6 +76,8 @@ private:
     void probeMqtt(const IPAddress& ip);
     void probeModbus(const IPAddress& ip);
     void probeCoap(const IPAddress& ip);
+    void probeBacnet(const IPAddress& ip);
+    void probeDnp3(const IPAddress& ip);
     void addFinding(const IPAddress& ip, const char* service, const String& detail, bool noAuth);
     void notify(const String& text);
     void notify(ScanEventType type, uint8_t pct = 0);
