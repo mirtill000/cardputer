@@ -2468,6 +2468,28 @@ entrambi richiesti esplicitamente:
   `helpText()` toccato — stesso numero di righe totali di prima, nessun
   peggioramento del budget di spazio già stretto dalla Fase 37.
 
+### Fase 42: il backup configurazione vive sotto /netrunner
+
+Su richiesta esplicita dell'utente: `ConfigBackup` (il backup/restore
+raggiungibile con `B`/`R` da SETTINGS — già copriva tutta la
+configurazione persistita da questo firmware: `AppConfig`, le reti WiFi
+salvate con relativa password, e l'allowlist di WAR DRIVING) scriveva
+il proprio file a `/config_backup.json`, alla radice della SD, isolato
+da ogni altro artefatto. Spostato a `/netrunner/config_backup.json` —
+la stessa cartella condivisa dove finiscono già tutti gli altri export
+di questo firmware (report di scan, `wardrive.csv`, `.pcap`) — così
+compare anche nel salto rapido `N` di `FILE MANAGER` invece di dover
+sapere che vive da solo alla radice. `ConfigBackup::backup()` crea la
+cartella se non esiste ancora (`mkdir` è un no-op innocuo se c'è già),
+stesso pattern già usato da `storage/NetrunnerPaths.h`.
+
+Nessun percorso di migrazione da un vecchio backup alla radice: dato
+che questo firmware non è ancora stato distribuito a nessun utente
+oltre a chi lo sta testando in questa sessione, non esiste un backup
+pre-Fase-42 da preservare — chi ha già un `/config_backup.json` alla
+radice della SD da una build precedente dovrà rifare il backup una
+volta con `B` dopo l'aggiornamento.
+
 ## Compilare e flashare
 
 ```
@@ -2787,6 +2809,11 @@ originale.
       erano prive, e una riga di percorso completo (con i tasti esatti,
       es. `MENU>NET>D>Ent(BCN)`) nell'help overlay di ogni schermata
       raggiungibile con più di un salto dal menu principale.
+- [x] **Fase 42 — Backup configurazione sotto /netrunner**: `ConfigBackup`
+      (`B`/`R` da SETTINGS — config, reti WiFi salvate con password,
+      allowlist WAR DRIVING) scrive ora a `/netrunner/config_backup.json`
+      invece che alla radice della SD, coerente con ogni altro export di
+      questo firmware.
 
 ## Test plan — Fase 1
 
@@ -4005,6 +4032,19 @@ di questo firmware:
    MODE), verificare che l'overlay non mostri meno informazione utile di
    prima — la riga di percorso ha sostituito una riga vuota, non
    aggiunto una riga.
+
+## Test plan — Fase 42 (backup sotto /netrunner)
+
+1. **Backup su SD vuota**: con una SD che non ha ancora `/netrunner`,
+   premere `B` da SETTINGS — deve creare la cartella e scrivere
+   `/netrunner/config_backup.json` (visibile anche da `FILE MANAGER`
+   con `N`), non fallire per cartella mancante.
+2. **Restore**: dopo aver salvato una rete WiFi e un'allowlist WAR
+   DRIVING, cancellarle (FORGET / rimozione manuale), poi premere `R` —
+   devono tornare esattamente come nel backup.
+3. **Nessun backup trovato**: su una SD che non ha mai avuto un backup
+   scritto da questa build, `R` deve mostrare "no backup found on SD",
+   non un errore di parsing.
 
 ## Limiti noti e tagli di scope deliberati
 
