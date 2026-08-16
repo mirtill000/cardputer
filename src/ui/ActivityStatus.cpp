@@ -112,20 +112,29 @@ uint16_t activity::draw(M5Canvas& gfx, int16_t rightX, int16_t y) {
         }
     }
 
-    char buf[14];
+    // Sized past the realistic worst case ("RF:" + a 6-char shortTag +
+    // "+" + a 2-digit count, ~13 chars) - GCC's -Wformat-truncation
+    // assumes %d could be a full int's worst case and %s an unbounded
+    // string since promOnly/bgCount have no compiler-visible range, so
+    // a tightly-sized buffer still warns even though shortTag is always
+    // 3-6 chars (see TaskEntry's comment) and the counts are always
+    // small (bounded by the fixed-size table above). The %.6s precision
+    // below both matches that documented invariant and gives GCC's
+    // analysis a real bound to work with.
+    char buf[24];
     uint16_t color;
     bool haveTag = true;
     if (promCount >= 2) {
         snprintf(buf, sizeof(buf), "RF:%d!", promCount);  // radio conflict — outranks everything
         color = theme::RED;
     } else if (promCount == 1 && bgCount == 0) {
-        snprintf(buf, sizeof(buf), "RF:%s", promOnly);
+        snprintf(buf, sizeof(buf), "RF:%.6s", promOnly);
         color = theme::AMBER;
     } else if (promCount == 1) {
-        snprintf(buf, sizeof(buf), "RF:%s+%d", promOnly, bgCount);
+        snprintf(buf, sizeof(buf), "RF:%.6s+%d", promOnly, bgCount);
         color = theme::AMBER;
     } else if (bgCount == 1) {
-        snprintf(buf, sizeof(buf), "BG:%s", bgOnly);
+        snprintf(buf, sizeof(buf), "BG:%.6s", bgOnly);
         color = theme::CYAN;
     } else if (bgCount > 1) {
         snprintf(buf, sizeof(buf), "BG:%d", bgCount);

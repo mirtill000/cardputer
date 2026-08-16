@@ -2386,6 +2386,56 @@ esplicita:
   possiedono un meccanismo di autenticazione reale che è stato lasciato
   disattivato — un finding vero ma di un ordine diverso.
 
+### Fase 40: bug fix — prima build reale, primi warning reali
+
+La prima build effettivamente eseguita da un utente su Mac (vedi la nota
+in "Compilare e flashare" più sotto) ha prodotto dei warning del
+compilatore, analizzati e corretti qui — inclusa una regressione
+funzionale reale che nessuna revisione manuale del codice aveva
+individuato.
+
+- **BUG REALE — `SentinelManager::kCaptureLen` overflow (256 → 0)**:
+  la costante era dichiarata `static constexpr uint8_t kCaptureLen =
+  256;`, ma `uint8_t` arriva solo fino a 255 — la conversione
+  troncava silenziosamente il valore a 0. `CapturedFrame::data`
+  (`uint8_t data[kCaptureLen]`) diventava quindi un array di lunghezza
+  zero, e `onCapturedFrame()` clampava `capturedLen` a
+  `sizeof(frame.data)` = 0 per OGNI frame catturato — nessun crash
+  (il `memcpy` a lunghezza 0 è innocuo, e la size della coda FreeRTOS
+  restava comunque coerente), ma il dump `.pcap` di SENTINEL MODE
+  scriveva silenziosamente un record vuoto per ogni pacchetto, sempre:
+  una delle due funzioni portanti di SENTINEL MODE (l'altra è la
+  discovery periodica) risultava di fatto inoperante dalla Fase 34 in
+  poi, senza che nulla lo segnalasse a schermo. **Corretto** cambiando
+  il tipo in `uint16_t` (lo stesso di `capturedLen`/`originalLen`, gli
+  altri due campi dello stesso struct) — `DeauthManager`/`PmkidManager`
+  non condividevano questo bug perché usano `256` come literal diretto
+  nella dichiarazione dell'array, non tramite una costante `uint8_t`
+  intermedia.
+- **Warning di troncamento format-string** (`net/TimeSync.cpp`,
+  `ui/ActivityStatus.cpp`): GCC assume, in assenza di un range noto a
+  compile-time, che ogni `%d` possa arrivare alla larghezza massima di
+  un `int` (11 cifre col segno) e ogni `%s` possa essere di lunghezza
+  arbitraria — quindi segnala un possibile troncamento anche quando i
+  valori reali (un anno a 4 cifre, un'ora a 2 cifre, un tag di 3-6
+  caratteri) non si avvicinano mai a quel caso peggiore. Corretto
+  ingrandendo i buffer oltre il caso peggiore calcolato da GCC (nessun
+  cambio di comportamento, il testo prodotto è identico) e, in
+  `ActivityStatus.cpp`, aggiungendo una precisione `%.6s` che sia
+  vincola davvero la stringa al limite già documentato nel commento di
+  `TaskEntry` (3-6 caratteri) sia dà a GCC un bound concreto su cui
+  ragionare.
+- **Audit più ampio per altre cause di crash**: nessun'altra istanza
+  dello stesso pattern (`constexpr uint8_t` con un valore che eccede
+  255) trovata nel resto del codice; i parser byte-a-byte più a rischio
+  aggiunti di recente (`IotOtProbe`'s Modbus/BACnet/DNP3, il file più
+  giovane e meno esercitato del firmware) sono stati riverificati caso
+  per caso e risultano correttamente delimitati; il pattern
+  `container[container.size() - 1 - index]` usato da ogni `get()`
+  "più-recente-prima" in questo firmware (una ventina di moduli) resta
+  sempre protetto da un `index < size()` calcolato immediatamente prima
+  — nessun underflow possibile.
+
 ## Compilare e flashare
 
 ```
@@ -2415,6 +2465,14 @@ originale.
 > plan dedicato più sotto ma non sono ancora state verificate su
 > hardware — se trovi un problema in una di queste, è il prossimo passo
 > naturale da testare e riportare.
+>
+> **Aggiornamento (dopo la Fase 39)**: una build successiva, con tutto
+> il codice fino alla Fase 39 incluso, ha completato la compilazione
+> senza errori — solo alcuni warning del compilatore, analizzati e
+> corretti in Fase 40 (vedi sopra), incluso un bug funzionale reale
+> (`SentinelManager::kCaptureLen`) che nessuna revisione manuale aveva
+> individuato. Il flash/boot con questo codice non è stato ancora
+> confermato su hardware.
 
 ## Roadmap / stato attuale
 
@@ -2684,6 +2742,13 @@ originale.
       protocolli OT senza alcuna autenticazione per progettazione;
       `THREATS` ora integra tutti i finding IOT/OT SWEEP (Critical per
       Modbus/BACnet/DNP3, Warning per MQTT/CoAP).
+- [x] **Fase 40 — Bug fix dalla prima build reale**: corretto un bug
+      funzionale reale (`SentinelManager::kCaptureLen` dichiarato
+      `uint8_t`, `256` che tronca silenziosamente a `0` — il dump pcap
+      di SENTINEL MODE scriveva record vuoti per ogni frame dalla Fase
+      34) più i warning di troncamento format-string in
+      `net/TimeSync.cpp`/`ui/ActivityStatus.cpp`; audit più ampio senza
+      altre istanze dello stesso pattern trovate altrove.
 
 ## Test plan — Fase 1
 
