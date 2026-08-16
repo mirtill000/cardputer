@@ -19,8 +19,9 @@ public:
     void onScanEvent(const ScanNotification& ev) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* title() const override { return "TWIN"; }
     const char* helpText() const override {
-        return "EVIL TWIN\n\nType/edit the SSID, ENTER to\nstart a look-alike open AP.\n(running) ENTER: stop\nDEL: erase / back";
+        return "EVIL TWIN\nMENU>WD>E(TWIN)\nType/edit the SSID, ENTER to\nstart a look-alike open AP.\n(running) ENTER: stop\nDEL: erase / back";
     }
 
 private:

@@ -2436,6 +2436,38 @@ individuato.
   sempre protetto da un `index < size()` calcolato immediatamente prima
   — nessun underflow possibile.
 
+### Fase 41: percorso di navigazione visibile ovunque
+
+Su segnalazione esplicita dell'utente — dopo aver dovuto chiedere come
+raggiungere BEACON/PROBE INTEL — che molte funzionalità di questo
+firmware risultavano di fatto nascoste dietro una gerarchia di menu non
+documentata da nessuna parte sullo schermo. Due interventi complementari,
+entrambi richiesti esplicitamente:
+
+- **Breadcrumb dell'header esteso a TUTTI i livelli** — prima mostrava
+  solo il genitore immediato (es. "DISC/SNMP SWEEP"); `UiManager::
+  breadcrumbPath()` (sostituisce il precedente `parentTitle()`) ora
+  percorre l'intero stack di navigazione e concatena il `title()` di
+  ogni schermata antenata (es. "MENU/NET/DISC/" prima di "BCN"), non
+  solo quella immediatamente sopra. Perché funzionasse senza buchi
+  visibili nella catena, `title()` — prima presente solo su 11
+  schermate — è stato aggiunto a tutte le restanti 35 che possono
+  comparire come genitore di un'altra (le uniche 4 rimaste senza sono
+  `BootScreen`/`CredDisclaimerScreen`/`OffensiveDisclaimerScreen`, che
+  usano sempre `replaceScreen()` e quindi non restano mai sullo stack
+  come antenate, e `PlaceholderScreen`, oggi irraggiungibile).
+- **Percorso completo (con tasti) nell'help overlay di ogni schermata**
+  — ogni schermata raggiungibile con più di un salto dal menu principale
+  ora include nel proprio `helpText()` una riga con il percorso esatto
+  per arrivarci, nella stessa notazione dell'esempio dato dall'utente:
+  `MENU>NET>D>Ent(BCN)` si legge "dal menu principale vai su NET(WORK
+  SCAN), premi D per aprire DISC(OVERY), poi ENTER sulla riga BCN". Le
+  11 schermate raggiungibili con un solo ENTER dal menu principale non
+  hanno bisogno di questa riga (sono già ovvie) e restano invariate. La
+  riga sostituisce la riga vuota che separava titolo e contenuto in ogni
+  `helpText()` toccato — stesso numero di righe totali di prima, nessun
+  peggioramento del budget di spazio già stretto dalla Fase 37.
+
 ## Compilare e flashare
 
 ```
@@ -2749,6 +2781,12 @@ originale.
       34) più i warning di troncamento format-string in
       `net/TimeSync.cpp`/`ui/ActivityStatus.cpp`; audit più ampio senza
       altre istanze dello stesso pattern trovate altrove.
+- [x] **Fase 41 — Percorso di navigazione visibile ovunque**: breadcrumb
+      dell'header esteso a tutti i livelli dello stack (non solo il
+      genitore immediato), `title()` aggiunto alle 35 schermate che ne
+      erano prive, e una riga di percorso completo (con i tasti esatti,
+      es. `MENU>NET>D>Ent(BCN)`) nell'help overlay di ogni schermata
+      raggiungibile con più di un salto dal menu principale.
 
 ## Test plan — Fase 1
 
@@ -3947,6 +3985,27 @@ di questo firmware:
    connessione anonima) non deve comparire affatto in `THREATS` — solo
    i finding realmente senza autenticazione sono un "threat".
 
+## Test plan — Fase 41 (percorso di navigazione)
+
+1. **Breadcrumb multi-livello**: da MENU, aprire NETWORK SCAN, poi
+   DISCOVERY (`D`), poi BEACON/PROBE INTEL — l'header di quest'ultima
+   deve mostrare "NET/DISC/" (dim) prima di "BCN" (acceso), non solo
+   "DISC/".
+2. **Breadcrumb vuoto alla radice**: su MAIN MENU stesso, l'header non
+   deve mostrare alcun breadcrumb (stack di un solo elemento).
+3. **Help overlay con percorso**: aprire una schermata raggiunta con più
+   di un salto (es. IOT/OT SWEEP) e premere `?` — deve comparire la riga
+   `MENU>NET>D>Ent(IOT)` subito sotto il titolo.
+4. **Help overlay senza percorso sui top-level**: aprire una delle 11
+   voci dirette del menu principale (es. THREATS) e premere `?` — non
+   deve comparire nessuna riga di percorso (non serve, è già a un salto
+   dal menu).
+5. **Nessuna riga persa**: per almeno tre schermate il cui `helpText()`
+   era già lungo prima di questa fase (es. BEACON/PROBE INTEL, GUARD
+   MODE), verificare che l'overlay non mostri meno informazione utile di
+   prima — la riga di percorso ha sostituito una riga vuota, non
+   aggiunto una riga.
+
 ## Limiti noti e tagli di scope deliberati
 
 Riepilogo di quanto già menzionato nelle sezioni sopra, in un unico
@@ -4357,12 +4416,28 @@ posto:
   tag-encoded — la schermata mostra solo "responds (I-Am)", non un
   vendor o un instance number come invece avviene per Modbus (che ha un
   formato di risposta più semplice da estrarre in sicurezza).
-- **Nessuna build reale eseguita**: vale per ogni fase di questo
-  progetto — il sandbox di sviluppo non ha accesso al registry
-  PlatformIO. Tutto il codice è stato scritto con attenzione e, dove
-  possibile, la logica non hardware-dipendente è stata verificata con
-  test standalone su host (aritmetica IP, formato DB OUI, encoder
-  Base64, i messaggi BER/LDAP di `net/LdapWire` contro la libreria
-  Python `ldap3`, i messaggi NTLM di `net/NtlmWire` contro `ntlm-auth`)
-  — ma **una build (`pio run`) e un test su hardware reale restano il
-  passo successivo prima di fidarsi di questo firmware.**
+- **Header: breadcrumb multi-livello non troncato per catene lunghe**
+  (Fase 41): `chrome::drawHeader` non limita esplicitamente la
+  lunghezza del breadcrumb — con `title()` corti (3-6 caratteri, la
+  convenzione seguita ovunque) e i percorsi tipici di questo firmware
+  (2-4 livelli) resta comodamente nel budget dei 240px dell'header, ma
+  una catena di navigazione insolitamente profonda potrebbe in teoria
+  sovrapporsi al tag `RF:`/`BG:` a destra. Nessun troncamento/ellissi
+  aggiunto deliberatamente — stessa filosofia "puramente additivo" già
+  seguita per la versione a un solo livello che questa fase ha esteso.
+- **Build reale confermata fino alla Fase 39; Fase 40/41 non ancora
+  verificate**: a differenza di quanto scritto nelle fasi precedenti
+  ("nessuna build mai eseguita in questo ambiente" — vero per il
+  sandbox di sviluppo, che non ha mai avuto accesso al registry
+  PlatformIO), una build reale dell'utente su Mac ha effettivamente
+  compilato tutto il codice fino alla Fase 39 inclusa (vedi la nota in
+  "Compilare e flashare" più sopra) — con solo warning, nessun errore,
+  poi corretti in Fase 40. Il codice della Fase 40 (i fix stessi) e
+  della Fase 41 (percorsi di navigazione, tocca ~40 file) non è stato
+  ancora ricompilato da nessuno: **una nuova build resta il passo
+  successivo prima di fidarsi di queste due fasi specifiche.** Tutto il
+  codice non hardware-dipendente resta comunque verificato dove
+  possibile con test standalone su host (aritmetica IP, formato DB OUI,
+  encoder Base64, i messaggi BER/LDAP di `net/LdapWire` contro la
+  libreria Python `ldap3`, i messaggi NTLM di `net/NtlmWire` contro
+  `ntlm-auth`).

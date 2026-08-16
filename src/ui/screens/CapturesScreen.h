@@ -23,7 +23,7 @@ public:
 
     const char* title() const override { return "CAPS"; }
     const char* helpText() const override {
-        return "CAPTURES\n\nEvery .pcap this firmware\nhas written (handshakes +\nsentinel), in one list.\nArrows: move   I: detail\nX: delete   DEL: back";
+        return "CAPTURES\nMENU>SET>C(CAPS)\nEvery .pcap this firmware\nhas written (handshakes +\nsentinel), in one list.\nArrows: move   I: detail\nX: delete   DEL: back";
     }
 
 private:

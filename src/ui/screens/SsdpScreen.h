@@ -13,8 +13,9 @@ public:
     void onScanEvent(const ScanNotification& ev) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* title() const override { return "UPNP"; }
     const char* helpText() const override {
-        return "UPNP DISCOVERY\n\nOne M-SEARCH multicast -\nlists whatever answers (TVs,\nNAS, routers, IoT).\nENTER: sweep   I: full detail\nArrows: move   DEL: back";
+        return "UPNP DISCOVERY\nMENU>NET>D>Ent(UPNP)\nOne M-SEARCH multicast -\nlists whatever answers (TVs,\nNAS, routers, IoT).\nENTER: sweep   I: full detail\nArrows: move   DEL: back";
     }
 
 private:

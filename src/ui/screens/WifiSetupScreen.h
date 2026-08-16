@@ -18,6 +18,7 @@ public:
     void update(uint32_t nowMs) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* title() const override { return "WIFI"; }
     const char* helpText() const override {
         return "WIFI SETUP\n\nENTER: scan for networks\nS: saved networks   F: forget\n(list) R: rescan\n(password) TAB: show/hide\nDEL: back";
     }

@@ -22,8 +22,9 @@ public:
     void update(uint32_t nowMs) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* title() const override { return "OTA"; }
     const char* helpText() const override {
-        return "OTA UPDATE\n\nType a URL to a raw\nfirmware.bin on your LAN,\nENTER to flash.\nDo NOT power off mid-update.\nDEL: erase / back";
+        return "OTA UPDATE\nMENU>SET>O(OTA)\nType a URL to a raw\nfirmware.bin on your LAN,\nENTER to flash.\nDo NOT power off mid-update.\nDEL: erase / back";
     }
 
 private:

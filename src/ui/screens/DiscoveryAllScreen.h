@@ -15,8 +15,9 @@ public:
     void onScanEvent(const ScanNotification& ev) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* title() const override { return "ALL"; }
     const char* helpText() const override {
-        return "RUN ALL DISCOVERY\n\nRuns every discovery tool in turn\n(UPnP, mDNS, SNMP, data-store,\nthen CDP/LLDP, passive hosts,\nrogue DHCP - one radio at a time).\n\nENTER: start / stop\nDEL: back (keeps running)";
+        return "RUN ALL DISCOVERY\nMENU>NET>D>Ent(ALL)\nRuns every discovery tool in turn\n(UPnP, mDNS, SNMP, data-store,\nthen CDP/LLDP, passive hosts,\nrogue DHCP - one radio at a time).\n\nENTER: start / stop\nDEL: back (keeps running)";
     }
 
 private:

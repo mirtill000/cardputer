@@ -26,6 +26,7 @@ public:
     void onKey(UiKey key, char ch) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* title() const override { return "THRT"; }
     const char* helpText() const override {
         return "THREATS\n\nLive rollup of the worst\nfindings across every module -\ndefault creds, plaintext\nservices, rogue DHCP.\nI: full text\nArrows: move   DEL: back";
     }

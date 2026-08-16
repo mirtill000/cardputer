@@ -16,6 +16,7 @@ public:
     void onKey(UiKey key, char ch) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* title() const override { return "HIST"; }
     const char* helpText() const override {
         return "SCAN HISTORY\n\nBrowse past NETWORK SCAN\nsnapshots.\nENTER: open   S: stats chart\nArrows: move   DEL: back";
     }

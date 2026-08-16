@@ -17,8 +17,9 @@ public:
     void onKey(UiKey key, char ch) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* title() const override { return "RNG"; }
     const char* helpText() const override {
-        return "TARGET RANGE\n\nType a base IP (e.g. 192.168.5.0)\nENTER: scan that /24\nC: clear (back to DHCP subnet)\nDEL: erase / back";
+        return "TARGET RANGE\nMENU>NET>T(RNG)\nType a base IP (e.g. 192.168.5.0)\nENTER: scan that /24\nC: clear (back to DHCP subnet)\nDEL: erase / back";
     }
 
 private:

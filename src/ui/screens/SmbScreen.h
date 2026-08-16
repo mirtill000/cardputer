@@ -19,8 +19,9 @@ public:
     void onScanEvent(const ScanNotification& ev) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* title() const override { return "SMB"; }
     const char* helpText() const override {
-        return "SMB NEGOTIATE\n\nOne read-only Negotiate\nrequest - shows security mode\nflags, no login attempted.\nENTER: start\nDEL: back";
+        return "SMB NEGOTIATE\nMENU>NET>HOST>S(SMB)\nOne read-only Negotiate\nrequest - shows security mode\nflags, no login attempted.\nENTER: start\nDEL: back";
     }
 
 private:

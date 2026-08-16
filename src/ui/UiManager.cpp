@@ -76,9 +76,15 @@ void UiManager::activate(Screen* s) {
     s->onEnter();
 }
 
-const char* UiManager::parentTitle() const {
-    if (_stack.size() < 2) return nullptr;
-    return _stack[_stack.size() - 2]->title();
+String UiManager::breadcrumbPath() const {
+    String path;
+    for (size_t i = 0; i + 1 < _stack.size(); i++) {  // every ancestor, excluding the active (top) screen
+        const char* t = _stack[i]->title();
+        if (!t || !t[0]) continue;
+        if (path.length()) path += "/";
+        path += t;
+    }
+    return path;
 }
 
 void UiManager::pushScreen(Screen* s) {

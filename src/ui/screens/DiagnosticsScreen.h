@@ -14,8 +14,9 @@ public:
     void onKey(UiKey key, char ch) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* title() const override { return "DIAG"; }
     const char* helpText() const override {
-        return "DIAGNOSTICS\n\nDevice self-test.\nS: play a speaker test tone\nType any key: keyboard echo\nDEL: back";
+        return "DIAGNOSTICS\nMENU>SET>D(DIAG)\nDevice self-test.\nS: play a speaker test tone\nType any key: keyboard echo\nDEL: back";
     }
 
 private:

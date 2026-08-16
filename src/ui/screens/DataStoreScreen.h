@@ -15,8 +15,9 @@ public:
     void onScanEvent(const ScanNotification& ev) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* title() const override { return "DS"; }
     const char* helpText() const override {
-        return "DATASTORE SWEEP\n\nChecks Redis/Memcached/\nElasticsearch/MongoDB for\nno-auth access on every host.\nENTER: sweep   I: full detail\nArrows: move   DEL: back";
+        return "DATASTORE SWEEP\nMENU>NET>D>Ent(DS)\nChecks Redis/Memcached/\nElasticsearch/MongoDB for\nno-auth access on every host.\nENTER: sweep   I: full detail\nArrows: move   DEL: back";
     }
 
 private:

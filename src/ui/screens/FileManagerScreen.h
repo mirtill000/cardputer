@@ -26,8 +26,9 @@ public:
     void onKey(UiKey key, char ch) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* title() const override { return "FILES"; }
     const char* helpText() const override {
-        return "FILES\n\narrows: move   ENTER: open dir\nX: delete selected file\nN: jump to /netrunner\nH: jump to /handshakes\nDEL: up a dir / back";
+        return "FILES\nMENU>SET>F(FILES)\narrows: move   ENTER: open dir\nX: delete selected file\nN: jump to /netrunner\nH: jump to /handshakes\nDEL: up a dir / back";
     }
 
 private:

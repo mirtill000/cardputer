@@ -23,7 +23,7 @@ public:
 
     const char* title() const override { return "MENU"; }
     const char* helpText() const override {
-        return "MAIN MENU\n\nArrows: move selection\nENTER: open highlighted tool\n\nDiscovery tools live under\nNETWORK SCAN -> press D.";
+        return "MAIN MENU\n\nArrows: move selection\nENTER: open highlighted tool\n\nOther screens list their own\npath, e.g. NET>D>Ent(BCN).";
     }
 
 private:

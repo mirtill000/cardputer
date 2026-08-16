@@ -15,8 +15,9 @@ public:
     void onScanEvent(const ScanNotification& ev) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* title() const override { return "IOT"; }
     const char* helpText() const override {
-        return "IOT/OT SWEEP\n\nChecks MQTT/Modbus/CoAP/\nBACnet/DNP3 for no-auth\naccess on every host.\nENTER: sweep   I: full detail\nArrows: move   DEL: back";
+        return "IOT/OT SWEEP\nMENU>NET>D>Ent(IOT)\nChecks MQTT/Modbus/CoAP/\nBACnet/DNP3 for no-auth\naccess on every host.\nENTER: sweep   I: full detail\nArrows: move   DEL: back";
     }
 
 private:

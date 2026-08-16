@@ -15,8 +15,9 @@ public:
     void onScanEvent(const ScanNotification& ev) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* title() const override { return "LDAP"; }
     const char* helpText() const override {
-        return "LDAP SWEEP\n\nAnonymous bind + rootDSE read\non port 389 for every host -\nread-only, no real credential.\nENTER: sweep   I: full rootDSE\nArrows: move   DEL: back";
+        return "LDAP SWEEP\nMENU>NET>D>Ent(LDAP)\nAnonymous bind + rootDSE read\non port 389 for every host -\nread-only, no real credential.\nENTER: sweep   I: full rootDSE\nArrows: move   DEL: back";
     }
 
 private:

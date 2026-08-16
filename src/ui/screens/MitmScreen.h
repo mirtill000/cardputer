@@ -22,8 +22,9 @@ public:
     void onScanEvent(const ScanNotification& ev) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* title() const override { return "MITM"; }
     const char* helpText() const override {
-        return "MITM AUDIT\n\nArrows: adjust duration\nS: toggle traffic sniff\nD: add DNS-spoof host->IP\nENTER: start/stop\nDEL: back";
+        return "MITM AUDIT\nMENU>NET>HOST>M(MITM)\nArrows: adjust duration\nS: toggle traffic sniff\nD: add DNS-spoof host->IP\nENTER: start/stop\nDEL: back";
     }
 
 private:

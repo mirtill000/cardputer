@@ -26,8 +26,9 @@ public:
     void onKey(UiKey key, char ch) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* title() const override { return "SIG"; }
     const char* helpText() const override {
-        return "SIGNAL FINDER\n\nLive RSSI meter for this AP -\nwalk around and watch the bar\nto physically locate it.\nDEL: back";
+        return "SIGNAL FINDER\nMENU>WD>TAB(SIG)\nLive RSSI meter for this AP -\nwalk around and watch the bar\nto physically locate it.\nDEL: back";
     }
 
 private:

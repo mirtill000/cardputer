@@ -22,8 +22,9 @@ public:
     void onScanEvent(const ScanNotification& ev) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* title() const override { return "DTH"; }
     const char* helpText() const override {
-        return "DEAUTH + CAPTURE\n\nType the ONE client MAC to\ndeauth, ENTER to start.\nFixed burst + bounded capture\nto SD, never repeats.\n\nDetects (never cracks) whether\na full M1+M2 handshake pair\nstructurally looks captured.\nDEL: erase digit / back";
+        return "DEAUTH + CAPTURE\nMENU>WD>X(DTH)\nType the ONE client MAC to\ndeauth, ENTER to start.\nFixed burst + bounded capture\nto SD, never repeats.\n\nDetects (never cracks) whether\na full M1+M2 handshake pair\nstructurally looks captured.\nDEL: erase digit / back";
     }
 
 private:

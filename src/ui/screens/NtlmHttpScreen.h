@@ -15,8 +15,9 @@ public:
     void onScanEvent(const ScanNotification& ev) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* title() const override { return "NTLM"; }
     const char* helpText() const override {
-        return "NTLM DISCLOSURE\n\nNegotiates NTLM on known HTTP\nports, reads domain/hostname\nfrom the Type 2 challenge.\nNever completes the handshake.\nENTER: sweep   I: full detail\nDEL: back";
+        return "NTLM DISCLOSURE\nMENU>NET>D>Ent(NTLM)\nNegotiates NTLM on known HTTP\nports, reads domain/hostname\nfrom the Type 2 challenge.\nNever completes the handshake.\nENTER: sweep   I: full detail\nDEL: back";
     }
 
 private:
