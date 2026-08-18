@@ -41,7 +41,21 @@ void EvilTwinScreen::onScanEvent(const ScanNotification& ev) {
 void EvilTwinScreen::onKey(UiKey key, char ch) {
     switch (_state) {
         case State::EnterSsid:
-            if (key == UiKey::Char) {
+            // TAB, not a Char branch: text entry mode is active here for
+            // typing the SSID, so a printable 'k'/'K' has to stay a
+            // literal character (an SSID could legitimately contain one)
+            // - TAB is never part of typed text, so it's free to mean
+            // "start karma" instead.
+            if (key == UiKey::Tab) {
+                g_ui.setTextEntryMode(false);
+                _logCount = 0;
+                if (g_evilTwinManager.startKarma(_channel)) {
+                    _state = State::Running;
+                } else {
+                    pushLog("no candidates - run BEACON/PROBE INTEL first");
+                    g_ui.setTextEntryMode(true);
+                }
+            } else if (key == UiKey::Char) {
                 if (_ssidText.length() < 32) _ssidText += ch;
             } else if (key == UiKey::Back) {
                 if (_ssidText.length() > 0) {
@@ -93,6 +107,14 @@ void EvilTwinScreen::draw(M5Canvas& gfx) {
             gfx.setCursor(6, 68);
             gfx.print("network's actual encryption.");
 
+            std::vector<String> candidates;
+            size_t karmaCount = g_evilTwinManager.previewKarmaCandidates(candidates);
+            gfx.setTextColor(karmaCount ? theme::CYAN : theme::GREY, theme::BG);
+            gfx.setCursor(6, 82);
+            gfx.print("TAB: karma (");
+            gfx.print((unsigned)karmaCount);
+            gfx.print(karmaCount ? " candidates)" : " - none yet)");
+
             gfx.setTextColor(theme::GREY, theme::BG);
             gfx.setCursor(4, gfx.height() - 9);
             gfx.print("ENTER:start DEL:erase/back");
@@ -100,10 +122,19 @@ void EvilTwinScreen::draw(M5Canvas& gfx) {
         }
 
         case State::Running: {
+            bool karma = g_evilTwinManager.isKarmaMode();
             gfx.setTextColor(theme::RED, theme::BG);
             gfx.setCursor(6, 18);
-            gfx.print("AP UP: ");
-            gfx.print(_ssidText);
+            if (karma) {
+                gfx.print("KARMA (");
+                gfx.print((unsigned)(g_evilTwinManager.karmaCurrentIndex() + 1));
+                gfx.print("/");
+                gfx.print((unsigned)g_evilTwinManager.karmaCandidateCount());
+                gfx.print("): ");
+            } else {
+                gfx.print("AP UP: ");
+            }
+            gfx.print(g_evilTwinManager.ssid());
 
             gfx.setTextColor(theme::CYAN, theme::BG);
             gfx.setCursor(6, 30);

@@ -2705,6 +2705,43 @@ disclaimer richiamerebbe `replaceScreen(VlanHopScreen)` sopra una
 `VlanHopScreen` già presente più in basso nello stack, lasciando due
 voci per la stessa schermata.
 
+### Fase 49: EVIL TWIN guadagna KARMA mode
+
+Secondo dei 10 sviluppi offensive proposti in chat, implementato su
+richiesta esplicita — con una correzione di premessa importante fatta
+durante l'implementazione: la proposta originale diceva "EvilTwinManager
+oggi rileva solo evil twin altrui", ma non era corretto — `EvilTwinManager`
+è già uno strumento attivo (crea un AP look-alike vero, non solo lo
+rileva; la *rilevazione* passiva vive separatamente nell'euristica di
+`WardrivingManager`). Quello che mancava davvero era il KARMA mode.
+
+Un vero attacco Karma risponde a OGNI probe request di un client,
+individualmente e all'istante, con una probe response contraffatta che
+rivendica qualunque SSID il client abbia appena chiesto — richiede
+controllo a basso livello sulle probe response per-client che l'API
+softAP standard di Arduino/esp-idf non espone. `startKarma()` fa
+un'approssimazione più grezza ma realizzabile con l'hardware
+disponibile, ed è onesto nel dirlo: fotografa le SSID che
+`BeaconProbeSniffer` ha già visto probare da client vicini (la loro
+PNL — serve aver girato BEACON/PROBE INTEL prima), poi cicla il SINGOLO
+softAP di questo dispositivo attraverso quella lista di candidate, 8
+secondi ciascuna (`kKarmaDwellMs`), sperando che un dispositivo in
+portata con quella rete già nella propria PNL si riassoci durante
+quella finestra. Più lento e meno certo di un vero Karma, ma riusa
+tutto il codice di lifecycle AP + log associazioni che il modo a SSID
+fisso aveva già.
+
+Da `EVIL TWIN` (`MENU>WD>E(TWIN)`, stesso gate offensivo di sempre):
+`TAB` invece di `ENTER` avvia KARMA senza bisogno di digitare nulla —
+`TAB` e non una lettera perché l'inserimento testo per l'SSID è attivo
+in quello stato, e una SSID potrebbe legittimamente contenere quella
+lettera. La schermata mostra il conteggio di candidate disponibili
+prima di partire, e durante l'esecuzione l'SSID attualmente trasmesso
+con indice/totale (`KARMA (i/n): <ssid>`). `Association` ora porta
+anche l'SSID a cui un client si è associato (prima solo MAC+timestamp),
+utile in KARMA mode dove l'SSID broadcast cambia nel tempo — a modo
+fisso il valore resta semplicemente costante come prima.
+
 ## Compilare e flashare
 
 ```
@@ -3068,6 +3105,13 @@ originale.
       switch cablata — un invio riuscito è riportato come "inviato",
       mai come "riuscito". Nuova voce `VLAN HOP` nel gruppo passivo di
       `DISCOVERY`.
+- [x] **Fase 49 — EVIL TWIN: KARMA mode**: `EvilTwinManager::startKarma()`
+      cicla il softAP attraverso le SSID che `BeaconProbeSniffer` ha
+      visto probare da client vicini (8s ciascuna), invece di un solo
+      SSID fisso digitato dall'utente — approssimazione onesta di un
+      vero attacco Karma, dato il limite dell'API softAP standard. `TAB`
+      da `EVIL TWIN` (invece di digitare) avvia KARMA; `Association` ora
+      registra anche l'SSID a cui un client si è associato.
 
 ## Test plan — Fase 1
 
@@ -4428,6 +4472,30 @@ di questo firmware:
    `</>` decrementa/incrementa il valore a fuoco tra 1 e 4094 senza
    andare sotto/sopra questi limiti.
 
+## Test plan — Fase 49 (EVIL TWIN: KARMA mode)
+
+1. **Nessuna candidata senza BEACON/PROBE INTEL**: da `EVIL TWIN` con
+   `BeaconProbeSniffer` mai avviato in questa sessione (0 client
+   probati noti), verificare che il conteggio candidate mostri "0 -
+   none yet" e che `TAB` fallisca con "no candidates - run BEACON/PROBE
+   INTEL first" senza avviare alcun AP.
+2. **Digitare una SSID contenente 'k'/'K' resta possibile**: in stato
+   di inserimento SSID, digitare una stringa con la lettera K (es.
+   "Kevin") — deve comparire nel campo normalmente, senza attivare
+   KARMA (verifica del fix TAB-vs-Char di questa fase).
+3. **Ciclo candidate corretto**: dopo aver raccolto almeno 2 SSID
+   distinte in BEACON/PROBE INTEL, avviare KARMA (`TAB`) e verificare
+   che l'intestazione mostri "KARMA (1/N): <ssid>", che cambi in
+   "KARMA (2/N): <altra ssid>" dopo `kKarmaDwellMs` (8s), e così via a
+   ciclo chiuso (torna a 1/N dopo l'ultima).
+4. **Associazioni registrano l'SSID corretto**: far associare un
+   client di test durante una finestra KARMA e verificare che il log
+   mostri `client connected: <mac> -> "<ssid corrente in quel momento>"`
+   — non l'SSID iniziale se nel frattempo si è già ciclato oltre.
+5. **Modo a SSID fisso resta invariato**: avviare EVIL TWIN con `ENTER`
+   (non `TAB`) su una SSID digitata — deve comportarsi esattamente come
+   prima di questa fase (nessuna etichetta "KARMA", SSID costante).
+
 ## Limiti noti e tagli di scope deliberati
 
 Riepilogo di quanto già menzionato nelle sezioni sopra, in un unico
@@ -4935,3 +5003,21 @@ posto:
   toglie il tag esterno e inoltra quello interno, solo la struttura dei
   tag conta, quindi non c'è motivo di provare a indovinare una subnet
   del VLAN target che questo dispositivo non può conoscere.
+- **KARMA mode non è un vero attacco Karma** (Fase 49): risponde con UN
+  SSID alla volta, ciclato ogni 8s, non con una probe response
+  individuale istantanea per ogni client come farebbe un vero
+  responder Karma/MANA — l'API softAP standard di Arduino/esp-idf non
+  espone il controllo per-client necessario per quello. Un dispositivo
+  la cui PNL contiene la SSID candidata potrebbe non riassociarsi mai
+  se la finestra di 8s passa prima che il suo OS ritenti la scansione.
+- **KARMA candidate list: fotografia una tantum, non aggiornata dal
+  vivo** (Fase 49): stesso principio di `PmkidSweepManager` verso
+  `WardrivingManager` — `startKarma()` legge `BeaconProbeSniffer` UNA
+  volta all'avvio; nuove SSID probate mentre KARMA è già in esecuzione
+  non vengono aggiunte al ciclo (bisogna fermare e far ripartire).
+- **`EvilTwinManager`: dedup associazioni per MAC, non per MAC+SSID**
+  (Fase 49): un client che si riassocia a una SECONDA SSID candidata
+  durante lo stesso ciclo KARMA non viene ri-loggato (stesso MAC già
+  visto) — scelta deliberata per restare semplice, a costo di perdere
+  la visibilità su un client che "abbocca" a più di una rete candidata
+  nella stessa sessione.

