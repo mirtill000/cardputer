@@ -72,6 +72,7 @@ enum class ScanSource : uint8_t {
     PmkidSweep,
     IotOt,
     Playbook,
+    NameSpoof,
 };
 
 struct ScanNotification {

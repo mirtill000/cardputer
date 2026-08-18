@@ -28,6 +28,7 @@
 #include "../scan/PmkidSweepManager.h"
 #include "../scan/IotOtProbe.h"
 #include "../scan/PlaybookRunner.h"
+#include "../scan/NameSpoofManager.h"
 #include <cstdio>
 #include <cstring>
 
@@ -79,6 +80,7 @@ size_t buildTaskTable(TaskEntry* out, size_t cap) {
     add(g_evilTwinManager.isRunning(), "TWIN", "EVIL TWIN", false);
     add(g_pmkidSweepManager.isRunning(), "PSWP", "PMKID SWEEP", false);
     add(g_playbookRunner.isRunning(), "PBK", "PLAYBOOK", false);
+    add(g_nameSpoofManager.isRunning(), "NSPF", "NAME SPOOF", false);
     return n;
 }
 }  // namespace

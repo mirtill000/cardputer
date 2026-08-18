@@ -2561,6 +2561,63 @@ recente, senza alcun avviso che fosse successo. `drawSavedList()` ora
 mostra sempre "saved: N/3" in alto, anche a lista vuota (0/3), non solo
 quando c'è già qualcosa da contare.
 
+### Fase 46: NAME SPOOF — poisoning LLMNR/NBT-NS ("Responder-lite")
+
+Terzo di 10 sviluppi offensive proposti in chat (esclusi bruteforce/
+dizionari/DoS), implementato su richiesta esplicita. Stesso principio
+di `Responder`: molti host Windows, quando la risoluzione DNS di un
+nome fallisce, ripiegano su due protocolli LAN legacy — LLMNR
+(multicast UDP 224.0.0.252:5355) e NBT-NS (broadcast UDP/137) — che
+chiedono "chi possiede questo nome?" a chiunque sia in ascolto, senza
+alcuna autenticazione su chi può rispondere. `NameSpoofManager`
+risponde a OGNI query che vede rivendicando l'IP di questo dispositivo,
+loggando ogni nome avvelenato e l'host che l'ha chiesto — un finding
+concreto e riportabile in un pentest ("questi host accettano risposte
+di risoluzione nome non autenticate"), a prescindere da cosa succede
+dopo.
+
+A differenza di `ArpSpoofManager`/`DeauthManager`/`PmkidManager`, non
+serve la modalità promiscua: LLMNR/NBT-NS sono normale traffico UDP
+multicast/broadcast, quindi gira con un socket `WiFiUDP` ordinario e
+non porta via la radio a WiFi/altri strumenti — può girare insieme a
+una normale connessione STA.
+
+Wire format nuovo in `net/`:
+- `LlmnrWire` — riusa il formato messaggio DNS (stesso di `DnsWire`,
+  vedi Fase 10) via multicast invece che unicast/53: parsa una query in
+  arrivo, costruisce una risposta A-record che riusa i byte
+  header+question originali (stesso id, stessa domanda) più un RR
+  risposta con puntatore di compressione all'offset 12.
+- `NbnsWire` — formato NetBIOS Name Service (RFC 1002 §4.2), diverso
+  da DNS: nome "first-level encoded" a 32 byte (ogni byte originale
+  diviso in due nibble, ogni nibble mappato su 'A'..'P'). Decodifica il
+  nome, costruisce una Name Query Response che riusa gli stessi byte
+  nome codificato (nessun puntatore di compressione qui — non
+  affidabile tra implementazioni diverse, a differenza del trucco DNS).
+
+`NameSpoofScreen` (`MENU>Ent(NSPF)`, nuova voce di primo livello)
+segue esattamente lo stesso schema di `MitmScreen`: Idle mostra solo
+durata regolabile (`</>`) e un avviso ambra su cosa fa la sessione;
+Running mostra un banner rosso a piena larghezza "NAME SPOOF ACTIVE"
+(mai nascosto, stessa scelta di MITM AUDIT — non deve sembrare uno
+strumento silenzioso), contatore di quante query sono state avvelenate,
+secondi rimanenti, log live. Come le altre voci top-level *offensive*
+(finora solo raggiungibili da HOST DETAIL/WAR DRIVING), passa da
+`OffensiveDisclaimerScreen` la prima volta in questa sessione — per
+supportarlo su una voce di menu di primo livello, `MenuItem` ha
+guadagnato un campo `offensive` che `MainMenuScreen::onKey` controlla
+prima di aprire la schermata, invece di richiedere che ogni schermata
+offensiva passi da un target intermedio come fanno oggi deauth/evil-
+twin/PMKID.
+
+**Tagli di scope deliberati** (vedi anche "Limiti noti"): nessuna
+cattura di credenziali. Il vero valore di Responder viene dal servire
+un finto server SMB/HTTP dietro il nome avvelenato per ricevere e
+loggare l'handshake NTLMv2 del client — costruire un responder SMB2
+NEGOTIATE/SESSION_SETUP corretto è un pezzo di lavoro grande e
+separato, fuori scope per questa fase. Qui ci si ferma alla prova che
+il poisoning funziona, non alla cattura dell'hash.
+
 ## Compilare e flashare
 
 ```
@@ -2901,6 +2958,14 @@ originale.
       salvate (`S`) mostra ora "saved: N/3", visibile anche a lista
       vuota, invece di lasciare invisibile il tetto
       `kMaxSavedNetworks` fino all'eviction silenziosa di una rete.
+- [x] **Fase 46 — NAME SPOOF (poisoning LLMNR/NBT-NS)**: nuovo
+      `scan/NameSpoofManager` risponde a ogni query LLMNR/NBT-NS sulla
+      LAN rivendicando l'IP di questo dispositivo (stessa tecnica di
+      Responder), con nuovo wire format `net/LlmnrWire`+`net/NbnsWire`
+      e nuova voce di menu top-level `NAME SPOOF` (gate
+      `OffensiveDisclaimerScreen`, come deauth/PMKID/evil-twin). Nessuna
+      cattura di credenziali in questa fase — solo prova/log del
+      poisoning riuscito, vedi "Limiti noti".
 
 ## Test plan — Fase 1
 
@@ -4185,6 +4250,32 @@ di questo firmware:
    evinta), rendendo visibile a schermo il comportamento che prima era
    silenzioso.
 
+## Test plan — Fase 46 (NAME SPOOF: poisoning LLMNR/NBT-NS)
+
+1. **Gate offensivo**: alla prima apertura di `NAME SPOOF` in questa
+   sessione (menu principale), deve comparire `OffensiveDisclaimerScreen`
+   e richiedere di digitare AUTHORIZED per intero prima di procedere,
+   esattamente come per deauth/PMKID/evil-twin/MITM.
+2. **Poisoning LLMNR**: con un secondo dispositivo sulla stessa rete
+   che genera una query LLMNR per un nome che non risolve via DNS (es.
+   un hostname inventato), avviare NAME SPOOF — deve comparire una riga
+   di log "LLMNR '<nome>' <- <ip>" e il dispositivo che ha interrogato
+   deve ricevere l'IP di questo Cardputer come risposta (verificabile
+   con `ping <nome>` su quel dispositivo, che deve risolvere all'IP del
+   Cardputer).
+3. **Poisoning NBT-NS**: stesso test con una query NBT-NS (es. da un
+   host Windows che tenta di risolvere un nome NetBIOS non in DNS) —
+   deve comparire una riga di log "NBT-NS '<nome>' <- <ip>".
+4. **Cap di durata**: impostare la durata al massimo consentito (`</>`
+   fino a fondo scala) e verificare che non superi `kMaxDurationS` =
+   300s; la sessione deve fermarsi da sola allo scadere anche senza
+   premere ENTER/DEL.
+5. **Nessun impatto sulla connessione WiFi**: durante una sessione NAME
+   SPOOF attiva, la connessione WiFi del Cardputer stesso deve restare
+   funzionante (a differenza di WAR DRIVING/BEACON-PROBE che la
+   sospendono per fare channel hopping) — verificabile controllando che
+   l'IP mostrato nello status bar del menu principale non cambi.
+
 ## Limiti noti e tagli di scope deliberati
 
 Riepilogo di quanto già menzionato nelle sezioni sopra, in un unico
@@ -4619,3 +4710,31 @@ posto:
   encoder Base64, i messaggi BER/LDAP di `net/LdapWire` contro la
   libreria Python `ldap3`, i messaggi NTLM di `net/NtlmWire` contro
   `ntlm-auth`).
+- **`NAME SPOOF`: nessuna cattura di credenziali, solo prova del
+  poisoning** (Fase 46): a differenza di Responder, non serve un finto
+  server SMB/HTTP dietro il nome avvelenato per ricevere e loggare
+  l'handshake NTLMv2 del client — costruire un responder SMB2
+  NEGOTIATE/SESSION_SETUP corretto (e un mini server HTTP per WPAD.dat)
+  è un pezzo di lavoro grande, a sé stante, fuori scope per questa
+  fase. Il valore qui è dimostrare — e loggare — che un host ha
+  accettato la risposta forgiata, non craccare nulla a valle.
+- **`NAME SPOOF`: risponde a TUTTE le query, non solo a una lista
+  scelta** (Fase 46): a differenza di `DnsSpoofList` (usato da MITM
+  AUDIT, con una lista di massimo 5 host scelti uno per uno), qui non
+  c'è modo di limitare il poisoning a nomi specifici — stile Karma, non
+  stile ARP spoof mirato. L'unico contenimento è il cap di durata
+  (`kMaxDurationS` = 300s, più basso dei 600s di MITM AUDIT proprio per
+  questo).
+- **`NbnsWire`: nessun puntatore di compressione nel nome della
+  risposta** (Fase 46): a differenza di `LlmnrWire` (che riusa il
+  trucco standard DNS), la risposta NBT-NS copia per intero i 34 byte
+  del nome codificato dalla query — la compressione non è affidabile
+  tra le implementazioni NBT-NS reali, quindi non vale il rischio per
+  risparmiare poche decine di byte.
+- **`net/LlmnrWire` e `net/NbnsWire`: non verificati contro un
+  riferimento reale** (Fase 46): a differenza di `net/LdapWire`/
+  `net/NtlmWire` (verificati contro `ldap3`/`ntlm-auth` prima dell'uso),
+  questi due non sono mai stati testati contro un client LLMNR/NBT-NS
+  vero (es. Windows, Responder stesso) — solo scritti e riletti a mano
+  seguendo RFC 4795/RFC 1002. Se il poisoning non sembra funzionare in
+  test reale, è il primo posto da controllare.

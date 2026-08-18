@@ -1,7 +1,9 @@
 #include "MainMenuScreen.h"
+#include "OffensiveDisclaimerScreen.h"
 #include "../UiManager.h"
 #include "../Theme.h"
 #include "../Chrome.h"
+#include "../../core/Config.h"
 #include "../../net/WifiManager.h"
 #include "../../net/TimeSync.h"
 #include <cstdio>
@@ -30,9 +32,17 @@ void MainMenuScreen::onKey(UiKey key, char /*ch*/) {
         case UiKey::Down:
             _selected = (uint8_t)((_selected + 1) % _count);
             break;
-        case UiKey::Enter:
-            if (_items[_selected].target) g_ui.pushScreen(_items[_selected].target);
+        case UiKey::Enter: {
+            const MenuItem& item = _items[_selected];
+            if (!item.target) break;
+            if (item.offensive && !g_config.offensiveEnabled) {
+                OffensiveDisclaimerScreen::instance().setPendingTargetScreen(item.target);
+                g_ui.pushScreen(&OffensiveDisclaimerScreen::instance());
+            } else {
+                g_ui.pushScreen(item.target);
+            }
             break;
+        }
         default:
             break;
     }
