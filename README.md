@@ -2742,6 +2742,35 @@ anche l'SSID a cui un client si è associato (prima solo MAC+timestamp),
 utile in KARMA mode dove l'SSID broadcast cambia nel tempo — a modo
 fisso il valore resta semplicemente costante come prima.
 
+### Fase 50: MITM AUDIT cattura per davvero cookie/credenziali in chiaro
+
+Terzo dei 10 sviluppi offensive proposti in chat, implementato su
+richiesta esplicita. `ArpSpoofManager::analyzeFrame()` rilevava già da
+tempo quattro tipi di leak in chiaro (header `Cookie:`, `Authorization:
+Basic`, comandi FTP/Telnet `USER `/`PASS `) — ma solo come segnalazione
+riassuntiva ("target -> IP:porta leaked HTTP session cookie"), senza
+mai catturare il VALORE reale. Per un audit che deve dimostrare il
+rischio (o permettere una review seria) serve il contenuto vero, non
+solo la categoria.
+
+`findAsciiLine()` sostituisce il vecchio `containsAscii()` booleano:
+stessa ricerca, ma ora ritorna l'intera riga in cui il match è stato
+trovato (fino a CR/LF, fine buffer, o `kMaxLineLen` = 160 byte),
+sostituendo i byte non stampabili con `.` invece di assumere un buffer
+ASCII pulito — sta scansionando un frame catturato grezzo, non uno
+stream già validato. Ogni riga catturata finisce in un nuovo
+`HarvestedItem` (kind/riga/MAC sorgente/IP+porta destinazione/
+timestamp), tenuto in RAM (fino a `kMaxHarvested` = 50, stesso ring
+buffer FIFO del log) E appeso live su SD in `/mitm/harvest.csv` — così
+sopravvive anche se la sessione finisce in modo brusco, non solo
+quello che sta nel buffer in RAM.
+
+Da `MITM AUDIT` in esecuzione, `H` passa dal log live a una lista
+scorrevole delle credenziali catturate (kind + anteprima riga), `I`
+mostra il dettaglio completo (riga intera, non troncata), `H`/`DEL`
+torna al log. Materiale realmente sensibile — stesso livello di
+attenzione già riservato a un pcap PMKID/handshake, non un giocattolo.
+
 ## Compilare e flashare
 
 ```
@@ -3112,6 +3141,11 @@ originale.
       vero attacco Karma, dato il limite dell'API softAP standard. `TAB`
       da `EVIL TWIN` (invece di digitare) avvia KARMA; `Association` ora
       registra anche l'SSID a cui un client si è associato.
+- [x] **Fase 50 — MITM AUDIT: harvesting reale cookie/credenziali**:
+      `findAsciiLine()` cattura ora la riga intera (non solo "trovato
+      un cookie") per Cookie/Basic Auth/FTP-Telnet, in un nuovo
+      `HarvestedItem` (RAM + `/mitm/harvest.csv`). `H` da MITM AUDIT
+      in esecuzione apre la lista scorrevole, `I` il dettaglio completo.
 
 ## Test plan — Fase 1
 
@@ -4496,6 +4530,32 @@ di questo firmware:
    (non `TAB`) su una SSID digitata — deve comportarsi esattamente come
    prima di questa fase (nessuna etichetta "KARMA", SSID costante).
 
+## Test plan — Fase 50 (MITM AUDIT: harvesting cookie/credenziali)
+
+1. **Valore reale catturato, non solo la categoria**: su una rete
+   APERTA di test, generare una richiesta HTTP con header `Cookie:
+   session=abc123` verso un host qualunque mentre MITM AUDIT gira con
+   sniff traffico attivo — la lista harvest (`H`) deve mostrare "HTTP
+   Cookie" con un'anteprima che inizia con "Cookie: session=abc123",
+   non solo il conteggio.
+2. **Dettaglio non troncato**: selezionare quella entry e premere `I` —
+   la riga intera deve essere leggibile per esteso nell'overlay,
+   incluso oltre i 22 caratteri già visibili nella lista.
+3. **Persistenza su SD**: dopo la cattura, verificare che
+   `/mitm/harvest.csv` contenga una riga con timestamp, MAC sorgente,
+   IP:porta destinazione, kind e la riga catturata, anche se la sessione
+   MITM viene interrotta bruscamente (es. rimuovendo il target dalla
+   portata) invece di fermata con `ENTER`.
+4. **Reti cifrate restano illeggibili**: su una rete WPA2/WPA3 di test,
+   verificare che nessun `HarvestedItem` compaia mai — il Protected
+   Frame bit deve continuare a fermare l'analisi prima che
+   `findAsciiLine` venga anche solo chiamata (comportamento invariato
+   rispetto a prima di questa fase).
+5. **Navigazione H/I non interferisce con lo stop**: durante la
+   navigazione della lista harvest, verificare che `DEL` torni al log
+   (non fermi la sessione MITM) — solo `DEL`/`ENTER` nel log normale
+   devono fermare `ArpSpoofManager`.
+
 ## Limiti noti e tagli di scope deliberati
 
 Riepilogo di quanto già menzionato nelle sezioni sopra, in un unico
@@ -5021,3 +5081,19 @@ posto:
   visto) — scelta deliberata per restare semplice, a costo di perdere
   la visibilità su un client che "abbocca" a più di una rete candidata
   nella stessa sessione.
+- **`/mitm/harvest.csv`: nessun escaping CSV** (Fase 50): stessa
+  convenzione informale già usata da `/eviltwin/associations.csv` — se
+  la riga catturata contiene una virgola (raro per un valore di cookie
+  tipico, ma non impossibile), sposta le colonne successive in un
+  editor CSV standard. La vista in-app (`H`/`I`) non ha questo problema
+  perché non fa parsing per colonne.
+- **`findAsciiLine`: quattro pattern fissi, non un parser HTTP/FTP
+  vero** (Fase 50) — stesso limite che c'era già prima di questa fase
+  per `containsAscii`, solo più visibile ora che il valore viene
+  davvero catturato: cerca `Cookie:`/`Authorization: Basic`/`USER
+  `/`PASS ` come sottostringhe letterali ovunque nel payload TCP
+  catturato, non parsando gli header HTTP o il protocollo FTP/Telnet
+  per struttura. Un valore che contiene per coincidenza una di queste
+  stringhe (raro) produrrebbe un falso positivo; un header con
+  capitalizzazione diversa (es. `cookie:` minuscolo, valido per HTTP)
+  non verrebbe riconosciuto — nessun controllo case-insensitive.

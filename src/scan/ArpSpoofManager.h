@@ -74,6 +74,24 @@ public:
         uint32_t atMs = 0;
     };
 
+    // A cleartext credential-adjacent line captured from the target's
+    // (or, on an open network, anyone's) traffic while sniffTraffic is
+    // on — the actual header/command line, not just "a cookie leaked"
+    // the way the short LogEntry summary already said before this
+    // struct existed. Real captured material: treat it with the same
+    // care as a PMKID/handshake pcap, not as a toy. See analyzeFrame()
+    // in the .cpp for exactly which four header/command shapes are
+    // recognized (unchanged from before - HTTP Cookie/Basic Auth, FTP/
+    // Telnet USER/PASS) and HarvestedItem.h's export path.
+    struct HarvestedItem {
+        String kind;    // "HTTP Cookie" / "HTTP Basic Auth" / "FTP/Telnet credential"
+        String line;    // the captured line, verbatim, truncated to kMaxLineLen
+        String srcMac;
+        IPAddress dstIp;
+        uint16_t dstPort = 0;
+        uint32_t atMs = 0;
+    };
+
     void begin(QueueHandle_t outQueue);
 
     // Starts spoofing `target` (must already be in ScanManager's host
@@ -91,11 +109,16 @@ public:
     size_t logCount() const;
     bool getLogEntry(size_t index, LogEntry& out) const;  // most-recent-first
 
+    size_t harvestedCount() const;
+    bool getHarvested(size_t index, HarvestedItem& out) const;  // most-recent-first
+
     static constexpr uint16_t kMaxDurationS = 600;  // hard cap, ~10 minutes
 
 private:
     static constexpr uint32_t kPoisonIntervalMs = 1500;
     static constexpr size_t kMaxLogEntries = 100;
+    static constexpr size_t kMaxHarvested = 50;
+    static constexpr uint16_t kMaxLineLen = 160;  // enough for a realistic session cookie, not unbounded
 
     static void taskEntry(void* arg);
     void run();
@@ -108,12 +131,15 @@ private:
     void analyzeFrame(const uint8_t* pkt, uint16_t ipOffset, uint16_t len, const uint8_t srcMac[6]);
     void maybeSpoofDns(const uint8_t* udpPayload, uint16_t udpLen, const IPAddress& queryFromIp,
                         const uint8_t queryFromMac[6], uint16_t queryFromPort);
+    void harvest(const String& kind, const String& line, const uint8_t srcMac[6], const IPAddress& dstIp,
+                 uint16_t dstPort);
     void log(const String& text);
     void notify(const String& text);
     void notify(ScanEventType type, uint8_t pct = 0);
 
     mutable SemaphoreHandle_t _mutex = nullptr;
     std::vector<LogEntry> _log;
+    std::vector<HarvestedItem> _harvested;
     QueueHandle_t _outQueue = nullptr;
 
     std::atomic<bool> _running{false};
