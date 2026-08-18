@@ -1,10 +1,18 @@
 #include "EvilTwinManager.h"
+#include "../core/Config.h"
 #include "../storage/SdCard.h"
 #include "BeaconProbeSniffer.h"
 #include <WiFi.h>
 #include <esp_wifi.h>
 
 EvilTwinManager g_evilTwinManager;
+
+namespace {
+// Bounded single-generation rotation cap for the associations log - a
+// client is only logged once per session, so it grows slowly, but a
+// long-lived install shouldn't let it grow without limit either.
+constexpr size_t kMaxAssocCsvBytes = 256 * 1024;
+}  // namespace
 
 void EvilTwinManager::begin(QueueHandle_t outQueue) {
     _mutex = xSemaphoreCreateMutex();
@@ -34,6 +42,10 @@ size_t EvilTwinManager::previewKarmaCandidates(std::vector<String>& out) const {
 
 bool EvilTwinManager::startKarma(uint8_t channel) {
     if (_running) return false;
+    // Defense in depth: reached only through OffensiveDisclaimerScreen,
+    // but never stand up a look-alike AP without the per-boot offensive
+    // consent flag set.
+    if (!g_config.offensiveEnabled) return false;
 
     std::vector<String> candidates;
     if (previewKarmaCandidates(candidates) == 0) return false;  // nothing to impersonate - run BEACON/PROBE INTEL first
@@ -44,7 +56,7 @@ bool EvilTwinManager::startKarma(uint8_t channel) {
     _ssid = _karmaCandidates[0];
     _channel = channel;
 
-    if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+    if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
         _associations.clear();
         _seenMacs.clear();
         xSemaphoreGive(_mutex);
@@ -62,7 +74,16 @@ bool EvilTwinManager::startKarma(uint8_t channel) {
     _running = true;
     notify("karma AP up: cycling " + String(_karmaCandidates.size()) + " candidate SSID(s), starting \"" + _ssid +
            "\"");
-    xTaskCreatePinnedToCore(&EvilTwinManager::taskEntry, "eviltwin", 4096, this, 1, nullptr, 0);
+    if (xTaskCreatePinnedToCore(&EvilTwinManager::taskEntry, "eviltwin", 4096, this, 1, nullptr, 0) != pdPASS) {
+        // Task never started - tear the AP back down and clear state so
+        // the UI doesn't sit on a "running" session that has no worker.
+        _running = false;
+        _karmaMode = false;
+        WiFi.softAPdisconnect(true);
+        WiFi.mode(WIFI_STA);
+        notify("start failed - out of memory");
+        return false;
+    }
     return true;
 }
 
@@ -79,11 +100,13 @@ void EvilTwinManager::advanceKarmaCandidate() {
 
 bool EvilTwinManager::start(const String& ssid, uint8_t channel) {
     if (_running || ssid.isEmpty()) return false;
+    // Defense in depth - see startKarma() above.
+    if (!g_config.offensiveEnabled) return false;
 
     _ssid = ssid;
     _channel = channel;
     _karmaMode = false;
-    if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+    if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
         _associations.clear();
         _seenMacs.clear();
         xSemaphoreGive(_mutex);
@@ -101,7 +124,13 @@ bool EvilTwinManager::start(const String& ssid, uint8_t channel) {
 
     _running = true;
     notify("evil twin AP up: \"" + _ssid + "\"");
-    xTaskCreatePinnedToCore(&EvilTwinManager::taskEntry, "eviltwin", 4096, this, 1, nullptr, 0);
+    if (xTaskCreatePinnedToCore(&EvilTwinManager::taskEntry, "eviltwin", 4096, this, 1, nullptr, 0) != pdPASS) {
+        _running = false;
+        WiFi.softAPdisconnect(true);
+        WiFi.mode(WIFI_STA);
+        notify("start failed - out of memory");
+        return false;
+    }
     return true;
 }
 
@@ -132,7 +161,7 @@ void EvilTwinManager::run() {
                 String mac(buf);
 
                 bool alreadySeen = false;
-                if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+                if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
                     for (const auto& seen : _seenMacs) {
                         if (seen == mac) {
                             alreadySeen = true;
@@ -159,13 +188,25 @@ void EvilTwinManager::logAssociation(const String& mac) {
     a.ssid = _ssid;  // whichever SSID is currently broadcasting - the one this client was fooled into joining
     a.atMs = millis();
 
-    if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+    if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
         _associations.push_back(a);
         xSemaphoreGive(_mutex);
     }
 
     fs::FS& fs = sdcard::exportFs();
     fs.mkdir("/eviltwin");
+    // Bounded single-generation rotation so a long-lived AP can't grow
+    // this file without limit - over the cap, keep one prior file and
+    // start fresh. See kMaxAssocCsvBytes.
+    {
+        File probe = fs.open("/eviltwin/associations.csv", "r");
+        size_t sz = probe ? probe.size() : 0;
+        if (probe) probe.close();
+        if (sz > kMaxAssocCsvBytes) {
+            fs.remove("/eviltwin/associations.prev.csv");
+            fs.rename("/eviltwin/associations.csv", "/eviltwin/associations.prev.csv");
+        }
+    }
     File f = fs.open("/eviltwin/associations.csv", "a");
     if (f) {
         f.println(_ssid + "," + mac + "," + String(millis() / 1000));

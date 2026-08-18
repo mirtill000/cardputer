@@ -1,5 +1,6 @@
 #include "DeauthManager.h"
 #include "../net/EapolWire.h"
+#include "../core/Config.h"
 #include "../storage/SdCard.h"
 #include "../storage/PcapWriter.h"
 #include <WiFi.h>
@@ -30,6 +31,10 @@ void DeauthManager::begin(QueueHandle_t outQueue) {
 
 bool DeauthManager::start(const String& apBssid, uint8_t channel, const String& clientMac) {
     if (_running) return false;
+    // Defense in depth: DeauthScreen is only reachable through
+    // OffensiveDisclaimerScreen, but never inject deauth frames unless
+    // the per-boot offensive consent flag is actually set.
+    if (!g_config.offensiveEnabled) return false;
     if (!parseMacString(apBssid, _apBssid) || !parseMacString(clientMac, _clientMac)) return false;
 
     _channel = channel;
@@ -53,7 +58,15 @@ bool DeauthManager::start(const String& apBssid, uint8_t channel, const String& 
 
     _running = true;
     notify("starting deauth burst against " + clientMac);
-    xTaskCreatePinnedToCore(&DeauthManager::taskEntry, "deauth", 8192, this, 1, nullptr, 0);
+    if (xTaskCreatePinnedToCore(&DeauthManager::taskEntry, "deauth", 8192, this, 1, nullptr, 0) != pdPASS) {
+        // Task never started (out of memory) - unwind the queue and the
+        // running flag so the UI doesn't sit on a dead session.
+        _running = false;
+        vQueueDelete(_captureQueue);
+        _captureQueue = nullptr;
+        notify("start failed - out of memory");
+        return false;
+    }
     return true;
 }
 
