@@ -2550,6 +2550,17 @@ passive-hosts/rogue-DHCP, senza IOT/OT SWEEP, LDAP, NTLM o
 BEACON/PROBE aggiunti nelle fasi successive) — corretto insieme al
 resto.
 
+### Fase 45: WIFI SETUP mostra quante reti salvate restano
+
+Ultimo dei miglioramenti UX/UI proposti nello stesso audit, implementato
+su richiesta esplicita: la lista delle reti salvate (`S` da WIFI SETUP)
+mostrava le reti ma non quante ce ne stanno — il tetto
+`WifiManager::kMaxSavedNetworks = 3` restava invisibile fino al momento
+in cui salvarne una quarta evinceva silenziosamente la meno usata di
+recente, senza alcun avviso che fosse successo. `drawSavedList()` ora
+mostra sempre "saved: N/3" in alto, anche a lista vuota (0/3), non solo
+quando c'è già qualcosa da contare.
+
 ## Compilare e flashare
 
 ```
@@ -2886,6 +2897,10 @@ originale.
       stimato in Fase 37); tutti i `helpText()` che lo superavano
       (BEACON/PROBE INTEL a 19 righe, SENTINEL MODE a 15, fino a HOST
       DETAIL a 9) condensati per starci, nessuna informazione persa.
+- [x] **Fase 45 — WIFI SETUP: contatore reti salvate**: la lista reti
+      salvate (`S`) mostra ora "saved: N/3", visibile anche a lista
+      vuota, invece di lasciare invisibile il tetto
+      `kMaxSavedNetworks` fino all'eviction silenziosa di una rete.
 
 ## Test plan — Fase 1
 
@@ -4152,6 +4167,23 @@ di questo firmware:
 3. **Le altre schermate restano invariate**: aprire l'help overlay su
    una schermata NON toccata da questa fase (es. THREATS, già a 7 righe)
    — deve apparire identica a prima.
+
+## Test plan — Fase 45 (contatore reti salvate in WIFI SETUP)
+
+1. **Lista vuota**: senza reti salvate, aprire la lista (`S` da WIFI
+   SETUP) — deve comparire "saved: 0/3" in alto, seguito dal messaggio
+   "no saved networks", senza sovrapposizioni.
+2. **Conteggio corretto**: salvare una rete e riaprire la lista — deve
+   mostrare "saved: 1/3"; ripetere fino a 3 reti salvate, verificando che
+   il contatore segua ("2/3", poi "3/3").
+3. **Layout a lista piena**: con 3 reti salvate (il massimo), verificare
+   che il contatore in alto e le tre righe della lista non si
+   sovrappongano e restino tutte leggibili (lo spostamento di `top` da 20
+   a 30 lascia spazio sufficiente).
+4. **Eviction della quarta rete**: connettersi a una quarta rete diversa
+   e salvarla — il contatore deve restare "3/3" (la meno recente viene
+   evinta), rendendo visibile a schermo il comportamento che prima era
+   silenzioso.
 
 ## Limiti noti e tagli di scope deliberati
 

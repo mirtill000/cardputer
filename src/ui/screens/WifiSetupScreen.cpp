@@ -255,7 +255,7 @@ void WifiSetupScreen::draw(M5Canvas& gfx) {
             break;
 
         case State::SavedList:
-            drawSavedList(gfx, 20);
+            drawSavedList(gfx, 30);
             gfx.setTextColor(theme::GREY, theme::BG);
             gfx.setCursor(4, gfx.height() - 9);
             gfx.print("ENTER:connect F:forget DEL:back");
@@ -339,6 +339,17 @@ void WifiSetupScreen::draw(M5Canvas& gfx) {
 
 void WifiSetupScreen::drawSavedList(M5Canvas& gfx, int16_t top) {
     uint8_t count = g_wifi.savedNetworkCount();
+
+    // Counter shown even at 0/max - the ceiling (kMaxSavedNetworks) is
+    // otherwise invisible until the moment a new save silently evicts
+    // the least-recently-used entry, with no warning that it happened.
+    gfx.setTextColor(theme::CYAN, theme::BG);
+    gfx.setCursor(6, 18);
+    gfx.print("saved: ");
+    gfx.print((unsigned)count);
+    gfx.print("/");
+    gfx.print((unsigned)WifiManager::kMaxSavedNetworks);
+
     if (count == 0) {
         gfx.setTextColor(theme::AMBER, theme::BG);
         gfx.setCursor(6, top + 4);
