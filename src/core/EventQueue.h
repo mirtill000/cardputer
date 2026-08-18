@@ -75,6 +75,7 @@ enum class ScanSource : uint8_t {
     NameSpoof,
     OsFingerprint,
     VlanHop,
+    EapIdentity,
 };
 
 struct ScanNotification {

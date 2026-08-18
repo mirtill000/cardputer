@@ -2771,6 +2771,42 @@ mostra il dettaglio completo (riga intera, non troncata), `H`/`DEL`
 torna al log. Materiale realmente sensibile — stesso livello di
 attenzione già riservato a un pcap PMKID/handshake, non un giocattolo.
 
+### Fase 51: EAP IDENTITY — harvesting passivo di username 802.1X in chiaro
+
+Settimo dei 9 sviluppi offensive di seconda analisi proposti in chat,
+implementato su richiesta esplicita. Durante l'associazione a una rete
+WPA-Enterprise (802.1X), la primissima risposta EAP del client contiene
+l'"outer identity" — lo username scelto per l'esterno (`user@corp`,
+`DOMAIN\user`, o un placeholder anonimo `anonymous@corp`) — inviato in
+CHIARO prima ancora che parta il tunnel TLS PEAP/TTLS che protegge le
+credenziali vere. Una rete che rivela username reali nel clear-text
+prima del tunnel è un finding classico e riportabile negli audit WiFi
+aziendali, esattamente ciò che il dissector EAP di Wireshark mostra
+gratis dagli stessi byte.
+
+`net/EapolWire` guadagna `parseEapIdentity()` accanto al preesistente
+`classify()` — stesso file perché è la stessa famiglia di frame (EAPOL
+sopra 802.11), solo un EAPOL Type diverso (0 = EAP-Packet invece di 3 =
+Key). Fail-closed nello stesso stile del resto: rifiuta frame protetti,
+buffer troncati, capitalizzazioni sbagliate di Code/Type EAP, e
+riconosce solo EAP-Response/Identity (Code=2, Type=1) — mai la Request
+del server, mai altre estensioni EAP, mai niente dentro il tunnel TLS.
+
+`scan/EapIdentityHarvester` è il consumatore promiscuo (stesso schema
+di `OsFingerprint`/`PassiveHostDiscovery`): dedup su `(MAC, identity)`
+per lasciare visibile lo stesso client con outer identity diverse su
+reti diverse, log SD in `/eap/identities.csv` per sopravvivere a fine
+sessione brusco. Nuova voce `EAP IDENTITY` nel gruppo "PASSIVE
+LISTENERS" di `DISCOVERY` (`MENU>NET>D>Ent(EAP)`), `I` per il dettaglio.
+
+**Limite di canale**, non un bug: come tutti gli altri ascoltatori
+passivi non-hopper (`PassiveHostDiscovery`/`OsFingerprint`/
+`CdpLldpSniffer`), sta sul canale a cui la STA è associata. Le
+autenticazioni 802.1X sono eventi brevi e infrequenti — hopping li
+farebbe perdere di sicuro e nel frattempo dropperebbe la connessione
+STA (vedi `BeaconProbeSniffer.h`). Parcheggiare questo dispositivo sul
+canale dell'AP enterprise target è la via corretta.
+
 ## Compilare e flashare
 
 ```
@@ -3146,6 +3182,13 @@ originale.
       un cookie") per Cookie/Basic Auth/FTP-Telnet, in un nuovo
       `HarvestedItem` (RAM + `/mitm/harvest.csv`). `H` da MITM AUDIT
       in esecuzione apre la lista scorrevole, `I` il dettaglio completo.
+- [x] **Fase 51 — EAP IDENTITY (username 802.1X in chiaro)**: nuovo
+      `scan/EapIdentityHarvester` + `net/EapolWire::parseEapIdentity()`
+      leggono l'outer identity EAP-Response/Identity dei client
+      WPA-Enterprise, inviata in chiaro prima del tunnel PEAP/TTLS.
+      Solo ricezione, dedup su (MAC, identity), log SD in
+      `/eap/identities.csv`. Nuova voce nel gruppo passivo di
+      `DISCOVERY`. Limite di canale documentato (non hopper).
 
 ## Test plan — Fase 1
 
@@ -4556,6 +4599,29 @@ di questo firmware:
    (non fermi la sessione MITM) — solo `DEL`/`ENTER` nel log normale
    devono fermare `ArpSpoofManager`.
 
+## Test plan — Fase 51 (EAP IDENTITY: username 802.1X in chiaro)
+
+1. **Nessun frame Request registrato**: verificare che una richiesta
+   EAP-Request/Identity (Code=1) inviata dall'AP non generi mai una
+   entry — solo le Response (Code=2) contano, per non catturare i
+   prompt del server come se fossero identità del client.
+2. **Nessun frame protetto letto**: su una rete WPA2/WPA3 di test già
+   associata, verificare che il Protected Frame bit continui a
+   scartare i frame prima di `parseEapIdentity` — la lista deve
+   restare vuota anche con traffico intenso, come per gli altri
+   parser passivi.
+3. **Dedup su (MAC, identity)**: forzare un client di test a
+   riassociarsi più volte con la stessa outer identity — la lista
+   deve mostrare una sola riga con contatore che sale, non una
+   nuova riga per ogni tentativo.
+4. **Identità diverse dallo stesso MAC restano separate**: se un
+   client cambia outer identity tra due associazioni (es. anon per
+   una rete, `user@corp` per un'altra), entrambe devono comparire
+   come righe distinte.
+5. **Persistenza SD**: verificare che ogni identità NUOVA venga
+   appesa a `/eap/identities.csv` con timestamp, MAC e identity,
+   anche interrompendo la sessione senza `stop()` esplicito.
+
 ## Limiti noti e tagli di scope deliberati
 
 Riepilogo di quanto già menzionato nelle sezioni sopra, in un unico
@@ -5097,3 +5163,20 @@ posto:
   stringhe (raro) produrrebbe un falso positivo; un header con
   capitalizzazione diversa (es. `cookie:` minuscolo, valido per HTTP)
   non verrebbe riconosciuto — nessun controllo case-insensitive.
+- **`EAP IDENTITY`: solo outer identity, mai nulla dentro il tunnel
+  TLS** (Fase 51): il taglio di scope più importante di questa fase e
+  la ragione per cui la feature è fattibile onestamente — la vera
+  password/hash NTLM/certificato viaggia dentro PEAP/TTLS, cifrato,
+  non catturabile senza compromettere il tunnel (che qui non si tenta
+  mai). L'outer identity è comunque il finding: reti che lasciano il
+  vero username nell'outer invece di usarne uno anonimo
+  (`anonymous@corp`) leakano l'identità dell'account in chiaro anche
+  con il tunnel perfettamente sano.
+- **`EAP IDENTITY`: solo sul canale della STA, non hopper** (Fase 51):
+  come `PassiveHostDiscovery`/`OsFingerprint`/`CdpLldpSniffer`, resta
+  sul canale a cui questo dispositivo è associato. Una lista vuota su
+  una rete enterprise nota di solito significa semplicemente che
+  nessun client ha fatto una nuova associazione 802.1X sul canale
+  giusto durante l'ascolto, non che il parser non funzioni. Per
+  aumentare le probabilità: parcheggiare la STA di questo dispositivo
+  sullo stesso canale dell'AP enterprise target prima di partire.
