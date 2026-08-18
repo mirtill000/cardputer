@@ -13,6 +13,7 @@
 #include "NtlmHttpScreen.h"
 #include "DeauthWatchScreen.h"
 #include "OsFingerprintScreen.h"
+#include "VlanHopScreen.h"
 #include "../UiManager.h"
 #include "../Theme.h"
 #include "../Chrome.h"
@@ -41,6 +42,7 @@ Screen* gLdap() { return &LdapScreen::instance(); }
 Screen* gNtlmHttp() { return &NtlmHttpScreen::instance(); }
 Screen* gGuardMode() { return &DeauthWatchScreen::instance(); }
 Screen* gOsFingerprint() { return &OsFingerprintScreen::instance(); }
+Screen* gVlanHop() { return &VlanHopScreen::instance(); }
 
 // Fase 37: per-row readiness dot for the two gated groups below -
 // "needs NETWORK SCAN" checks the host table isn't empty (a scan has
@@ -87,6 +89,7 @@ const DItem kItems[] = {
     {"BEACON/PROBE INTEL", gBeaconProbe, nullptr},
     {"GUARD MODE", gGuardMode, nullptr},
     {"OS FINGERPRINT", gOsFingerprint, nullptr},
+    {"VLAN HOP", gVlanHop, nullptr},
 };
 constexpr size_t kCount = sizeof(kItems) / sizeof(kItems[0]);
 }  // namespace

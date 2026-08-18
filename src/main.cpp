@@ -41,6 +41,7 @@
 #include "scan/NameSpoofManager.h"
 #include "ui/screens/NameSpoofScreen.h"
 #include "scan/OsFingerprint.h"
+#include "scan/VlanHopProbe.h"
 #include "net/WifiManager.h"
 #include "net/CaptivePortalDetector.h"
 #include "net/TimeSync.h"
@@ -154,6 +155,7 @@ void setup() {
     g_playbookRunner.begin(g_ui.scanQueue());
     g_nameSpoofManager.begin(g_ui.scanQueue());
     g_osFingerprint.begin(g_ui.scanQueue());
+    g_vlanHopProbe.begin(g_ui.scanQueue());
 
     // Non-blocking: if a network was saved from a previous WIFI SCAN
     // run, this kicks the connection off immediately at boot instead of

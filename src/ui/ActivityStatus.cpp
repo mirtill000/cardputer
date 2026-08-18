@@ -30,6 +30,7 @@
 #include "../scan/PlaybookRunner.h"
 #include "../scan/NameSpoofManager.h"
 #include "../scan/OsFingerprint.h"
+#include "../scan/VlanHopProbe.h"
 #include <cstdio>
 #include <cstring>
 
@@ -62,6 +63,7 @@ size_t buildTaskTable(TaskEntry* out, size_t cap) {
     add(g_deauthWatcher.isRunning(), "GRD", "GUARD MODE", true);
     add(g_sentinelManager.isRunning(), "SNT", "SENTINEL MODE", true);
     add(g_osFingerprint.isRunning(), "OSFP", "OS FINGERPRINT", true);
+    add(g_vlanHopProbe.isRunning(), "VLAN", "VLAN HOP", true);
 
     add(g_discoveryRunner.isRunning(), "ALL", "RUN ALL DISCOVERY", false);
     add(g_wardrivingManager.isRunning(), "WD", "WAR DRIVING", false);

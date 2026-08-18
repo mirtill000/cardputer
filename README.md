@@ -2659,6 +2659,52 @@ completi un handshake TCP mentre è in ascolto: capita naturalmente
 durante un PORT SCAN su un target, o quando qualunque dispositivo
 sulla LAN apre una propria connessione in uscita.
 
+### Fase 48: VLAN HOP — leak detector 802.1Q + probe double-tagging best-effort
+
+Ottavo dei 10 sviluppi offensive proposti in chat, implementato su
+richiesta esplicita. Adattamento onesto del classico "VLAN hopping" a
+un dispositivo che è una stazione WiFi, non una porta switch cablata —
+**leggere prima di fidarsi di un risultato negativo**: il VLAN hopping
+vero (switch spoofing via DTP, o double-tagging attraverso il native
+VLAN permissivo di un trunk) è un attacco contro una porta switch
+CABLATA. Questo Cardputer non ha alcuna PHY Ethernet: può vedere o
+iniettare tag 802.1Q solo se l'AP stesso fa da bridge di frame taggati
+sul segmento wireless, cosa che l'802.11 normalmente non fa (il
+tagging VLAN è un concetto lato cablato; un AP ben configurato toglie i
+tag prima/dopo il salto wireless). Restano quindi due capacità più
+strette, ma oneste:
+
+1. **PASSIVO (la parte affidabile)**: `scan/VlanHopProbe` ascolta in
+   modalità promiscua qualunque frame che porti un tag 802.1Q
+   (EtherType 0x8100) dentro il payload SNAP-incapsulato che un frame
+   dati WiFi trasporta. Vederne anche solo UNO è già di per sé un
+   finding — un client non dovrebbe MAI vedere tag VLAN sul segmento
+   wireless — indipendentemente dal fatto che un vero double-tag hop
+   funzionerebbe.
+2. **ATTIVO (best-effort, non confermabile)**: tasto `P` (gate
+   `OffensiveDisclaimerScreen`, come deauth/PMKID/evil-twin/NAME SPOOF)
+   costruisce e invia UN frame ARP broadcast con due tag 802.1Q
+   impilati (esterno = VLAN nativo presunto, interno = VLAN target),
+   lo stesso trucco di un vero attacco double-tagging. Se raggiunga
+   davvero il VLAN target dipende interamente da come è configurata la
+   porta switch a monte dell'AP — cosa che questo dispositivo non ha
+   modo di osservare da qui. Un invio riuscito viene riportato come
+   "inviato", MAI come "riuscito": solo un ascoltatore già seduto sul
+   VLAN target potrebbe confermarlo.
+
+Nuova voce `VLAN HOP` nel gruppo "PASSIVE LISTENERS" di `DISCOVERY`
+(`MENU>NET>D>Ent(VLAN)`). La schermata è per lo più passiva (nessun
+gate per l'ascolto leak) — solo il tasto `P` è l'azione offensiva, gate
+applicato in linea sulla singola pressione invece che sull'ingresso
+nella schermata (a differenza di NAME SPOOF, dove l'intera schermata
+È l'azione offensiva). Per evitare una voce duplicata nello stack di
+navigazione quando il gate non è ancora superato, il codice usa
+`g_ui.replaceScreen()` (non `pushScreen()`) per sostituire sé stessa
+con `OffensiveDisclaimerScreen` — altrimenti l'accettazione del
+disclaimer richiamerebbe `replaceScreen(VlanHopScreen)` sopra una
+`VlanHopScreen` già presente più in basso nello stack, lasciando due
+voci per la stessa schermata.
+
 ## Compilare e flashare
 
 ```
@@ -3014,6 +3060,14 @@ originale.
       TCP grezza e ordine delle opzioni osservate, stile `p0f` ma senza
       fingere una precisione di firma che non ha. Nuova voce `OS
       FINGERPRINT` nel gruppo passivo di `DISCOVERY`.
+- [x] **Fase 48 — VLAN HOP (leak 802.1Q + probe double-tag best-effort)**:
+      nuovo `scan/VlanHopProbe` — ascolto passivo di tag 802.1Q che
+      trapelano sul segmento wireless (finding già di per sé), più
+      probe attivo (`P`, gate offensivo) che invia un frame ARP con due
+      tag 802.1Q impilati. Onesto sul limite hardware: WiFi, non porta
+      switch cablata — un invio riuscito è riportato come "inviato",
+      mai come "riuscito". Nuova voce `VLAN HOP` nel gruppo passivo di
+      `DISCOVERY`.
 
 ## Test plan — Fase 1
 
@@ -4348,6 +4402,32 @@ di questo firmware:
    questo dispositivo durante l'ascolto (a differenza di NAME SPOOF/
    MITM AUDIT) — solo osservazione di traffico TCP altrui già in corso.
 
+## Test plan — Fase 48 (VLAN HOP: leak 802.1Q + probe double-tag)
+
+1. **Gate offensivo solo sul tasto P**: aprire VLAN HOP e verificare
+   che l'ascolto passivo (`ENTER`) funzioni SENZA alcun disclaimer;
+   premere `P` la prima volta in questa sessione — deve comparire
+   `OffensiveDisclaimerScreen` e richiedere AUTHORIZED prima di
+   procedere.
+2. **Nessuna voce duplicata nello stack**: dopo aver accettato il
+   disclaimer da `P`, premere `DEL` una sola volta — deve tornare
+   direttamente a `DISCOVERY`, non restare su `VLAN HOP` una seconda
+   volta (verifica del fix `replaceScreen` vs `pushScreen` descritto in
+   "Fase 48").
+3. **Rilevamento leak passivo**: se disponibile un ambiente di test con
+   un AP che effettivamente bridga traffico taggato (es. un laboratorio
+   con trunk misconfigurato) sul segmento wireless, verificare che
+   appaia una riga "tag leak: vlan N" nel log e una entry nella lista;
+   altrimenti (caso comune), verificare che la lista resti vuota con il
+   messaggio "no VLAN tags seen yet" — un risultato vuoto è il caso
+   atteso sulla stragrande maggioranza delle reti, non un fallimento.
+4. **Probe inviato, non "riuscito"**: dopo `P`, verificare che il log
+   dica "double-tag probe sent" — mai "worked"/"reached"/parole che
+   implichino conferma, in nessun percorso del codice.
+5. **Campi VLAN regolabili**: `TAB` sposta il focus tra native/target,
+   `</>` decrementa/incrementa il valore a fuoco tra 1 e 4094 senza
+   andare sotto/sopra questi limiti.
+
 ## Limiti noti e tagli di scope deliberati
 
 Riepilogo di quanto già menzionato nelle sezioni sopra, in un unico
@@ -4830,3 +4910,28 @@ posto:
   modifica al parsing stesso, solo un nuovo consumatore, ma vale la
   pena notarlo perché un bug reale lì (vedi Fase 16) si propagherebbe
   ora a cinque moduli invece di quattro.
+- **`VLAN HOP`: non è un vero attacco a una porta switch cablata**
+  (Fase 48) — il limite più importante di questa fase, ripetuto qui
+  perché è facile dimenticarlo: il VLAN hopping classico (DTP spoofing,
+  o double-tagging attraverso un native VLAN permissivo) presuppone
+  accesso fisico a una porta switch Ethernet. Questo dispositivo è una
+  stazione WiFi senza PHY cablata — vede/inietta tag 802.1Q solo se
+  l'AP stesso fa da bridge di traffico taggato sul segmento wireless
+  (raro, ma non impossibile in setup enterprise mal segmentati). Un
+  risultato "nessun leak visto" NON significa che la rete cablata a
+  monte sia priva di problemi di segmentazione VLAN — significa solo
+  che questo dispositivo, da qui, non ne ha visti.
+- **`VLAN HOP`: il probe double-tag non può mai confermare il proprio
+  successo** (Fase 48) — per costruzione: il double-tagging è un
+  attacco cieco/monodirezionale anche nella sua forma classica (il
+  traffico iniettato nel VLAN target non torna verso l'attaccante per
+  il normale percorso di switching). "Inviato" è l'unico verdetto che
+  questo dispositivo può dare onestamente; confermare che sia arrivato
+  richiederebbe un secondo dispositivo in ascolto già collegato al VLAN
+  target.
+- **`VLAN HOP`: il contenuto ARP del probe è sintetico, non mirato**
+  (Fase 48): `tha`/`tpa` restano azzerati ("who has 0.0.0.0") — il
+  contenuto della richiesta ARP non conta per testare se uno switch
+  toglie il tag esterno e inoltra quello interno, solo la struttura dei
+  tag conta, quindi non c'è motivo di provare a indovinare una subnet
+  del VLAN target che questo dispositivo non può conoscere.
