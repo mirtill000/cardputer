@@ -162,6 +162,11 @@ extern ArpSpoofManager g_arpSpoofManager;
 // (kMaxEntries) — "while sniffing this session's target's DNS queries,
 // answer any match with this IP instead of leaving it to the real DNS
 // server", not a general-purpose DNS server replacement.
+//
+// clear() wipes the list; it's called once at boot (see
+// ArpSpoofManager::begin) so these entries don't outlive the offensive
+// consent that gates the feature - the same per-boot lifetime as
+// AppConfig::offensiveEnabled.
 namespace DnsSpoofList {
 constexpr uint8_t kMaxEntries = 5;
 uint8_t count();
@@ -169,4 +174,5 @@ String hostname(uint8_t index);
 IPAddress answer(uint8_t index);
 bool add(const String& host, const IPAddress& ip);
 void remove(uint8_t index);
+void clear();
 }  // namespace DnsSpoofList
