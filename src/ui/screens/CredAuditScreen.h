@@ -21,8 +21,9 @@ public:
     void onScanEvent(const ScanNotification& ev) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* title() const override { return "CRED"; }
     const char* helpText() const override {
-        return "CREDENTIAL GUESS\n\nBrute-forces default/wordlist\ncredentials against this host\n(HTTP/FTP/Telnet).\nENTER: start\nDEL: back (keeps running)";
+        return "CREDENTIAL GUESS\nMENU>NET>HOST>C(CRED)\nBrute-forces default/wordlist\ncredentials against this host\n(HTTP/FTP/Telnet).\nENTER: start\nDEL: back (keeps running)";
     }
 
 private:

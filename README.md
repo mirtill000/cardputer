@@ -2294,6 +2294,483 @@ lettura diretta del codice esistente, non ipotizzati — stesso approccio
 usato per le due passate UX/UI precedenti di questo progetto (Fase 24,
 Fase 31).
 
+### Fase 38: sweep IoT/OT + PLAYBOOK (sequenze scriptabili)
+
+Su richiesta esplicita dell'utente, dopo una proposta di 15 evoluzioni
+in ottica red/blue teaming: due di quelle proposte implementate, le
+altre restano proposte aperte (vedi la sezione più sotto per l'elenco
+completo).
+
+- **`net/../scan/IotOtProbe`: rilevamento MQTT/Modbus/CoAP senza
+  autenticazione** — stesso schema e stesso livello di rischio di
+  `DataStoreProbe` (sola lettura, nessun gate): sweepa la tabella host
+  vivi e controlla i tre protocolli più comunemente trovati esposti
+  senza autenticazione sui segmenti IoT/OT:
+  - **MQTT (1883/TCP)**: invia un vero pacchetto CONNECT (clean
+    session, nessuna credenziale) — un CONNACK con return code 0
+    significa che il broker accetta client anonimi; disconnette
+    subito dopo in modo pulito, non pubblica né si iscrive a nulla.
+  - **Modbus TCP (502/TCP)**: invia una Read Device Identification
+    (funzione 0x2B/0x0E, oggetto 0 = VendorName) — sola lettura per
+    definizione. Modbus non ha ALCUN concetto di autenticazione in
+    tutto il protocollo, quindi qualunque risposta valida (successo O
+    un'eccezione di protocollo) è già di per sé il finding: un
+    protocollo OT che per progettazione non può mai richiedere una
+    password è raggiungibile da questo segmento.
+  - **CoAP (5683/UDP)**: un GET NON-confirmable alla risorsa standard
+    di discovery CoRE (`/.well-known/core`, RFC 6690) — la richiesta di
+    sola lettura "cosa offri" che ogni client CoAP deve poter inviare.
+  Wired in `DISCOVERY` (gruppo "NEEDS NETWORK SCAN", stesso indicatore
+  di prontezza della Fase 37) e in `RUN ALL DISCOVERY`
+  (`DiscoveryRunner`, nuova fase tra DATASTORE e LDAP).
+- **`scan/PlaybookRunner` + schermata `PLAYBOOK`: sequenze scriptabili**
+  — non un vero linguaggio di scripting (avrebbe richiesto un parser/
+  interprete completo per un guadagno che non giustifica quella
+  superficie nuova su questo hardware), ma una piccola libreria di
+  preset, ciascuno una sequenza ordinata di step che questo
+  orchestratore guida tramite le API pubbliche `start()`/`isRunning()`/
+  `stop()` di manager e orchestratori GIÀ esistenti — stesso principio
+  di `DiscoveryRunner`/`AssessmentRunner`/`PmkidSweepManager`, applicato
+  un livello più in alto (uno step può essere un singolo probe, o
+  un intero orchestratore già esistente eseguito come un unico step).
+  Tre preset iniziali:
+  - **FULL RECON**: `AUTO ASSESS` poi `RUN ALL DISCOVERY` — i due
+    "one-button" già esistenti, incatenati; oggi nulla li concatenava,
+    bisognava lanciarli a mano uno dopo l'altro.
+  - **QUICK IOT/OT**: `NETWORK SCAN` → `SNMP SWEEP` → `DATASTORE SWEEP`
+    → `IOT/OT SWEEP` — una ricognizione rapida, senza porte estese né
+    listener promiscui, per quando interessa solo il quadro IoT/OT.
+  - **WIRELESS SURVEY**: l'unico preset che non richiede WiFi connesso
+    — una finestra a tempo di `WAR DRIVING` seguita da una finestra a
+    tempo di `BEACON/PROBE INTEL` (20s ciascuna), un campione rapido,
+    non un sostituto di una sessione più lunga aperta a mano.
+  Raggiunta dal menu principale (`PLAYBOOK`); la schermata mostra un
+  selettore quando inattiva e progresso step-per-step (con log) mentre
+  gira; `DEL` esce lasciandolo attivo in background, stesso pattern di
+  ogni altro orchestratore in questo firmware.
+
+### Fase 39: IOT/OT SWEEP copre anche BACnet/DNP3 + integrazione in THREATS
+
+Due delle evoluzioni proposte dopo la Fase 38, implementate su richiesta
+esplicita:
+
+- **`IotOtProbe` esteso a BACnet/IP e DNP3** — stesso principio già
+  applicato a MQTT/Modbus/CoAP:
+  - **BACnet/IP (47808/UDP)**: un Who-Is unicast (BVLC
+    Original-Unicast-NPDU, Unconfirmed-Request/Who-Is) — lo stesso "chi
+    c'è" che ogni workstation BACnet invia, solo indirizzato a un host
+    invece che a tutto il segmento. Una risposta I-Am strutturalmente
+    valida (verificata solo per i campi BVLC/APDU rilevanti, non un
+    parser TAG-value BACnet completo) conferma un dispositivo live.
+    BACnet, come Modbus, non richiede alcuna autenticazione per questo
+    scambio.
+  - **DNP3 (20000/TCP)**: una Link Status Request a livello Data Link
+    (function code 9, indirizzo di destinazione broadcast `0xFFFF` —
+    stessa tecnica usata dallo script `dnp3-info` di nmap), con un CRC-16
+    specifico di DNP3 (polinomio 0xA6BC, IEEE 1815) calcolato
+    correttamente sull'header. Il Data Link Layer di DNP3 non ha
+    autenticazione (Secure Authentication è un'estensione opzionale,
+    raramente distribuita), quindi qualunque risposta che inizia con i
+    byte di sync DNP3 (`0x05 0x64`) è già il finding — il CONTENUTO della
+    risposta non viene validato oltre questo, deliberatamente, per non
+    perdere finding reali per la variabilità di formato tra vendor
+    diversi (stesso principio "una risposta è prova sufficiente" già
+    usato da `UdpProbe`).
+- **`THREATS` integra `IOT/OT SWEEP`** — i finding non autenticati sui
+  protocolli OT (Modbus/BACnet/DNP3) vengono mostrati Critical/rosso: a
+  differenza di un servizio applicativo con l'autenticazione
+  semplicemente disattivata, questi tre protocolli non hanno ALCUN
+  concetto di autenticazione nella loro progettazione — la loro sola
+  raggiungibilità è già il problema, non una configurazione. I
+  protocolli IoT (MQTT/CoAP) restano Warning/ambra, dato che questi
+  possiedono un meccanismo di autenticazione reale che è stato lasciato
+  disattivato — un finding vero ma di un ordine diverso.
+
+### Fase 40: bug fix — prima build reale, primi warning reali
+
+La prima build effettivamente eseguita da un utente su Mac (vedi la nota
+in "Compilare e flashare" più sotto) ha prodotto dei warning del
+compilatore, analizzati e corretti qui — inclusa una regressione
+funzionale reale che nessuna revisione manuale del codice aveva
+individuato.
+
+- **BUG REALE — `SentinelManager::kCaptureLen` overflow (256 → 0)**:
+  la costante era dichiarata `static constexpr uint8_t kCaptureLen =
+  256;`, ma `uint8_t` arriva solo fino a 255 — la conversione
+  troncava silenziosamente il valore a 0. `CapturedFrame::data`
+  (`uint8_t data[kCaptureLen]`) diventava quindi un array di lunghezza
+  zero, e `onCapturedFrame()` clampava `capturedLen` a
+  `sizeof(frame.data)` = 0 per OGNI frame catturato — nessun crash
+  (il `memcpy` a lunghezza 0 è innocuo, e la size della coda FreeRTOS
+  restava comunque coerente), ma il dump `.pcap` di SENTINEL MODE
+  scriveva silenziosamente un record vuoto per ogni pacchetto, sempre:
+  una delle due funzioni portanti di SENTINEL MODE (l'altra è la
+  discovery periodica) risultava di fatto inoperante dalla Fase 34 in
+  poi, senza che nulla lo segnalasse a schermo. **Corretto** cambiando
+  il tipo in `uint16_t` (lo stesso di `capturedLen`/`originalLen`, gli
+  altri due campi dello stesso struct) — `DeauthManager`/`PmkidManager`
+  non condividevano questo bug perché usano `256` come literal diretto
+  nella dichiarazione dell'array, non tramite una costante `uint8_t`
+  intermedia.
+- **Warning di troncamento format-string** (`net/TimeSync.cpp`,
+  `ui/ActivityStatus.cpp`): GCC assume, in assenza di un range noto a
+  compile-time, che ogni `%d` possa arrivare alla larghezza massima di
+  un `int` (11 cifre col segno) e ogni `%s` possa essere di lunghezza
+  arbitraria — quindi segnala un possibile troncamento anche quando i
+  valori reali (un anno a 4 cifre, un'ora a 2 cifre, un tag di 3-6
+  caratteri) non si avvicinano mai a quel caso peggiore. Corretto
+  ingrandendo i buffer oltre il caso peggiore calcolato da GCC (nessun
+  cambio di comportamento, il testo prodotto è identico) e, in
+  `ActivityStatus.cpp`, aggiungendo una precisione `%.6s` che sia
+  vincola davvero la stringa al limite già documentato nel commento di
+  `TaskEntry` (3-6 caratteri) sia dà a GCC un bound concreto su cui
+  ragionare.
+- **Audit più ampio per altre cause di crash**: nessun'altra istanza
+  dello stesso pattern (`constexpr uint8_t` con un valore che eccede
+  255) trovata nel resto del codice; i parser byte-a-byte più a rischio
+  aggiunti di recente (`IotOtProbe`'s Modbus/BACnet/DNP3, il file più
+  giovane e meno esercitato del firmware) sono stati riverificati caso
+  per caso e risultano correttamente delimitati; il pattern
+  `container[container.size() - 1 - index]` usato da ogni `get()`
+  "più-recente-prima" in questo firmware (una ventina di moduli) resta
+  sempre protetto da un `index < size()` calcolato immediatamente prima
+  — nessun underflow possibile.
+
+### Fase 41: percorso di navigazione visibile ovunque
+
+Su segnalazione esplicita dell'utente — dopo aver dovuto chiedere come
+raggiungere BEACON/PROBE INTEL — che molte funzionalità di questo
+firmware risultavano di fatto nascoste dietro una gerarchia di menu non
+documentata da nessuna parte sullo schermo. Due interventi complementari,
+entrambi richiesti esplicitamente:
+
+- **Breadcrumb dell'header esteso a TUTTI i livelli** — prima mostrava
+  solo il genitore immediato (es. "DISC/SNMP SWEEP"); `UiManager::
+  breadcrumbPath()` (sostituisce il precedente `parentTitle()`) ora
+  percorre l'intero stack di navigazione e concatena il `title()` di
+  ogni schermata antenata (es. "MENU/NET/DISC/" prima di "BCN"), non
+  solo quella immediatamente sopra. Perché funzionasse senza buchi
+  visibili nella catena, `title()` — prima presente solo su 11
+  schermate — è stato aggiunto a tutte le restanti 35 che possono
+  comparire come genitore di un'altra (le uniche 4 rimaste senza sono
+  `BootScreen`/`CredDisclaimerScreen`/`OffensiveDisclaimerScreen`, che
+  usano sempre `replaceScreen()` e quindi non restano mai sullo stack
+  come antenate, e `PlaceholderScreen`, oggi irraggiungibile).
+- **Percorso completo (con tasti) nell'help overlay di ogni schermata**
+  — ogni schermata raggiungibile con più di un salto dal menu principale
+  ora include nel proprio `helpText()` una riga con il percorso esatto
+  per arrivarci, nella stessa notazione dell'esempio dato dall'utente:
+  `MENU>NET>D>Ent(BCN)` si legge "dal menu principale vai su NET(WORK
+  SCAN), premi D per aprire DISC(OVERY), poi ENTER sulla riga BCN". Le
+  11 schermate raggiungibili con un solo ENTER dal menu principale non
+  hanno bisogno di questa riga (sono già ovvie) e restano invariate. La
+  riga sostituisce la riga vuota che separava titolo e contenuto in ogni
+  `helpText()` toccato — stesso numero di righe totali di prima, nessun
+  peggioramento del budget di spazio già stretto dalla Fase 37.
+
+### Fase 42: il backup configurazione vive sotto /netrunner
+
+Su richiesta esplicita dell'utente: `ConfigBackup` (il backup/restore
+raggiungibile con `B`/`R` da SETTINGS — già copriva tutta la
+configurazione persistita da questo firmware: `AppConfig`, le reti WiFi
+salvate con relativa password, e l'allowlist di WAR DRIVING) scriveva
+il proprio file a `/config_backup.json`, alla radice della SD, isolato
+da ogni altro artefatto. Spostato a `/netrunner/config_backup.json` —
+la stessa cartella condivisa dove finiscono già tutti gli altri export
+di questo firmware (report di scan, `wardrive.csv`, `.pcap`) — così
+compare anche nel salto rapido `N` di `FILE MANAGER` invece di dover
+sapere che vive da solo alla radice. `ConfigBackup::backup()` crea la
+cartella se non esiste ancora (`mkdir` è un no-op innocuo se c'è già),
+stesso pattern già usato da `storage/NetrunnerPaths.h`.
+
+Nessun percorso di migrazione da un vecchio backup alla radice: dato
+che questo firmware non è ancora stato distribuito a nessun utente
+oltre a chi lo sta testando in questa sessione, non esiste un backup
+pre-Fase-42 da preservare — chi ha già un `/config_backup.json` alla
+radice della SD da una build precedente dovrà rifare il backup una
+volta con `B` dopo l'aggiornamento.
+
+### Fase 43: bug fix — la scansione WiFi non partiva con una rete già salvata
+
+Segnalazione diretta dell'utente: con una rete WiFi già salvata, `ENTER`
+su WIFI SCAN non avviava mai una scansione — bisognava prima fare
+"forget" perché ricominciasse a funzionare. La lista delle reti salvate
+(tasto `S`) esisteva già (vedi `WifiSetupScreen::State::SavedList`), ma
+di fatto era raggiungibile solo forgettando prima, che è l'opposto di
+quello che dovrebbe fare una lista di reti salvate.
+
+- **Causa**: `WifiManager::autoConnect()` (chiamato al boot se esiste
+  una rete salvata) avvia `WiFi.begin()` in modo asincrono. Se quella
+  rete non è raggiungibile in quel momento (fuori portata,
+  temporaneamente spenta, password cambiata sul router), il driver WiFi
+  dell'ESP32 continua a ritentare la connessione in background da solo —
+  e quel tentativo perpetuo monopolizza il radio, impedendo a
+  `WiFi.scanNetworks()` di completarsi mai (resta bloccato su
+  `kScanRunning`, o fallisce subito). Non a caso `forgetSavedCredentials()`
+  chiama esplicitamente `WiFi.disconnect()`: è quello che sblocca la
+  scansione, non il "dimenticare" in sé.
+- **Fix**: `WifiManager::beginScan()` ora chiama `WiFi.disconnect()`
+  prima di scansionare, ma **solo se non si è già connessi** — una
+  connessione già stabilita e funzionante non viene mai interrotta solo
+  per cercare altre reti (questo hardware scansiona tranquillamente
+  attorno a una connessione già associata). `WifiSetupScreen::onExit()`
+  poi richiama `autoConnect()` se si esce dalla schermata senza essersi
+  connessi a nulla, per non lasciare il dispositivo scollegato fino al
+  prossimo riavvio solo per aver dato un'occhiata alle reti vicine.
+
+### Fase 44: l'overlay di aiuto non tronca più su 10 schermate
+
+Audit richiesto esplicitamente dall'utente ("vedi altri miglioramenti
+UX/UI?"), con conteggio reale (non stimato) delle righe: il budget di
+contenuto di `UiManager::drawHelpOverlay` è **8 righe esatte**, non le
+~7 approssimate menzionate nella Fase 37 — geometria precisa: parte da
+`y=26`, passo di 10px, taglio a `y < altezza-32` (103px su schermo
+135px alto), quindi 8 iterazioni prima di fermarsi. Dieci schermate
+superavano questo limite, alcune di molto:
+
+| Schermata | Righe prima | Righe dopo |
+|---|---|---|
+| BEACON/PROBE INTEL | 19 | 8 |
+| SENTINEL MODE | 15 | 8 |
+| PMKID CAPTURE | 12 | 8 |
+| DEAUTH + CAPTURE | 11 | 8 |
+| WAR DRIVING | 10 | 7 |
+| PORT MAPPING | 10 | 8 |
+| GUARD MODE | 10 | 8 |
+| HOST DETAIL | 9 | 8 |
+| DISCOVERY | 9 | 7 |
+| RUN ALL DISCOVERY | 9 | 8 |
+
+Nessuna informazione realmente utile è stata rimossa — solo
+condensata (frasi accorciate, spiegazioni su più righe unite in una,
+righe vuote separatrici eliminate dove non servivano). Un effetto
+collaterale positivo: il testo di RUN ALL DISCOVERY era anche
+*obsoleto* (menzionava solo UPnP/mDNS/SNMP/data-store/CDP-LLDP/
+passive-hosts/rogue-DHCP, senza IOT/OT SWEEP, LDAP, NTLM o
+BEACON/PROBE aggiunti nelle fasi successive) — corretto insieme al
+resto.
+
+### Fase 45: WIFI SETUP mostra quante reti salvate restano
+
+Ultimo dei miglioramenti UX/UI proposti nello stesso audit, implementato
+su richiesta esplicita: la lista delle reti salvate (`S` da WIFI SETUP)
+mostrava le reti ma non quante ce ne stanno — il tetto
+`WifiManager::kMaxSavedNetworks = 3` restava invisibile fino al momento
+in cui salvarne una quarta evinceva silenziosamente la meno usata di
+recente, senza alcun avviso che fosse successo. `drawSavedList()` ora
+mostra sempre "saved: N/3" in alto, anche a lista vuota (0/3), non solo
+quando c'è già qualcosa da contare.
+
+### Fase 46: NAME SPOOF — poisoning LLMNR/NBT-NS ("Responder-lite")
+
+Terzo di 10 sviluppi offensive proposti in chat (esclusi bruteforce/
+dizionari/DoS), implementato su richiesta esplicita. Stesso principio
+di `Responder`: molti host Windows, quando la risoluzione DNS di un
+nome fallisce, ripiegano su due protocolli LAN legacy — LLMNR
+(multicast UDP 224.0.0.252:5355) e NBT-NS (broadcast UDP/137) — che
+chiedono "chi possiede questo nome?" a chiunque sia in ascolto, senza
+alcuna autenticazione su chi può rispondere. `NameSpoofManager`
+risponde a OGNI query che vede rivendicando l'IP di questo dispositivo,
+loggando ogni nome avvelenato e l'host che l'ha chiesto — un finding
+concreto e riportabile in un pentest ("questi host accettano risposte
+di risoluzione nome non autenticate"), a prescindere da cosa succede
+dopo.
+
+A differenza di `ArpSpoofManager`/`DeauthManager`/`PmkidManager`, non
+serve la modalità promiscua: LLMNR/NBT-NS sono normale traffico UDP
+multicast/broadcast, quindi gira con un socket `WiFiUDP` ordinario e
+non porta via la radio a WiFi/altri strumenti — può girare insieme a
+una normale connessione STA.
+
+Wire format nuovo in `net/`:
+- `LlmnrWire` — riusa il formato messaggio DNS (stesso di `DnsWire`,
+  vedi Fase 10) via multicast invece che unicast/53: parsa una query in
+  arrivo, costruisce una risposta A-record che riusa i byte
+  header+question originali (stesso id, stessa domanda) più un RR
+  risposta con puntatore di compressione all'offset 12.
+- `NbnsWire` — formato NetBIOS Name Service (RFC 1002 §4.2), diverso
+  da DNS: nome "first-level encoded" a 32 byte (ogni byte originale
+  diviso in due nibble, ogni nibble mappato su 'A'..'P'). Decodifica il
+  nome, costruisce una Name Query Response che riusa gli stessi byte
+  nome codificato (nessun puntatore di compressione qui — non
+  affidabile tra implementazioni diverse, a differenza del trucco DNS).
+
+`NameSpoofScreen` (`MENU>Ent(NSPF)`, nuova voce di primo livello)
+segue esattamente lo stesso schema di `MitmScreen`: Idle mostra solo
+durata regolabile (`</>`) e un avviso ambra su cosa fa la sessione;
+Running mostra un banner rosso a piena larghezza "NAME SPOOF ACTIVE"
+(mai nascosto, stessa scelta di MITM AUDIT — non deve sembrare uno
+strumento silenzioso), contatore di quante query sono state avvelenate,
+secondi rimanenti, log live. Come le altre voci top-level *offensive*
+(finora solo raggiungibili da HOST DETAIL/WAR DRIVING), passa da
+`OffensiveDisclaimerScreen` la prima volta in questa sessione — per
+supportarlo su una voce di menu di primo livello, `MenuItem` ha
+guadagnato un campo `offensive` che `MainMenuScreen::onKey` controlla
+prima di aprire la schermata, invece di richiedere che ogni schermata
+offensiva passi da un target intermedio come fanno oggi deauth/evil-
+twin/PMKID.
+
+**Tagli di scope deliberati** (vedi anche "Limiti noti"): nessuna
+cattura di credenziali. Il vero valore di Responder viene dal servire
+un finto server SMB/HTTP dietro il nome avvelenato per ricevere e
+loggare l'handshake NTLMv2 del client — costruire un responder SMB2
+NEGOTIATE/SESSION_SETUP corretto è un pezzo di lavoro grande e
+separato, fuori scope per questa fase. Qui ci si ferma alla prova che
+il poisoning funziona, non alla cattura dell'hash.
+
+### Fase 47: OS FINGERPRINT — TTL/finestra/opzioni TCP da un SYN-ACK
+
+Sesto di 10 sviluppi offensive proposti in chat, implementato su
+richiesta esplicita. Fingerprinting passivo dello stack TCP/IP in stile
+`p0f`, ma volutamente ridotto all'osso: ascolta in modalità promiscua
+pacchetti TCP SYN-ACK e legge, per host sorgente, l'unico segnale
+davvero affidabile senza un vero database di firme — il TTL iniziale,
+arrotondato al più vicino tra i tre valori che gli stack reali usano
+davvero (Linux/BSD/macOS/Android di default 64, Windows 128,
+apparati di rete/Unix datati 255) — insieme alla finestra TCP grezza e
+all'ordine delle opzioni TCP osservate.
+
+Scelta deliberata: **non** tenta di indovinare un OS/versione specifico
+da finestra+ordine opzioni come farebbe un vero file di firme p0f —
+servirebbero migliaia di firme verificate che questo progetto non ha
+modo di costruire o controllare, quindi i due campi grezzi vengono
+mostrati così come sono (via `I:detail`) per chi conosce p0f e vuole
+interpretarli da sé, invece di trasformarli in un'etichetta con falsa
+precisione. Stessa filosofia "sola lettura, mai millantare" di
+`UdpProbe.h` (aperto vs silenzioso) e delle etichette "best-effort" già
+usate per WPS.
+
+`scan/OsFingerprint` riusa `ieee80211::parseDataFrame`/`parseSnap`
+(già condivisi da `PassiveHostDiscovery`/`CdpLldpSniffer`/
+`RogueDhcpDetector`) per arrivare all'header IP, poi fa un parsing
+diretto di IP+TCP mai fatto prima in questo progetto: verifica
+protocollo TCP, filtra sui flag SYN+ACK, legge il TTL e la finestra a
+offset fissi, e cammina sulle opzioni TCP codificando l'ordine come una
+stringa di lettere (M=MSS, W=Window Scale, S=SACK Permitted,
+T=Timestamps, N=NOP). Tenuto come lista a sé con schermata propria
+invece che dentro la tabella host di `ScanManager`, stessa scelta
+architetturale di `PassiveHostDiscovery` (vedi il suo commento in
+testa al file per il ragionamento completo).
+
+Nuova voce `OS FINGERPRINT` nel gruppo "PASSIVE LISTENERS" di
+`DISCOVERY` (`MENU>NET>D>Ent(OSFP)`) — nessun prerequisito, funziona in
+standalone come PASSIVE HOSTS/GUARD MODE. Serve un host che tenti/
+completi un handshake TCP mentre è in ascolto: capita naturalmente
+durante un PORT SCAN su un target, o quando qualunque dispositivo
+sulla LAN apre una propria connessione in uscita.
+
+### Fase 48: VLAN HOP — leak detector 802.1Q + probe double-tagging best-effort
+
+Ottavo dei 10 sviluppi offensive proposti in chat, implementato su
+richiesta esplicita. Adattamento onesto del classico "VLAN hopping" a
+un dispositivo che è una stazione WiFi, non una porta switch cablata —
+**leggere prima di fidarsi di un risultato negativo**: il VLAN hopping
+vero (switch spoofing via DTP, o double-tagging attraverso il native
+VLAN permissivo di un trunk) è un attacco contro una porta switch
+CABLATA. Questo Cardputer non ha alcuna PHY Ethernet: può vedere o
+iniettare tag 802.1Q solo se l'AP stesso fa da bridge di frame taggati
+sul segmento wireless, cosa che l'802.11 normalmente non fa (il
+tagging VLAN è un concetto lato cablato; un AP ben configurato toglie i
+tag prima/dopo il salto wireless). Restano quindi due capacità più
+strette, ma oneste:
+
+1. **PASSIVO (la parte affidabile)**: `scan/VlanHopProbe` ascolta in
+   modalità promiscua qualunque frame che porti un tag 802.1Q
+   (EtherType 0x8100) dentro il payload SNAP-incapsulato che un frame
+   dati WiFi trasporta. Vederne anche solo UNO è già di per sé un
+   finding — un client non dovrebbe MAI vedere tag VLAN sul segmento
+   wireless — indipendentemente dal fatto che un vero double-tag hop
+   funzionerebbe.
+2. **ATTIVO (best-effort, non confermabile)**: tasto `P` (gate
+   `OffensiveDisclaimerScreen`, come deauth/PMKID/evil-twin/NAME SPOOF)
+   costruisce e invia UN frame ARP broadcast con due tag 802.1Q
+   impilati (esterno = VLAN nativo presunto, interno = VLAN target),
+   lo stesso trucco di un vero attacco double-tagging. Se raggiunga
+   davvero il VLAN target dipende interamente da come è configurata la
+   porta switch a monte dell'AP — cosa che questo dispositivo non ha
+   modo di osservare da qui. Un invio riuscito viene riportato come
+   "inviato", MAI come "riuscito": solo un ascoltatore già seduto sul
+   VLAN target potrebbe confermarlo.
+
+Nuova voce `VLAN HOP` nel gruppo "PASSIVE LISTENERS" di `DISCOVERY`
+(`MENU>NET>D>Ent(VLAN)`). La schermata è per lo più passiva (nessun
+gate per l'ascolto leak) — solo il tasto `P` è l'azione offensiva, gate
+applicato in linea sulla singola pressione invece che sull'ingresso
+nella schermata (a differenza di NAME SPOOF, dove l'intera schermata
+È l'azione offensiva). Per evitare una voce duplicata nello stack di
+navigazione quando il gate non è ancora superato, il codice usa
+`g_ui.replaceScreen()` (non `pushScreen()`) per sostituire sé stessa
+con `OffensiveDisclaimerScreen` — altrimenti l'accettazione del
+disclaimer richiamerebbe `replaceScreen(VlanHopScreen)` sopra una
+`VlanHopScreen` già presente più in basso nello stack, lasciando due
+voci per la stessa schermata.
+
+### Fase 49: EVIL TWIN guadagna KARMA mode
+
+Secondo dei 10 sviluppi offensive proposti in chat, implementato su
+richiesta esplicita — con una correzione di premessa importante fatta
+durante l'implementazione: la proposta originale diceva "EvilTwinManager
+oggi rileva solo evil twin altrui", ma non era corretto — `EvilTwinManager`
+è già uno strumento attivo (crea un AP look-alike vero, non solo lo
+rileva; la *rilevazione* passiva vive separatamente nell'euristica di
+`WardrivingManager`). Quello che mancava davvero era il KARMA mode.
+
+Un vero attacco Karma risponde a OGNI probe request di un client,
+individualmente e all'istante, con una probe response contraffatta che
+rivendica qualunque SSID il client abbia appena chiesto — richiede
+controllo a basso livello sulle probe response per-client che l'API
+softAP standard di Arduino/esp-idf non espone. `startKarma()` fa
+un'approssimazione più grezza ma realizzabile con l'hardware
+disponibile, ed è onesto nel dirlo: fotografa le SSID che
+`BeaconProbeSniffer` ha già visto probare da client vicini (la loro
+PNL — serve aver girato BEACON/PROBE INTEL prima), poi cicla il SINGOLO
+softAP di questo dispositivo attraverso quella lista di candidate, 8
+secondi ciascuna (`kKarmaDwellMs`), sperando che un dispositivo in
+portata con quella rete già nella propria PNL si riassoci durante
+quella finestra. Più lento e meno certo di un vero Karma, ma riusa
+tutto il codice di lifecycle AP + log associazioni che il modo a SSID
+fisso aveva già.
+
+Da `EVIL TWIN` (`MENU>WD>E(TWIN)`, stesso gate offensivo di sempre):
+`TAB` invece di `ENTER` avvia KARMA senza bisogno di digitare nulla —
+`TAB` e non una lettera perché l'inserimento testo per l'SSID è attivo
+in quello stato, e una SSID potrebbe legittimamente contenere quella
+lettera. La schermata mostra il conteggio di candidate disponibili
+prima di partire, e durante l'esecuzione l'SSID attualmente trasmesso
+con indice/totale (`KARMA (i/n): <ssid>`). `Association` ora porta
+anche l'SSID a cui un client si è associato (prima solo MAC+timestamp),
+utile in KARMA mode dove l'SSID broadcast cambia nel tempo — a modo
+fisso il valore resta semplicemente costante come prima.
+
+### Fase 50: MITM AUDIT cattura per davvero cookie/credenziali in chiaro
+
+Terzo dei 10 sviluppi offensive proposti in chat, implementato su
+richiesta esplicita. `ArpSpoofManager::analyzeFrame()` rilevava già da
+tempo quattro tipi di leak in chiaro (header `Cookie:`, `Authorization:
+Basic`, comandi FTP/Telnet `USER `/`PASS `) — ma solo come segnalazione
+riassuntiva ("target -> IP:porta leaked HTTP session cookie"), senza
+mai catturare il VALORE reale. Per un audit che deve dimostrare il
+rischio (o permettere una review seria) serve il contenuto vero, non
+solo la categoria.
+
+`findAsciiLine()` sostituisce il vecchio `containsAscii()` booleano:
+stessa ricerca, ma ora ritorna l'intera riga in cui il match è stato
+trovato (fino a CR/LF, fine buffer, o `kMaxLineLen` = 160 byte),
+sostituendo i byte non stampabili con `.` invece di assumere un buffer
+ASCII pulito — sta scansionando un frame catturato grezzo, non uno
+stream già validato. Ogni riga catturata finisce in un nuovo
+`HarvestedItem` (kind/riga/MAC sorgente/IP+porta destinazione/
+timestamp), tenuto in RAM (fino a `kMaxHarvested` = 50, stesso ring
+buffer FIFO del log) E appeso live su SD in `/mitm/harvest.csv` — così
+sopravvive anche se la sessione finisce in modo brusco, non solo
+quello che sta nel buffer in RAM.
+
+Da `MITM AUDIT` in esecuzione, `H` passa dal log live a una lista
+scorrevole delle credenziali catturate (kind + anteprima riga), `I`
+mostra il dettaglio completo (riga intera, non troncata), `H`/`DEL`
+torna al log. Materiale realmente sensibile — stesso livello di
+attenzione già riservato a un pcap PMKID/handshake, non un giocattolo.
+
 ## Compilare e flashare
 
 ```
@@ -2323,6 +2800,14 @@ originale.
 > plan dedicato più sotto ma non sono ancora state verificate su
 > hardware — se trovi un problema in una di queste, è il prossimo passo
 > naturale da testare e riportare.
+>
+> **Aggiornamento (dopo la Fase 39)**: una build successiva, con tutto
+> il codice fino alla Fase 39 incluso, ha completato la compilazione
+> senza errori — solo alcuni warning del compilatore, analizzati e
+> corretti in Fase 40 (vedi sopra), incluso un bug funzionale reale
+> (`SentinelManager::kCaptureLen`) che nessuna revisione manuale aveva
+> individuato. Il flash/boot con questo codice non è stato ancora
+> confermato su hardware.
 
 ## Roadmap / stato attuale
 
@@ -2577,6 +3062,90 @@ originale.
       (dashboard di ogni task in background), tasso per finestra in
       `GUARD MODE`, anteprima target con RSSI in `PMKID SWEEP`, legenda
       tasti globali nell'overlay di aiuto.
+- [x] **Fase 38 — Sweep IoT/OT + PLAYBOOK**: `scan/IotOtProbe` rileva
+      MQTT/Modbus TCP/CoAP raggiungibili senza autenticazione (stesso
+      rischio/stesso schema di `DATASTORE SWEEP`), wired in `DISCOVERY`
+      e `RUN ALL DISCOVERY`; nuovo `scan/PlaybookRunner` + schermata
+      `PLAYBOOK` (menu principale) esegue sequenze scriptabili di
+      manager/orchestratori già esistenti — tre preset: FULL RECON
+      (AUTO ASSESS poi RUN ALL DISCOVERY), QUICK IOT/OT (network scan +
+      SNMP/datastore/IoT-OT), WIRELESS SURVEY (war driving + beacon/
+      probe, l'unico senza bisogno di WiFi connesso).
+- [x] **Fase 39 — IOT/OT SWEEP copre BACnet/DNP3 + integrazione THREATS**:
+      `IotOtProbe` rileva anche BACnet/IP (Who-Is/I-Am) e DNP3 (Link
+      Status Request con CRC-16 nativo del protocollo), entrambi
+      protocolli OT senza alcuna autenticazione per progettazione;
+      `THREATS` ora integra tutti i finding IOT/OT SWEEP (Critical per
+      Modbus/BACnet/DNP3, Warning per MQTT/CoAP).
+- [x] **Fase 40 — Bug fix dalla prima build reale**: corretto un bug
+      funzionale reale (`SentinelManager::kCaptureLen` dichiarato
+      `uint8_t`, `256` che tronca silenziosamente a `0` — il dump pcap
+      di SENTINEL MODE scriveva record vuoti per ogni frame dalla Fase
+      34) più i warning di troncamento format-string in
+      `net/TimeSync.cpp`/`ui/ActivityStatus.cpp`; audit più ampio senza
+      altre istanze dello stesso pattern trovate altrove.
+- [x] **Fase 41 — Percorso di navigazione visibile ovunque**: breadcrumb
+      dell'header esteso a tutti i livelli dello stack (non solo il
+      genitore immediato), `title()` aggiunto alle 35 schermate che ne
+      erano prive, e una riga di percorso completo (con i tasti esatti,
+      es. `MENU>NET>D>Ent(BCN)`) nell'help overlay di ogni schermata
+      raggiungibile con più di un salto dal menu principale.
+- [x] **Fase 42 — Backup configurazione sotto /netrunner**: `ConfigBackup`
+      (`B`/`R` da SETTINGS — config, reti WiFi salvate con password,
+      allowlist WAR DRIVING) scrive ora a `/netrunner/config_backup.json`
+      invece che alla radice della SD, coerente con ogni altro export di
+      questo firmware.
+- [x] **Fase 43 — Bug fix: scansione WiFi bloccata da una rete salvata
+      irraggiungibile**: `WifiManager::beginScan()` interrompe ora un
+      tentativo di connessione bloccato (mai riuscito) prima di
+      scansionare, invece di lasciare che monopolizzi il radio — una
+      connessione già stabilita non viene mai toccata.
+      `WifiSetupScreen::onExit()` ripristina il tentativo se si esce
+      senza esserci connessi a nulla.
+- [x] **Fase 44 — Overlay di aiuto: fine del troncamento su 10
+      schermate**: budget reale misurato a 8 righe esatte (non ~7 come
+      stimato in Fase 37); tutti i `helpText()` che lo superavano
+      (BEACON/PROBE INTEL a 19 righe, SENTINEL MODE a 15, fino a HOST
+      DETAIL a 9) condensati per starci, nessuna informazione persa.
+- [x] **Fase 45 — WIFI SETUP: contatore reti salvate**: la lista reti
+      salvate (`S`) mostra ora "saved: N/3", visibile anche a lista
+      vuota, invece di lasciare invisibile il tetto
+      `kMaxSavedNetworks` fino all'eviction silenziosa di una rete.
+- [x] **Fase 46 — NAME SPOOF (poisoning LLMNR/NBT-NS)**: nuovo
+      `scan/NameSpoofManager` risponde a ogni query LLMNR/NBT-NS sulla
+      LAN rivendicando l'IP di questo dispositivo (stessa tecnica di
+      Responder), con nuovo wire format `net/LlmnrWire`+`net/NbnsWire`
+      e nuova voce di menu top-level `NAME SPOOF` (gate
+      `OffensiveDisclaimerScreen`, come deauth/PMKID/evil-twin). Nessuna
+      cattura di credenziali in questa fase — solo prova/log del
+      poisoning riuscito, vedi "Limiti noti".
+- [x] **Fase 47 — OS FINGERPRINT (TTL/finestra/opzioni TCP da SYN-ACK)**:
+      nuovo `scan/OsFingerprint` ascolta in modalità promiscua pacchetti
+      TCP SYN-ACK e mostra, per host, il bucket TTL (64/128/255 —
+      l'unica etichetta OS che si permette di dare per certa), finestra
+      TCP grezza e ordine delle opzioni osservate, stile `p0f` ma senza
+      fingere una precisione di firma che non ha. Nuova voce `OS
+      FINGERPRINT` nel gruppo passivo di `DISCOVERY`.
+- [x] **Fase 48 — VLAN HOP (leak 802.1Q + probe double-tag best-effort)**:
+      nuovo `scan/VlanHopProbe` — ascolto passivo di tag 802.1Q che
+      trapelano sul segmento wireless (finding già di per sé), più
+      probe attivo (`P`, gate offensivo) che invia un frame ARP con due
+      tag 802.1Q impilati. Onesto sul limite hardware: WiFi, non porta
+      switch cablata — un invio riuscito è riportato come "inviato",
+      mai come "riuscito". Nuova voce `VLAN HOP` nel gruppo passivo di
+      `DISCOVERY`.
+- [x] **Fase 49 — EVIL TWIN: KARMA mode**: `EvilTwinManager::startKarma()`
+      cicla il softAP attraverso le SSID che `BeaconProbeSniffer` ha
+      visto probare da client vicini (8s ciascuna), invece di un solo
+      SSID fisso digitato dall'utente — approssimazione onesta di un
+      vero attacco Karma, dato il limite dell'API softAP standard. `TAB`
+      da `EVIL TWIN` (invece di digitare) avvia KARMA; `Association` ora
+      registra anche l'SSID a cui un client si è associato.
+- [x] **Fase 50 — MITM AUDIT: harvesting reale cookie/credenziali**:
+      `findAsciiLine()` cattura ora la riga intera (non solo "trovato
+      un cookie") per Cookie/Basic Auth/FTP-Telnet, in un nuovo
+      `HarvestedItem` (RAM + `/mitm/harvest.csv`). `H` da MITM AUDIT
+      in esecuzione apre la lista scorrevole, `I` il dettaglio completo.
 
 ## Test plan — Fase 1
 
@@ -3700,6 +4269,293 @@ che tenta un'associazione/cattura verso un AP:
     — deve comparire sempre, subito sopra "any key: close", la riga
     `I/TAB vary by screen  ?:this help`.
 
+## Test plan — Fase 38 (IoT/OT sweep, PLAYBOOK)
+
+**Solo in ambiente autorizzato**, stessa regola di ogni altro strumento
+di questo firmware:
+
+1. **MQTT anonimo accettato**: contro un broker Mosquitto/EMQX di test
+   configurato senza autenticazione, `IOT/OT SWEEP` deve mostrare
+   `mqtt` con NO-AUTH in rosso.
+2. **MQTT richiede auth**: contro lo stesso broker riconfigurato con
+   `allow_anonymous false`, deve mostrare "auth required" in ambra, non
+   NO-AUTH.
+3. **Modbus TCP**: contro un simulatore Modbus TCP di test (es.
+   `pymodbus` in modalità server), deve comparire `modbus` con il nome
+   vendor se il simulatore risponde a Read Device Identification, o
+   "responds (device id not supported)" se risponde con un'eccezione di
+   protocollo — in entrambi i casi NO-AUTH, perché Modbus non ha
+   autenticazione per definizione.
+4. **CoAP**: contro un server CoAP di test (es. `aiocoap`) che espone
+   `/.well-known/core`, deve comparire `coap` con parte della risposta
+   come dettaglio.
+5. **IoT/OT sweep senza NETWORK SCAN**: senza host vivi noti, `ENTER`
+   deve mostrare "no alive hosts - run NETWORK SCAN first" e terminare
+   subito, senza falsi risultati.
+6. **RUN ALL DISCOVERY include IoT/OT**: durante `RUN ALL DISCOVERY`,
+   la fase deve mostrare "IOT/OT SWEEP" tra DATASTORE e LDAP, con la
+   barra di progresso che avanza di conseguenza.
+7. **PLAYBOOK, selettore**: aprendo `PLAYBOOK` da inattivo, le frecce
+   devono scorrere i tre preset (FULL RECON/QUICK IOT/OT/WIRELESS
+   SURVEY) con nome e descrizione leggibili.
+8. **PLAYBOOK, FULL RECON**: avviarlo con WiFi connesso — deve mostrare
+   "step 1/2: AUTO ASSESS" e poi, al termine di quello, "step 2/2: RUN
+   ALL DISCOVERY", con la barra di progresso che avanza a metà tra i
+   due step.
+9. **PLAYBOOK, WIRELESS SURVEY senza WiFi**: avviarlo senza essere
+   connessi a nessuna rete — a differenza degli altri due preset, deve
+   partire comunque (mostrare "step 1/2: WAR DRIVING"), non bloccarsi
+   su "no WiFi - connect first".
+10. **PLAYBOOK, DEL e rientro**: uscire con `DEL` mentre un preset gira
+    e rientrare — deve mostrare ancora lo step/progresso corretto,
+    accumulato nel frattempo, stesso comportamento di ogni altro
+    orchestratore in background di questo firmware.
+11. **PLAYBOOK, ENTER ferma**: durante l'esecuzione, `ENTER` deve
+    fermare il preset alla fine dello step corrente (non a metà) e
+    mostrare "cancelled" nel log.
+
+## Test plan — Fase 39 (BACnet/DNP3, integrazione THREATS)
+
+**Solo in ambiente autorizzato**, stessa regola di ogni altro strumento
+di questo firmware:
+
+1. **BACnet I-Am**: contro un dispositivo/simulatore BACnet di test (es.
+   BACnet stack di riferimento, o un building controller reale SOLO se
+   autorizzato), `IOT/OT SWEEP` deve mostrare `bacnet` con "responds
+   (I-Am)".
+2. **DNP3 link status**: contro un outstation/simulatore DNP3 di test
+   (es. `pydnp3` in modalità outstation), deve mostrare `dnp3` con
+   "responds (link status)". Se non risponde nulla nonostante
+   l'outstation sia raggiungibile: verificare innanzitutto se il CRC
+   calcolato da questo firmware è quello che il dispositivo si aspetta
+   (vedi "Limiti noti" — non verificato contro hardware reale in fase
+   di sviluppo).
+3. **BACnet/DNP3 senza risposta**: contro un host che non parla nessuno
+   dei due protocolli, `IOT/OT SWEEP` non deve produrre alcun finding
+   `bacnet`/`dnp3` per quell'host (nessun falso positivo).
+4. **`THREATS` mostra i finding OT in rosso**: dopo un `IOT/OT SWEEP`
+   con almeno un finding Modbus/BACnet/DNP3, aprire `THREATS` — quel
+   finding deve comparire in rosso (Critical), non in ambra.
+5. **`THREATS` mostra i finding IoT in ambra**: dopo un `IOT/OT SWEEP`
+   con almeno un finding MQTT/CoAP no-auth, aprire `THREATS` — deve
+   comparire in ambra (Warning), non in rosso.
+6. **`THREATS` non mostra i finding "auth required"**: un finding
+   `IOT/OT SWEEP` con `noAuth=false` (es. MQTT che ha rifiutato la
+   connessione anonima) non deve comparire affatto in `THREATS` — solo
+   i finding realmente senza autenticazione sono un "threat".
+
+## Test plan — Fase 41 (percorso di navigazione)
+
+1. **Breadcrumb multi-livello**: da MENU, aprire NETWORK SCAN, poi
+   DISCOVERY (`D`), poi BEACON/PROBE INTEL — l'header di quest'ultima
+   deve mostrare "NET/DISC/" (dim) prima di "BCN" (acceso), non solo
+   "DISC/".
+2. **Breadcrumb vuoto alla radice**: su MAIN MENU stesso, l'header non
+   deve mostrare alcun breadcrumb (stack di un solo elemento).
+3. **Help overlay con percorso**: aprire una schermata raggiunta con più
+   di un salto (es. IOT/OT SWEEP) e premere `?` — deve comparire la riga
+   `MENU>NET>D>Ent(IOT)` subito sotto il titolo.
+4. **Help overlay senza percorso sui top-level**: aprire una delle 11
+   voci dirette del menu principale (es. THREATS) e premere `?` — non
+   deve comparire nessuna riga di percorso (non serve, è già a un salto
+   dal menu).
+5. **Nessuna riga persa**: per almeno tre schermate il cui `helpText()`
+   era già lungo prima di questa fase (es. BEACON/PROBE INTEL, GUARD
+   MODE), verificare che l'overlay non mostri meno informazione utile di
+   prima — la riga di percorso ha sostituito una riga vuota, non
+   aggiunto una riga.
+
+## Test plan — Fase 42 (backup sotto /netrunner)
+
+1. **Backup su SD vuota**: con una SD che non ha ancora `/netrunner`,
+   premere `B` da SETTINGS — deve creare la cartella e scrivere
+   `/netrunner/config_backup.json` (visibile anche da `FILE MANAGER`
+   con `N`), non fallire per cartella mancante.
+2. **Restore**: dopo aver salvato una rete WiFi e un'allowlist WAR
+   DRIVING, cancellarle (FORGET / rimozione manuale), poi premere `R` —
+   devono tornare esattamente come nel backup.
+3. **Nessun backup trovato**: su una SD che non ha mai avuto un backup
+   scritto da questa build, `R` deve mostrare "no backup found on SD",
+   non un errore di parsing.
+
+## Test plan — Fase 43 (bug fix: scansione WiFi bloccata)
+
+1. **Scansione con rete salvata irraggiungibile**: salvare una rete
+   WiFi, poi spegnerla/portare il dispositivo fuori portata, riavviare
+   (così `autoConnect()` resta a ritentare invano) e aprire WIFI SCAN —
+   `ENTER` deve produrre una lista di reti entro pochi secondi, non
+   restare bloccato su "scanning...".
+2. **Nessuna interruzione se già connessi**: con una connessione già
+   stabilita e funzionante, `ENTER` su WIFI SCAN deve comunque produrre
+   una lista di reti, e la connessione esistente non deve mai cadere
+   durante la scansione.
+3. **Ripristino all'uscita**: dopo una scansione senza essersi connessi
+   a nulla (es. `DEL` da NETWORK LIST), il dispositivo deve tornare a
+   tentare la rete salvata da solo (verificabile aspettando che
+   `isConnected()` torni vero se la rete rientra in portata), non
+   restare scollegato fino al riavvio successivo.
+4. **Lista reti salvate**: con almeno una rete salvata, `S` da WIFI SCAN
+   deve mostrare la lista (fino a 3, più recente prima) indipendentemente
+   dallo stato della scansione — non deve più essere necessario fare
+   "forget" per raggiungerla.
+
+## Test plan — Fase 44 (overlay di aiuto non più troncato)
+
+1. **Nessun troncamento sulle 10 schermate corrette**: per ognuna delle
+   dieci elencate nella sezione "Fase 44" sopra, premere `?` e
+   verificare che l'ultima riga del testo sia completamente visibile
+   (non tagliata dal bordo inferiore del pannello).
+2. **Nessuna informazione persa**: per almeno tre schermate (es. BEACON/
+   PROBE INTEL, PMKID CAPTURE, GUARD MODE), verificare che ogni tasto/
+   comportamento documentato prima della Fase 44 sia ancora menzionato
+   da qualche parte nel testo condensato.
+3. **Le altre schermate restano invariate**: aprire l'help overlay su
+   una schermata NON toccata da questa fase (es. THREATS, già a 7 righe)
+   — deve apparire identica a prima.
+
+## Test plan — Fase 45 (contatore reti salvate in WIFI SETUP)
+
+1. **Lista vuota**: senza reti salvate, aprire la lista (`S` da WIFI
+   SETUP) — deve comparire "saved: 0/3" in alto, seguito dal messaggio
+   "no saved networks", senza sovrapposizioni.
+2. **Conteggio corretto**: salvare una rete e riaprire la lista — deve
+   mostrare "saved: 1/3"; ripetere fino a 3 reti salvate, verificando che
+   il contatore segua ("2/3", poi "3/3").
+3. **Layout a lista piena**: con 3 reti salvate (il massimo), verificare
+   che il contatore in alto e le tre righe della lista non si
+   sovrappongano e restino tutte leggibili (lo spostamento di `top` da 20
+   a 30 lascia spazio sufficiente).
+4. **Eviction della quarta rete**: connettersi a una quarta rete diversa
+   e salvarla — il contatore deve restare "3/3" (la meno recente viene
+   evinta), rendendo visibile a schermo il comportamento che prima era
+   silenzioso.
+
+## Test plan — Fase 46 (NAME SPOOF: poisoning LLMNR/NBT-NS)
+
+1. **Gate offensivo**: alla prima apertura di `NAME SPOOF` in questa
+   sessione (menu principale), deve comparire `OffensiveDisclaimerScreen`
+   e richiedere di digitare AUTHORIZED per intero prima di procedere,
+   esattamente come per deauth/PMKID/evil-twin/MITM.
+2. **Poisoning LLMNR**: con un secondo dispositivo sulla stessa rete
+   che genera una query LLMNR per un nome che non risolve via DNS (es.
+   un hostname inventato), avviare NAME SPOOF — deve comparire una riga
+   di log "LLMNR '<nome>' <- <ip>" e il dispositivo che ha interrogato
+   deve ricevere l'IP di questo Cardputer come risposta (verificabile
+   con `ping <nome>` su quel dispositivo, che deve risolvere all'IP del
+   Cardputer).
+3. **Poisoning NBT-NS**: stesso test con una query NBT-NS (es. da un
+   host Windows che tenta di risolvere un nome NetBIOS non in DNS) —
+   deve comparire una riga di log "NBT-NS '<nome>' <- <ip>".
+4. **Cap di durata**: impostare la durata al massimo consentito (`</>`
+   fino a fondo scala) e verificare che non superi `kMaxDurationS` =
+   300s; la sessione deve fermarsi da sola allo scadere anche senza
+   premere ENTER/DEL.
+5. **Nessun impatto sulla connessione WiFi**: durante una sessione NAME
+   SPOOF attiva, la connessione WiFi del Cardputer stesso deve restare
+   funzionante (a differenza di WAR DRIVING/BEACON-PROBE che la
+   sospendono per fare channel hopping) — verificabile controllando che
+   l'IP mostrato nello status bar del menu principale non cambi.
+
+## Test plan — Fase 47 (OS FINGERPRINT: TTL/finestra/opzioni TCP)
+
+1. **Bucket TTL corretto**: avviare OS FINGERPRINT e far completare un
+   handshake TCP a un dispositivo Windows noto (es. aprire un PORT SCAN
+   verso di lui, o lasciarlo generare traffico proprio) — il bucket
+   mostrato deve essere "t128"; ripetere con un dispositivo Linux/
+   Android/macOS noto — deve essere "t64".
+2. **Nessuna finta precisione**: il dettaglio (`I`) deve mostrare
+   l'etichetta generica ("Windows", "Linux/BSD/macOS/Android", ...) più
+   i valori grezzi (TTL esatto, finestra, ordine opzioni) — mai un nome
+   di OS/versione specifico che il codice non può verificare.
+3. **Ordine opzioni leggibile**: verificare che la stringa nel dettaglio
+   (es. "MSWT") corrisponda a un ordine plausibile di opzioni TCP
+   (M/W/S/T/N) e non contenga caratteri "?" a raffica su un host con
+   uno stack TCP/IP standard (un singolo "?" occasionale è accettabile
+   — un'opzione TCP non tra le quattro riconosciute).
+4. **Nessun impatto su altri strumenti radio**: come per gli altri
+   ascoltatori passivi, verificare che non giri insieme a un secondo
+   consumatore promiscuo (es. WAR DRIVING) senza il tag "RF:N!" in
+   header che segnala il conflitto.
+5. **Sola lettura**: verificare che nessun pacchetto venga inviato da
+   questo dispositivo durante l'ascolto (a differenza di NAME SPOOF/
+   MITM AUDIT) — solo osservazione di traffico TCP altrui già in corso.
+
+## Test plan — Fase 48 (VLAN HOP: leak 802.1Q + probe double-tag)
+
+1. **Gate offensivo solo sul tasto P**: aprire VLAN HOP e verificare
+   che l'ascolto passivo (`ENTER`) funzioni SENZA alcun disclaimer;
+   premere `P` la prima volta in questa sessione — deve comparire
+   `OffensiveDisclaimerScreen` e richiedere AUTHORIZED prima di
+   procedere.
+2. **Nessuna voce duplicata nello stack**: dopo aver accettato il
+   disclaimer da `P`, premere `DEL` una sola volta — deve tornare
+   direttamente a `DISCOVERY`, non restare su `VLAN HOP` una seconda
+   volta (verifica del fix `replaceScreen` vs `pushScreen` descritto in
+   "Fase 48").
+3. **Rilevamento leak passivo**: se disponibile un ambiente di test con
+   un AP che effettivamente bridga traffico taggato (es. un laboratorio
+   con trunk misconfigurato) sul segmento wireless, verificare che
+   appaia una riga "tag leak: vlan N" nel log e una entry nella lista;
+   altrimenti (caso comune), verificare che la lista resti vuota con il
+   messaggio "no VLAN tags seen yet" — un risultato vuoto è il caso
+   atteso sulla stragrande maggioranza delle reti, non un fallimento.
+4. **Probe inviato, non "riuscito"**: dopo `P`, verificare che il log
+   dica "double-tag probe sent" — mai "worked"/"reached"/parole che
+   implichino conferma, in nessun percorso del codice.
+5. **Campi VLAN regolabili**: `TAB` sposta il focus tra native/target,
+   `</>` decrementa/incrementa il valore a fuoco tra 1 e 4094 senza
+   andare sotto/sopra questi limiti.
+
+## Test plan — Fase 49 (EVIL TWIN: KARMA mode)
+
+1. **Nessuna candidata senza BEACON/PROBE INTEL**: da `EVIL TWIN` con
+   `BeaconProbeSniffer` mai avviato in questa sessione (0 client
+   probati noti), verificare che il conteggio candidate mostri "0 -
+   none yet" e che `TAB` fallisca con "no candidates - run BEACON/PROBE
+   INTEL first" senza avviare alcun AP.
+2. **Digitare una SSID contenente 'k'/'K' resta possibile**: in stato
+   di inserimento SSID, digitare una stringa con la lettera K (es.
+   "Kevin") — deve comparire nel campo normalmente, senza attivare
+   KARMA (verifica del fix TAB-vs-Char di questa fase).
+3. **Ciclo candidate corretto**: dopo aver raccolto almeno 2 SSID
+   distinte in BEACON/PROBE INTEL, avviare KARMA (`TAB`) e verificare
+   che l'intestazione mostri "KARMA (1/N): <ssid>", che cambi in
+   "KARMA (2/N): <altra ssid>" dopo `kKarmaDwellMs` (8s), e così via a
+   ciclo chiuso (torna a 1/N dopo l'ultima).
+4. **Associazioni registrano l'SSID corretto**: far associare un
+   client di test durante una finestra KARMA e verificare che il log
+   mostri `client connected: <mac> -> "<ssid corrente in quel momento>"`
+   — non l'SSID iniziale se nel frattempo si è già ciclato oltre.
+5. **Modo a SSID fisso resta invariato**: avviare EVIL TWIN con `ENTER`
+   (non `TAB`) su una SSID digitata — deve comportarsi esattamente come
+   prima di questa fase (nessuna etichetta "KARMA", SSID costante).
+
+## Test plan — Fase 50 (MITM AUDIT: harvesting cookie/credenziali)
+
+1. **Valore reale catturato, non solo la categoria**: su una rete
+   APERTA di test, generare una richiesta HTTP con header `Cookie:
+   session=abc123` verso un host qualunque mentre MITM AUDIT gira con
+   sniff traffico attivo — la lista harvest (`H`) deve mostrare "HTTP
+   Cookie" con un'anteprima che inizia con "Cookie: session=abc123",
+   non solo il conteggio.
+2. **Dettaglio non troncato**: selezionare quella entry e premere `I` —
+   la riga intera deve essere leggibile per esteso nell'overlay,
+   incluso oltre i 22 caratteri già visibili nella lista.
+3. **Persistenza su SD**: dopo la cattura, verificare che
+   `/mitm/harvest.csv` contenga una riga con timestamp, MAC sorgente,
+   IP:porta destinazione, kind e la riga catturata, anche se la sessione
+   MITM viene interrotta bruscamente (es. rimuovendo il target dalla
+   portata) invece di fermata con `ENTER`.
+4. **Reti cifrate restano illeggibili**: su una rete WPA2/WPA3 di test,
+   verificare che nessun `HarvestedItem` compaia mai — il Protected
+   Frame bit deve continuare a fermare l'analisi prima che
+   `findAsciiLine` venga anche solo chiamata (comportamento invariato
+   rispetto a prima di questa fase).
+5. **Navigazione H/I non interferisce con lo stop**: durante la
+   navigazione della lista harvest, verificare che `DEL` torni al log
+   (non fermi la sessione MITM) — solo `DEL`/`ENTER` nel log normale
+   devono fermare `ArpSpoofManager`.
+
 ## Limiti noti e tagli di scope deliberati
 
 Riepilogo di quanto già menzionato nelle sezioni sopra, in un unico
@@ -4041,17 +4897,16 @@ posto:
   — come ogni altro modulo che condivide il callback promiscuo — un AP
   alla volta, mai in parallelo: uno sweep su molti sighting può richiedere
   diversi minuti (~8s + tempo di associazione per AP).
-- **Overlay di aiuto globale: budget di righe ristretto, alcuni
-  `helpText()` già esistenti restavano troncati anche PRIMA di questa
-  fase** (Fase 37, punto 15): aggiungere la riga fissa sui tasti globali
-  ha ridotto lo spazio di contenuto disponibile a circa 7 righe — ma
-  diversi `helpText()` già scritti in fasi precedenti (`SentinelScreen`,
-  `BeaconProbeScreen` fra gli altri) ne avevano già più del budget
-  PRECEDENTE (circa 8), quindi le righe in eccesso venivano già tagliate
-  silenziosamente prima di questa modifica. Riscrivere ogni `helpText()`
-  troppo lungo per starci in una singola schermata di aiuto sarebbe stato
-  uno scope significativamente più ampio dei 15 punti richiesti — resta
-  un miglioramento futuro, non affrontato qui.
+- **RISOLTO in Fase 44 — Overlay di aiuto globale: budget di righe
+  ristretto, alcuni `helpText()` già esistenti restavano troncati**
+  (Fase 37, punto 15): aggiungere la riga fissa sui tasti globali aveva
+  ridotto lo spazio di contenuto disponibile, e diversi `helpText()` già
+  scritti in fasi precedenti (`SentinelScreen`, `BeaconProbeScreen` fra
+  gli altri) ne avevano già più del budget — le righe in eccesso
+  venivano tagliate silenziosamente. La Fase 44 ha misurato il budget
+  reale (8 righe esatte, non la stima di ~7 qui sopra) e condensato
+  tutti e 10 i `helpText()` che lo superavano — vedi la sezione "Fase
+  44" più sopra per l'elenco completo e i numeri prima/dopo.
 - **`CAPTURES`: sola visualizzazione/cancellazione, non ricorsiva, solo
   `.pcap`** (Fase 37, punto 7): scansiona il primo livello di
   `/handshakes` e `/netrunner` (non entra in eventuali sottocartelle) e
@@ -4064,12 +4919,181 @@ posto:
   scorciatoie per fermarlo — per farlo bisogna comunque raggiungere la
   schermata proprietaria di quel task (stesso principio già valido per
   il tag `RF:`/`BG:` dell'header che questa schermata espande).
-- **Nessuna build reale eseguita**: vale per ogni fase di questo
-  progetto — il sandbox di sviluppo non ha accesso al registry
-  PlatformIO. Tutto il codice è stato scritto con attenzione e, dove
-  possibile, la logica non hardware-dipendente è stata verificata con
-  test standalone su host (aritmetica IP, formato DB OUI, encoder
-  Base64, i messaggi BER/LDAP di `net/LdapWire` contro la libreria
-  Python `ldap3`, i messaggi NTLM di `net/NtlmWire` contro `ntlm-auth`)
-  — ma **una build (`pio run`) e un test su hardware reale restano il
-  passo successivo prima di fidarsi di questo firmware.**
+- **`IOT/OT SWEEP`: nessun MQTT/CoAP/Modbus su TLS** (Fase 38): MQTT su
+  8883, CoAPS (DTLS) e Modbus/TCP-Security restano fuori scope per lo
+  stesso motivo già documentato per NTLM-over-HTTPS e LDAPS — nessun
+  client TLS in questo firmware. Un deployment che espone SOLO le
+  varianti cifrate di questi protocolli non viene rilevato.
+- **`PLAYBOOK`: preset fissi scritti in C++, non un vero linguaggio di
+  scripting** (Fase 38): i tre preset (FULL RECON/QUICK IOT/OT/WIRELESS
+  SURVEY) sono l'unica scelta possibile — non esiste un formato di
+  script caricabile da SD, componibile dall'utente. Costruire un vero
+  parser/interprete (con relativa gestione errori su script malformati)
+  sarebbe stata una superficie nuova enorme per un firmware embedded,
+  a fronte di un guadagno che i tre preset già coprono per i casi d'uso
+  più comuni — se serve una sequenza diversa resta più semplice
+  concatenare le schermate a mano.
+- **`PLAYBOOK`: barra di progresso a granularità di step, non
+  sotto-step** (Fase 38): quando uno step è a sua volta un intero
+  orchestratore (es. `AUTO ASSESS` dentro FULL RECON), `PLAYBOOK` non
+  guarda il progresso interno di quell'orchestratore — la barra avanza
+  solo quando l'intero step finisce, quindi può restare ferma per
+  diversi minuti su uno step lungo prima di scattare al successivo.
+  Aprire la schermata dedicata di quello step (es. `AUTO ASSESS` stessa,
+  che continua a girare in background) mostra il progresso fine.
+- **DNP3: CRC-16 nativo del protocollo NON verificato contro un
+  outstation reale** (Fase 39): a differenza di `net/LdapWire`/
+  `net/NtlmWire` (verificati byte-a-byte contro librerie Python di
+  riferimento) e persino del Modbus/BACnet appena aggiunti (protocolli
+  più semplici, meno a rischio di un singolo bit sbagliato), il calcolo
+  del CRC-16 specifico di DNP3 (polinomio 0xA6BC, IEEE 1815) è stato
+  implementato seguendo l'algoritmo pubblicato ma non testato contro un
+  vero outstation o simulatore in questo ambiente di sviluppo — nessun
+  hardware/simulatore DNP3 disponibile qui. Se il CRC calcolato non è
+  quello che un dispositivo si aspetta, il dispositivo scarta
+  silenziosamente la richiesta (fallisce "chiuso": un finding mancato,
+  mai un falso positivo, e nessun impatto sul dispositivo target) — ma
+  il probe DNP3 andrebbe considerato non verificato fino a un test reale.
+  BACnet e Modbus non condividono questo rischio: le loro risposte sono
+  verificate strutturalmente byte per byte, non serve calcolare nulla
+  lato client.
+- **`IOT/OT SWEEP`: BACnet I-Am verificato solo strutturalmente, non un
+  parser TAG-value completo** (Fase 39): il probe controlla che i byte
+  BVLC/APDU della risposta siano quelli attesi per un I-Am (stesso
+  principio "estrai/verifica solo quanto serve" già usato per CoAP), ma
+  non decodifica Device Instance, Vendor ID o gli altri parametri BACnet
+  tag-encoded — la schermata mostra solo "responds (I-Am)", non un
+  vendor o un instance number come invece avviene per Modbus (che ha un
+  formato di risposta più semplice da estrarre in sicurezza).
+- **Header: breadcrumb multi-livello non troncato per catene lunghe**
+  (Fase 41): `chrome::drawHeader` non limita esplicitamente la
+  lunghezza del breadcrumb — con `title()` corti (3-6 caratteri, la
+  convenzione seguita ovunque) e i percorsi tipici di questo firmware
+  (2-4 livelli) resta comodamente nel budget dei 240px dell'header, ma
+  una catena di navigazione insolitamente profonda potrebbe in teoria
+  sovrapporsi al tag `RF:`/`BG:` a destra. Nessun troncamento/ellissi
+  aggiunto deliberatamente — stessa filosofia "puramente additivo" già
+  seguita per la versione a un solo livello che questa fase ha esteso.
+- **Build reale confermata fino alla Fase 39; Fase 40/41 non ancora
+  verificate**: a differenza di quanto scritto nelle fasi precedenti
+  ("nessuna build mai eseguita in questo ambiente" — vero per il
+  sandbox di sviluppo, che non ha mai avuto accesso al registry
+  PlatformIO), una build reale dell'utente su Mac ha effettivamente
+  compilato tutto il codice fino alla Fase 39 inclusa (vedi la nota in
+  "Compilare e flashare" più sopra) — con solo warning, nessun errore,
+  poi corretti in Fase 40. Il codice della Fase 40 (i fix stessi) e
+  della Fase 41 (percorsi di navigazione, tocca ~40 file) non è stato
+  ancora ricompilato da nessuno: **una nuova build resta il passo
+  successivo prima di fidarsi di queste due fasi specifiche.** Tutto il
+  codice non hardware-dipendente resta comunque verificato dove
+  possibile con test standalone su host (aritmetica IP, formato DB OUI,
+  encoder Base64, i messaggi BER/LDAP di `net/LdapWire` contro la
+  libreria Python `ldap3`, i messaggi NTLM di `net/NtlmWire` contro
+  `ntlm-auth`).
+- **`NAME SPOOF`: nessuna cattura di credenziali, solo prova del
+  poisoning** (Fase 46): a differenza di Responder, non serve un finto
+  server SMB/HTTP dietro il nome avvelenato per ricevere e loggare
+  l'handshake NTLMv2 del client — costruire un responder SMB2
+  NEGOTIATE/SESSION_SETUP corretto (e un mini server HTTP per WPAD.dat)
+  è un pezzo di lavoro grande, a sé stante, fuori scope per questa
+  fase. Il valore qui è dimostrare — e loggare — che un host ha
+  accettato la risposta forgiata, non craccare nulla a valle.
+- **`NAME SPOOF`: risponde a TUTTE le query, non solo a una lista
+  scelta** (Fase 46): a differenza di `DnsSpoofList` (usato da MITM
+  AUDIT, con una lista di massimo 5 host scelti uno per uno), qui non
+  c'è modo di limitare il poisoning a nomi specifici — stile Karma, non
+  stile ARP spoof mirato. L'unico contenimento è il cap di durata
+  (`kMaxDurationS` = 300s, più basso dei 600s di MITM AUDIT proprio per
+  questo).
+- **`NbnsWire`: nessun puntatore di compressione nel nome della
+  risposta** (Fase 46): a differenza di `LlmnrWire` (che riusa il
+  trucco standard DNS), la risposta NBT-NS copia per intero i 34 byte
+  del nome codificato dalla query — la compressione non è affidabile
+  tra le implementazioni NBT-NS reali, quindi non vale il rischio per
+  risparmiare poche decine di byte.
+- **`net/LlmnrWire` e `net/NbnsWire`: non verificati contro un
+  riferimento reale** (Fase 46): a differenza di `net/LdapWire`/
+  `net/NtlmWire` (verificati contro `ldap3`/`ntlm-auth` prima dell'uso),
+  questi due non sono mai stati testati contro un client LLMNR/NBT-NS
+  vero (es. Windows, Responder stesso) — solo scritti e riletti a mano
+  seguendo RFC 4795/RFC 1002. Se il poisoning non sembra funzionare in
+  test reale, è il primo posto da controllare.
+- **`OS FINGERPRINT`: solo il bucket TTL è una vera etichetta, il resto
+  è dato grezzo** (Fase 47): a differenza di un vero `p0f` con file di
+  firme verificate, non tenta di distinguere Linux da macOS/Android/BSD
+  (tutti a TTL~64) né una versione Windows specifica — servirebbe un
+  database di firme che questo progetto non ha modo di costruire o
+  verificare. Finestra TCP e ordine opzioni sono mostrati grezzi (`I`)
+  per un umano che conosce p0f, non trasformati in un secondo guess.
+- **`OS FINGERPRINT`: solo host che completano un handshake TCP visto
+  da questo dispositivo** (Fase 47): come `PassiveHostDiscovery`, serve
+  traffico che passi per l'aria in modalità promiscua su una rete
+  aperta (WPA cifra il payload) — un host che non tenta mai una
+  connessione TCP mentre l'ascolto è attivo non compare mai, e non c'è
+  probe attivo di alcun tipo per stanarlo.
+- **`net/Ieee80211Frame`'s parseDataFrame/parseSnap ora hanno un quinto
+  chiamante** (Fase 47): `OsFingerprint` si aggiunge a
+  `PassiveHostDiscovery`/`CdpLldpSniffer`/`RogueDhcpDetector`/
+  `ArpSpoofManager` nel riusare questo parsing condiviso — nessuna
+  modifica al parsing stesso, solo un nuovo consumatore, ma vale la
+  pena notarlo perché un bug reale lì (vedi Fase 16) si propagherebbe
+  ora a cinque moduli invece di quattro.
+- **`VLAN HOP`: non è un vero attacco a una porta switch cablata**
+  (Fase 48) — il limite più importante di questa fase, ripetuto qui
+  perché è facile dimenticarlo: il VLAN hopping classico (DTP spoofing,
+  o double-tagging attraverso un native VLAN permissivo) presuppone
+  accesso fisico a una porta switch Ethernet. Questo dispositivo è una
+  stazione WiFi senza PHY cablata — vede/inietta tag 802.1Q solo se
+  l'AP stesso fa da bridge di traffico taggato sul segmento wireless
+  (raro, ma non impossibile in setup enterprise mal segmentati). Un
+  risultato "nessun leak visto" NON significa che la rete cablata a
+  monte sia priva di problemi di segmentazione VLAN — significa solo
+  che questo dispositivo, da qui, non ne ha visti.
+- **`VLAN HOP`: il probe double-tag non può mai confermare il proprio
+  successo** (Fase 48) — per costruzione: il double-tagging è un
+  attacco cieco/monodirezionale anche nella sua forma classica (il
+  traffico iniettato nel VLAN target non torna verso l'attaccante per
+  il normale percorso di switching). "Inviato" è l'unico verdetto che
+  questo dispositivo può dare onestamente; confermare che sia arrivato
+  richiederebbe un secondo dispositivo in ascolto già collegato al VLAN
+  target.
+- **`VLAN HOP`: il contenuto ARP del probe è sintetico, non mirato**
+  (Fase 48): `tha`/`tpa` restano azzerati ("who has 0.0.0.0") — il
+  contenuto della richiesta ARP non conta per testare se uno switch
+  toglie il tag esterno e inoltra quello interno, solo la struttura dei
+  tag conta, quindi non c'è motivo di provare a indovinare una subnet
+  del VLAN target che questo dispositivo non può conoscere.
+- **KARMA mode non è un vero attacco Karma** (Fase 49): risponde con UN
+  SSID alla volta, ciclato ogni 8s, non con una probe response
+  individuale istantanea per ogni client come farebbe un vero
+  responder Karma/MANA — l'API softAP standard di Arduino/esp-idf non
+  espone il controllo per-client necessario per quello. Un dispositivo
+  la cui PNL contiene la SSID candidata potrebbe non riassociarsi mai
+  se la finestra di 8s passa prima che il suo OS ritenti la scansione.
+- **KARMA candidate list: fotografia una tantum, non aggiornata dal
+  vivo** (Fase 49): stesso principio di `PmkidSweepManager` verso
+  `WardrivingManager` — `startKarma()` legge `BeaconProbeSniffer` UNA
+  volta all'avvio; nuove SSID probate mentre KARMA è già in esecuzione
+  non vengono aggiunte al ciclo (bisogna fermare e far ripartire).
+- **`EvilTwinManager`: dedup associazioni per MAC, non per MAC+SSID**
+  (Fase 49): un client che si riassocia a una SECONDA SSID candidata
+  durante lo stesso ciclo KARMA non viene ri-loggato (stesso MAC già
+  visto) — scelta deliberata per restare semplice, a costo di perdere
+  la visibilità su un client che "abbocca" a più di una rete candidata
+  nella stessa sessione.
+- **`/mitm/harvest.csv`: nessun escaping CSV** (Fase 50): stessa
+  convenzione informale già usata da `/eviltwin/associations.csv` — se
+  la riga catturata contiene una virgola (raro per un valore di cookie
+  tipico, ma non impossibile), sposta le colonne successive in un
+  editor CSV standard. La vista in-app (`H`/`I`) non ha questo problema
+  perché non fa parsing per colonne.
+- **`findAsciiLine`: quattro pattern fissi, non un parser HTTP/FTP
+  vero** (Fase 50) — stesso limite che c'era già prima di questa fase
+  per `containsAscii`, solo più visibile ora che il valore viene
+  davvero catturato: cerca `Cookie:`/`Authorization: Basic`/`USER
+  `/`PASS ` come sottostringhe letterali ovunque nel payload TCP
+  catturato, non parsando gli header HTTP o il protocollo FTP/Telnet
+  per struttura. Un valore che contiene per coincidenza una di queste
+  stringhe (raro) produrrebbe un falso positivo; un header con
+  capitalizzazione diversa (es. `cookie:` minuscolo, valido per HTTP)
+  non verrebbe riconosciuto — nessun controllo case-insensitive.

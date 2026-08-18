@@ -14,7 +14,8 @@ public:
     void onKey(UiKey key, char ch) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* title() const override { return "QR"; }
     const char* helpText() const override {
-        return "SHARE (QR)\n\nA QR of the scan summary.\nScan it with a phone to copy\nthe result off the device.\nDEL: back";
+        return "SHARE (QR)\nMENU>NET>Q(QR)\nA QR of the scan summary.\nScan it with a phone to copy\nthe result off the device.\nDEL: back";
     }
 };

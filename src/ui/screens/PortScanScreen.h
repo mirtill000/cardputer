@@ -19,8 +19,9 @@ public:
     void onScanEvent(const ScanNotification& ev) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* title() const override { return "PORT"; }
     const char* helpText() const override {
-        return "PORT MAPPING\n\nTCP connect-scan of this\nhost's configured port range\n(see SETTINGS) plus ~50 common\nports above 1024 (8080, 3306,\n6379, RDP, VNC, ...).\nENTER: start/rescan  I: full\n  banner\nArrows: move   DEL: back";
+        return "PORT MAPPING\nMENU>NET>HOST>TAB(PORT)\nTCP scan of configured range\n(SETTINGS) + ~50 common ports\nabove 1024 (8080,3306,6379,\nRDP,VNC,...).\nENTER:start/rescan  I:full banner\nArrows:move  DEL:back";
     }
 
 private:

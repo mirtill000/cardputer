@@ -16,8 +16,9 @@ public:
     void onScanEvent(const ScanNotification& ev) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* title() const override { return "HTTP"; }
     const char* helpText() const override {
-        return "HTTP PATH BRUTE\n\ndirb-style path enumeration\nagainst this host's HTTP port.\nENTER: start\nDEL: back (keeps running)";
+        return "HTTP PATH BRUTE\nMENU>NET>HOST>H(HTTP)\ndirb-style path enumeration\nagainst this host's HTTP port.\nENTER: start\nDEL: back (keeps running)";
     }
 
 private:

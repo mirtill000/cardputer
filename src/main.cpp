@@ -30,6 +30,7 @@
 #include "scan/SnmpSweep.h"
 #include "scan/AssessmentRunner.h"
 #include "scan/DataStoreProbe.h"
+#include "scan/IotOtProbe.h"
 #include "scan/ServiceAuditManager.h"
 #include "scan/LdapProbe.h"
 #include "scan/NtlmHttpProbe.h"
@@ -37,6 +38,10 @@
 #include "scan/DeauthWatcher.h"
 #include "scan/SentinelManager.h"
 #include "scan/PmkidSweepManager.h"
+#include "scan/NameSpoofManager.h"
+#include "ui/screens/NameSpoofScreen.h"
+#include "scan/OsFingerprint.h"
+#include "scan/VlanHopProbe.h"
 #include "net/WifiManager.h"
 #include "net/CaptivePortalDetector.h"
 #include "net/TimeSync.h"
@@ -48,6 +53,8 @@
 #include "ui/screens/ChannelScanScreen.h"
 #include "ui/screens/SentinelScreen.h"
 #include "ui/screens/ActivityScreen.h"
+#include "ui/screens/PlaybookScreen.h"
+#include "scan/PlaybookRunner.h"
 // The discovery screens (LAN TOPOLOGY / UPNP DISCOVERY / SERVICE SCAN /
 // PASSIVE HOSTS / ROGUE DHCP / SNMP SWEEP / DATASTORE SWEEP) are no longer
 // top-level menu entries — they're grouped under NETWORK SCAN via
@@ -57,7 +64,7 @@
 namespace {
 BootScreen g_bootScreen;
 
-MenuItem g_menuItems[10];
+MenuItem g_menuItems[12];
 }  // namespace
 
 void setup() {
@@ -100,10 +107,16 @@ void setup() {
     g_menuItems[6] = {"CHANNEL SCAN", &ChannelScanScreen::instance()};
     g_menuItems[7] = {"SENTINEL MODE", &SentinelScreen::instance()};
     g_menuItems[8] = {"ACTIVITY", &ActivityScreen::instance()};
-    g_menuItems[9] = {"SETTINGS", &SettingsScreen::instance()};
+    g_menuItems[9] = {"PLAYBOOK", &PlaybookScreen::instance()};
+    // Gated like the per-host offensive tools (MITM/deauth/PMKID/evil-
+    // twin) even though it's a top-level entry: it IS the offensive
+    // action itself, there's no earlier target-picking screen to gate
+    // instead - see MainMenuScreen.h's MenuItem::offensive.
+    g_menuItems[10] = {"NAME SPOOF", &NameSpoofScreen::instance(), true};
+    g_menuItems[11] = {"SETTINGS", &SettingsScreen::instance()};
     // The discovery tools moved under NETWORK SCAN -> 'D' (see
     // DiscoveryMenuScreen); their managers are still begin()'d below.
-    MainMenuScreen::instance().configure(g_menuItems, 10);
+    MainMenuScreen::instance().configure(g_menuItems, 12);
 
     // MainMenuScreen must already be configured by this point: once the
     // render task starts, BootScreen can transition straight to it on
@@ -131,6 +144,7 @@ void setup() {
     g_assessmentRunner.begin(g_ui.scanQueue());
     g_captivePortalDetector.begin(g_ui.scanQueue());
     g_dataStoreProbe.begin(g_ui.scanQueue());
+    g_iotOtProbe.begin(g_ui.scanQueue());
     g_serviceAuditManager.begin(g_ui.scanQueue());
     g_ldapProbe.begin(g_ui.scanQueue());
     g_ntlmHttpProbe.begin(g_ui.scanQueue());
@@ -138,6 +152,10 @@ void setup() {
     g_deauthWatcher.begin(g_ui.scanQueue());
     g_sentinelManager.begin(g_ui.scanQueue());
     g_pmkidSweepManager.begin(g_ui.scanQueue());
+    g_playbookRunner.begin(g_ui.scanQueue());
+    g_nameSpoofManager.begin(g_ui.scanQueue());
+    g_osFingerprint.begin(g_ui.scanQueue());
+    g_vlanHopProbe.begin(g_ui.scanQueue());
 
     // Non-blocking: if a network was saved from a previous WIFI SCAN
     // run, this kicks the connection off immediately at boot instead of

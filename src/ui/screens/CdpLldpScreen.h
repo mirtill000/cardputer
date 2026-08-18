@@ -17,8 +17,9 @@ public:
     void onScanEvent(const ScanNotification& ev) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* title() const override { return "LAN"; }
     const char* helpText() const override {
-        return "LAN TOPOLOGY\n\nPassive CDP/LLDP listen -\nreveals switch/router names\nand ports, no packet sent.\nENTER: start/stop  I: full name\nArrows: move   DEL: back";
+        return "LAN TOPOLOGY\nMENU>NET>D>Ent(LAN)\nPassive CDP/LLDP listen -\nreveals switch/router names\nand ports, no packet sent.\nENTER: start/stop  I: full name\nArrows: move   DEL: back";
     }
 
 private:

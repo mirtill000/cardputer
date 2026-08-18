@@ -235,13 +235,14 @@ void chrome::drawHeader(M5Canvas& gfx, const char* title) {
     gfx.setCursor(4, 4);
     gfx.setTextColor(theme::CYAN, theme::BG);
     gfx.print(">> ");
-    // Breadcrumb prefix: if the screen below this one on the nav stack
-    // exposes a short title(), show "PARENT/" dim before this title so the
-    // user can see where they are after deep navigation (e.g. NET/DISCOVERY,
-    // DISC/SNMP SWEEP). Purely additive — screens with no parent title()
-    // render exactly as before.
-    const char* parent = g_ui.parentTitle();
-    if (parent && parent[0]) {
+    // Breadcrumb prefix: the full chain of ancestor titles on the nav
+    // stack, dim before this title, so the user can see the ENTIRE path
+    // that got them here after deep navigation (e.g. "MENU/NET/DISC/"
+    // before "BCN", not just the immediate parent). Purely additive —
+    // screens with no title() anywhere in the chain render exactly as
+    // before (empty breadcrumb at the root, same as always).
+    String parent = g_ui.breadcrumbPath();
+    if (parent.length()) {
         gfx.setTextColor(theme::GREY, theme::BG);
         gfx.print(parent);
         gfx.print("/");

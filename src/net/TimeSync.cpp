@@ -95,7 +95,15 @@ String TimeSync::nowString() {
     time_t now = time(nullptr);
     struct tm tmInfo;
     gmtime_r(&now, &tmInfo);
-    char buf[24];
+    // Sized well past the realistic "YYYY-MM-DD HH:MM:SS" output (19
+    // chars + NUL) - GCC's -Wformat-truncation assumes each %d could be
+    // a full int's worst case (up to 11 digits with sign) since tm_year
+    // is a plain int with no compiler-visible range, so a buffer sized
+    // to the realistic case still warns. Sized to fully cover that
+    // worst case instead of narrowing the values (e.g. via modulo),
+    // which would silently wrap an obviously-wrong huge/negative
+    // tm_year into a plausible-looking one rather than surfacing it.
+    char buf[96];
     snprintf(buf, sizeof(buf), "%04d-%02d-%02d %02d:%02d:%02d", tmInfo.tm_year + 1900, tmInfo.tm_mon + 1,
              tmInfo.tm_mday, tmInfo.tm_hour, tmInfo.tm_min, tmInfo.tm_sec);
     return String(buf);
@@ -106,7 +114,7 @@ String TimeSync::nowTimeString() {
     time_t now = time(nullptr);
     struct tm tmInfo;
     gmtime_r(&now, &tmInfo);
-    char buf[12];
+    char buf[48];  // see nowString()'s comment on why this is well past "HH:MM:SS"'s 8 chars
     snprintf(buf, sizeof(buf), "%02d:%02d:%02d", tmInfo.tm_hour, tmInfo.tm_min, tmInfo.tm_sec);
     return String(buf);
 }
@@ -116,7 +124,7 @@ String TimeSync::nowFilenameString() {
     time_t now = time(nullptr);
     struct tm tmInfo;
     gmtime_r(&now, &tmInfo);
-    char buf[20];
+    char buf[80];  // see nowString()'s comment on why this is well past "YYYYMMDD-HHMMSS"'s 15 chars
     snprintf(buf, sizeof(buf), "%04d%02d%02d-%02d%02d%02d", tmInfo.tm_year + 1900, tmInfo.tm_mon + 1, tmInfo.tm_mday,
              tmInfo.tm_hour, tmInfo.tm_min, tmInfo.tm_sec);
     return String(buf);

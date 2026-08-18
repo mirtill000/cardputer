@@ -5,6 +5,7 @@
 #include <ArduinoJson.h>
 
 bool ConfigBackup::backup(fs::FS& fs, const char* path) {
+    fs.mkdir("/netrunner");  // harmless no-op if it already exists - see header
     File f = fs.open(path, "w");
     if (!f) return false;
 

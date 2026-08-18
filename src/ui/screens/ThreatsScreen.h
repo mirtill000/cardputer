@@ -11,8 +11,10 @@
 // BeaconProbeSniffer), deauth/disassoc floods in progress (from
 // DeauthWatcher/GUARD MODE and separately from SENTINEL MODE's own
 // folded-in detector), new/gone devices on a SENTINEL MODE-watched
-// network, and a status note when PMKID SWEEP has captured at least one
-// PMKID this session. Read-only; it re-derives the list from the live
+// network, unauthenticated MQTT/Modbus/CoAP/BACnet/DNP3 endpoints (from
+// IotOtProbe/IOT/OT SWEEP), and a status note when PMKID SWEEP has
+// captured at least one PMKID this session. Read-only; it re-derives the
+// list from the live
 // data on every draw, so it reflects whatever the background scanners
 // have found so far. It's the on-device counterpart to the report's
 // ATTACK SURFACE section.
@@ -24,6 +26,7 @@ public:
     void onKey(UiKey key, char ch) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* title() const override { return "THRT"; }
     const char* helpText() const override {
         return "THREATS\n\nLive rollup of the worst\nfindings across every module -\ndefault creds, plaintext\nservices, rogue DHCP.\nI: full text\nArrows: move   DEL: back";
     }

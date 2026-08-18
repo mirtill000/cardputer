@@ -19,7 +19,7 @@ public:
 
     const char* title() const override { return "PSWP"; }
     const char* helpText() const override {
-        return "PMKID SWEEP\n\nBefore start: preview of\neligible targets + RSSI.\nRuns PMKID CAPTURE against\neach in turn, no deauth.\nI: result detail\nENTER: start/stop   DEL: back";
+        return "PMKID SWEEP\nMENU>WD>S(PSWP)\nBefore start: preview of\neligible targets + RSSI.\nRuns PMKID CAPTURE against\neach in turn, no deauth.\nI: result detail\nENTER: start/stop   DEL: back";
     }
 
 private:

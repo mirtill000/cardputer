@@ -14,8 +14,9 @@ public:
     void onScanEvent(const ScanNotification& ev) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* title() const override { return "SVC"; }
     const char* helpText() const override {
-        return "SERVICE SCAN\n\nBrowses mDNS/DNS-SD for\nservice instances on the LAN\n(type/instance/port).\nENTER: browse   I: full detail\nArrows: move   DEL: back";
+        return "SERVICE SCAN\nMENU>NET>D>Ent(SVC)\nBrowses mDNS/DNS-SD for\nservice instances on the LAN\n(type/instance/port).\nENTER: browse   I: full detail\nArrows: move   DEL: back";
     }
 
 private:

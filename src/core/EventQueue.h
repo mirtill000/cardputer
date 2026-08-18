@@ -70,6 +70,11 @@ enum class ScanSource : uint8_t {
     DeauthWatch,
     Sentinel,
     PmkidSweep,
+    IotOt,
+    Playbook,
+    NameSpoof,
+    OsFingerprint,
+    VlanHop,
 };
 
 struct ScanNotification {

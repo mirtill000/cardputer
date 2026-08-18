@@ -3,10 +3,14 @@
 #include "Screen.h"
 
 // "EVIL TWIN": stands up EvilTwinManager's look-alike open AP. Reachable
-// either from MAIN MENU (type an SSID from scratch) or from a selected
-// WAR DRIVING sighting via 'E' (pre-fills that network's SSID/channel,
-// via setSuggestedSsid()) — either way the SSID stays editable before
-// starting.
+// from a selected WAR DRIVING sighting via 'E' (pre-fills that
+// network's SSID/channel, via setSuggestedSsid()) — the SSID stays
+// editable before starting. TAB starts KARMA mode instead: cycles the
+// AP through SSIDs nearby clients have already been overheard probing
+// for (see EvilTwinManager.h), no typing needed - the typed SSID field
+// is ignored for that path. TAB rather than a letter key because text
+// entry is active here (typing the SSID) and a letter needs to stay
+// available as a literal character.
 class EvilTwinScreen : public Screen {
 public:
     static EvilTwinScreen& instance();
@@ -19,8 +23,9 @@ public:
     void onScanEvent(const ScanNotification& ev) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* title() const override { return "TWIN"; }
     const char* helpText() const override {
-        return "EVIL TWIN\n\nType/edit the SSID, ENTER to\nstart a look-alike open AP.\n(running) ENTER: stop\nDEL: erase / back";
+        return "EVIL TWIN\nMENU>WD>E(TWIN)\nType SSID, ENTER: fixed AP.\nTAB: KARMA (cycles probed\nSSIDs, no typing needed).\n(running) ENTER: stop\nDEL: erase / back";
     }
 
 private:

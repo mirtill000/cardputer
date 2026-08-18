@@ -18,8 +18,9 @@ public:
     void onScanEvent(const ScanNotification& ev) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* title() const override { return "WD"; }
     const char* helpText() const override {
-        return "WAR DRIVING\n\nENTER: start/stop passive scan\nArrows: move selection\nA: allowlist   TAB: locate\nI: full SSID   C: join open\nO: offensive actions (twin/\n  deauth/pmkid/sweep) - or\n  E/X/P/S directly\nDEL: back (keeps running)";
+        return "WAR DRIVING\nENTER:scan  Arrows:move\nA:allowlist  TAB:locate\nI:full SSID  C:join open\nO:offensive menu (or E/X/P/S\ndirectly)\nDEL: back (keeps running)";
     }
 
 private:

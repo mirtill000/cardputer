@@ -14,8 +14,9 @@ public:
     void onScanEvent(const ScanNotification& ev) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* title() const override { return "SNMP"; }
     const char* helpText() const override {
-        return "SNMP SWEEP\n\nGETs sysDescr.0 with community\n'public' from every host -\nread-only, never SET.\nENTER: sweep   I: full sysDescr\nArrows: move   DEL: back";
+        return "SNMP SWEEP\nMENU>NET>D>Ent(SNMP)\nGETs sysDescr.0 with community\n'public' from every host -\nread-only, never SET.\nENTER: sweep   I: full sysDescr\nArrows: move   DEL: back";
     }
 
 private:

@@ -13,6 +13,9 @@ MitmScreen& MitmScreen::instance() {
 void MitmScreen::onEnter() {
     _state = g_arpSpoofManager.isRunning() ? State::Running : State::Idle;
     _logCount = 0;
+    _harvestView = false;
+    _harvestDetail = false;
+    _harvestSelected = 0;
 }
 
 void MitmScreen::onExit() {
@@ -60,7 +63,28 @@ void MitmScreen::onKey(UiKey key, char ch) {
             break;
 
         case State::Running:
-            if (key == UiKey::Back || key == UiKey::Enter) {
+            if (_harvestDetail) {
+                _harvestDetail = false;
+                break;
+            }
+            if (_harvestView) {
+                if (key == UiKey::Char && (ch == 'i' || ch == 'I')) {
+                    if (g_arpSpoofManager.harvestedCount() > 0) _harvestDetail = true;
+                } else if (key == UiKey::Up) {
+                    if (_harvestSelected > 0) _harvestSelected--;
+                } else if (key == UiKey::Down) {
+                    if (_harvestSelected + 1 < g_arpSpoofManager.harvestedCount()) _harvestSelected++;
+                } else if (key == UiKey::Char && (ch == 'h' || ch == 'H')) {
+                    _harvestView = false;
+                } else if (key == UiKey::Back) {
+                    _harvestView = false;
+                }
+                break;
+            }
+            if (key == UiKey::Char && (ch == 'h' || ch == 'H')) {
+                _harvestView = true;
+                _harvestSelected = 0;
+            } else if (key == UiKey::Back || key == UiKey::Enter) {
                 g_arpSpoofManager.stop();
                 // Stay on this screen (rather than popping) until the
                 // manager confirms it actually restored the target's
@@ -158,6 +182,11 @@ void MitmScreen::draw(M5Canvas& gfx) {
         }
 
         case State::Running: {
+            if (_harvestView) {
+                drawHarvest(gfx);
+                break;
+            }
+
             gfx.setTextColor(theme::CYAN, theme::BG);
             gfx.setCursor(6, 16);
             gfx.print("poisoned: ");
@@ -177,6 +206,12 @@ void MitmScreen::draw(M5Canvas& gfx) {
                 if (line.length() > 37) line = line.substring(0, 37);
                 gfx.print(line);
             }
+
+            gfx.setTextColor(theme::MAGENTA, theme::BG);
+            gfx.setCursor(6, gfx.height() - 20);
+            gfx.print("H: harvested (");
+            gfx.print((unsigned)g_arpSpoofManager.harvestedCount());
+            gfx.print(")");
 
             gfx.setTextColor(theme::GREY, theme::BG);
             gfx.setCursor(4, gfx.height() - 9);
@@ -208,4 +243,65 @@ void MitmScreen::draw(M5Canvas& gfx) {
             break;
         }
     }
+}
+
+void MitmScreen::drawHarvest(M5Canvas& gfx) {
+    size_t count = g_arpSpoofManager.harvestedCount();
+
+    if (_harvestDetail) {
+        ArpSpoofManager::HarvestedItem h;
+        if (g_arpSpoofManager.getHarvested(_harvestSelected, h)) {
+            String text = h.kind + " from " + h.srcMac + " -> " + h.dstIp.toString() + ":" + String(h.dstPort) +
+                          " / " + h.line;
+            chrome::drawDetailOverlay(gfx, "HARVESTED CRED DETAIL", text);
+        }
+        return;
+    }
+
+    gfx.setTextColor(theme::AMBER, theme::BG);
+    gfx.setCursor(6, 16);
+    gfx.print("harvested: ");
+    gfx.print((unsigned)count);
+
+    if (count == 0) {
+        chrome::drawEmptyState(gfx, "nothing captured yet", "cleartext traffic only");
+    } else {
+        gfx.setTextColor(theme::GREY, theme::BG);
+        gfx.drawFastHLine(4, 27, gfx.width() - 8, theme::GREY);
+
+        constexpr int16_t kRowH = 10;
+        constexpr int16_t kTop = 29;
+        constexpr size_t kMaxRows = 6;
+
+        size_t first = 0;
+        if (_harvestSelected >= kMaxRows) first = _harvestSelected - kMaxRows + 1;
+
+        ArpSpoofManager::HarvestedItem h;
+        for (size_t row = 0; row < kMaxRows; row++) {
+            size_t i = first + row;
+            if (i >= count) break;
+            if (!g_arpSpoofManager.getHarvested(i, h)) continue;
+
+            int16_t y = kTop + (int16_t)row * kRowH;
+            bool sel = (i == _harvestSelected);
+            uint16_t rowBg = sel ? theme::PANEL_BG : theme::BG;
+            if (sel) gfx.fillRect(0, y, gfx.width(), kRowH, rowBg);
+
+            gfx.setTextColor(sel ? theme::CYAN : theme::MAGENTA, rowBg);
+            gfx.setCursor(6, y);
+            gfx.print(h.kind);
+
+            gfx.setTextColor(sel ? theme::CYAN : theme::GREEN, rowBg);
+            gfx.setCursor(100, y);
+            String preview = h.line;
+            if (preview.length() > 22) preview = preview.substring(0, 22);
+            gfx.print(preview);
+        }
+
+        chrome::drawScrollMarkers(gfx, kTop, kTop + (int16_t)kMaxRows * kRowH, first > 0, (first + kMaxRows) < count);
+    }
+
+    gfx.setTextColor(theme::GREY, theme::BG);
+    gfx.setCursor(4, gfx.height() - 9);
+    gfx.print("I:detail  H/DEL:back to log");
 }

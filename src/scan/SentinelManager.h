@@ -127,7 +127,7 @@ private:
     static constexpr size_t kMaxTrackedHosts = 64;          // safety cap, no PSRAM - see class comment
     static constexpr size_t kMaxEvents = 40;
     static constexpr uint8_t kCaptureQueueDepth = 24;
-    static constexpr uint8_t kCaptureLen = 256;   // truncation length, same as DeauthManager/PmkidManager
+    static constexpr uint16_t kCaptureLen = 256;  // truncation length, same as DeauthManager/PmkidManager
     static constexpr uint8_t kDrainPerTick = 8;   // capped so a busy network can't starve the scan-cycle logic
     static constexpr uint32_t kFloodWindowMs = 10000;      // same window as DeauthWatcher
     static constexpr uint32_t kFloodThreshold = 15;         // same threshold as DeauthWatcher

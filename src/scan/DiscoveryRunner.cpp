@@ -3,6 +3,7 @@
 #include "ServiceEnumerator.h"
 #include "SnmpSweep.h"
 #include "DataStoreProbe.h"
+#include "IotOtProbe.h"
 #include "LdapProbe.h"
 #include "NtlmHttpProbe.h"
 #include "CdpLldpSniffer.h"
@@ -95,6 +96,11 @@ void DiscoveryRunner::run() {
         setPhase(Phase::DataStore, "data-store sweep...", 35);
         g_dataStoreProbe.start();
         waitOneShot([]() { return g_dataStoreProbe.isRunning(); });
+    }
+    if (_running) {
+        setPhase(Phase::IotOt, "IoT/OT sweep (MQTT/Modbus/CoAP)...", 40);
+        g_iotOtProbe.start();
+        waitOneShot([]() { return g_iotOtProbe.isRunning(); });
     }
     if (_running) {
         setPhase(Phase::Ldap, "LDAP anon-bind/rootDSE sweep...", 45);

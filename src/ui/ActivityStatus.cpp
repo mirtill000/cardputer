@@ -26,6 +26,11 @@
 #include "../scan/EvilTwinManager.h"
 #include "../scan/DiscoveryRunner.h"
 #include "../scan/PmkidSweepManager.h"
+#include "../scan/IotOtProbe.h"
+#include "../scan/PlaybookRunner.h"
+#include "../scan/NameSpoofManager.h"
+#include "../scan/OsFingerprint.h"
+#include "../scan/VlanHopProbe.h"
 #include <cstdio>
 #include <cstring>
 
@@ -57,6 +62,8 @@ size_t buildTaskTable(TaskEntry* out, size_t cap) {
     add(g_beaconProbeSniffer.isRunning(), "BCN", "BEACON/PROBE INTEL", true);
     add(g_deauthWatcher.isRunning(), "GRD", "GUARD MODE", true);
     add(g_sentinelManager.isRunning(), "SNT", "SENTINEL MODE", true);
+    add(g_osFingerprint.isRunning(), "OSFP", "OS FINGERPRINT", true);
+    add(g_vlanHopProbe.isRunning(), "VLAN", "VLAN HOP", true);
 
     add(g_discoveryRunner.isRunning(), "ALL", "RUN ALL DISCOVERY", false);
     add(g_wardrivingManager.isRunning(), "WD", "WAR DRIVING", false);
@@ -66,6 +73,7 @@ size_t buildTaskTable(TaskEntry* out, size_t cap) {
     add(g_ssdpDiscovery.isRunning(), "UPNP", "UPNP DISCOVERY", false);
     add(g_snmpSweep.isRunning(), "SNMP", "SNMP SWEEP", false);
     add(g_dataStoreProbe.isRunning(), "DS", "DATASTORE SWEEP", false);
+    add(g_iotOtProbe.isRunning(), "IOT", "IOT/OT SWEEP", false);
     add(g_ldapProbe.isRunning(), "LDAP", "LDAP SWEEP", false);
     add(g_ntlmHttpProbe.isRunning(), "NTLM", "NTLM DISCLOSURE", false);
     add(g_serviceAuditManager.isRunning(), "AUD", "SERVICE AUDIT", false);
@@ -75,6 +83,8 @@ size_t buildTaskTable(TaskEntry* out, size_t cap) {
     add(g_assessmentRunner.isRunning(), "ASSESS", "AUTO ASSESS", false);
     add(g_evilTwinManager.isRunning(), "TWIN", "EVIL TWIN", false);
     add(g_pmkidSweepManager.isRunning(), "PSWP", "PMKID SWEEP", false);
+    add(g_playbookRunner.isRunning(), "PBK", "PLAYBOOK", false);
+    add(g_nameSpoofManager.isRunning(), "NSPF", "NAME SPOOF", false);
     return n;
 }
 }  // namespace
@@ -108,20 +118,29 @@ uint16_t activity::draw(M5Canvas& gfx, int16_t rightX, int16_t y) {
         }
     }
 
-    char buf[14];
+    // Sized past the realistic worst case ("RF:" + a 6-char shortTag +
+    // "+" + a 2-digit count, ~13 chars) - GCC's -Wformat-truncation
+    // assumes %d could be a full int's worst case and %s an unbounded
+    // string since promOnly/bgCount have no compiler-visible range, so
+    // a tightly-sized buffer still warns even though shortTag is always
+    // 3-6 chars (see TaskEntry's comment) and the counts are always
+    // small (bounded by the fixed-size table above). The %.6s precision
+    // below both matches that documented invariant and gives GCC's
+    // analysis a real bound to work with.
+    char buf[24];
     uint16_t color;
     bool haveTag = true;
     if (promCount >= 2) {
         snprintf(buf, sizeof(buf), "RF:%d!", promCount);  // radio conflict — outranks everything
         color = theme::RED;
     } else if (promCount == 1 && bgCount == 0) {
-        snprintf(buf, sizeof(buf), "RF:%s", promOnly);
+        snprintf(buf, sizeof(buf), "RF:%.6s", promOnly);
         color = theme::AMBER;
     } else if (promCount == 1) {
-        snprintf(buf, sizeof(buf), "RF:%s+%d", promOnly, bgCount);
+        snprintf(buf, sizeof(buf), "RF:%.6s+%d", promOnly, bgCount);
         color = theme::AMBER;
     } else if (bgCount == 1) {
-        snprintf(buf, sizeof(buf), "BG:%s", bgOnly);
+        snprintf(buf, sizeof(buf), "BG:%.6s", bgOnly);
         color = theme::CYAN;
     } else if (bgCount > 1) {
         snprintf(buf, sizeof(buf), "BG:%d", bgCount);

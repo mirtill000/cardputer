@@ -18,8 +18,9 @@ public:
     void onScanEvent(const ScanNotification& ev) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* title() const override { return "AUD"; }
     const char* helpText() const override {
-        return "SERVICE AUDIT\n\nAnon-access + default-creds\ncheck across this host's\nservices (FTP/SMB/DB/HTTP).\nY: authorize (first time)\nENTER: start   DEL: back";
+        return "SERVICE AUDIT\nMENU>NET>HOST>V(AUD)\nAnon-access + default-creds\ncheck across this host's\nservices (FTP/SMB/DB/HTTP).\nY: authorize (first time)\nENTER: start   DEL: back";
     }
 
 private:

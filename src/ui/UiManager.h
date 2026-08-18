@@ -47,10 +47,13 @@ public:
     // arrow-key navigation everywhere else in the app.
     void setTextEntryMode(bool enabled) { _input.setTextEntryMode(enabled); }
 
-    // Short title() of the screen directly below the active one (its
-    // navigation parent), or nullptr at the root — used by
-    // chrome::drawHeader for the breadcrumb prefix.
-    const char* parentTitle() const;
+    // Full navigation breadcrumb ("MENU/NET/DISC") built by joining
+    // every ancestor screen's title() from the root down to (but not
+    // including) the active screen — used by chrome::drawHeader for the
+    // breadcrumb prefix. Empty at the root. Screens with no title() are
+    // silently skipped rather than leaving a visible gap (purely
+    // additive, same principle the original single-level version used).
+    String breadcrumbPath() const;
 
 private:
     static void taskEntry(void* arg);

@@ -9,7 +9,11 @@
 // promiscuous traffic sniffing, and manage the small DNS-spoof
 // hostname->IP list; Running shows a persistent "MITM ACTIVE" header
 // (never hidden — see ArpSpoofManager.h on why this shouldn't be a
-// quiet background feature the way WAR DRIVING is) plus a live log.
+// quiet background feature the way WAR DRIVING is) plus a live log. H
+// (while Running) switches to a scrollable view of every cleartext
+// cookie/Basic-Auth/FTP-Telnet credential ArpSpoofManager has actually
+// captured (not just the short "leaked X" log line) - see
+// ArpSpoofManager::HarvestedItem and its /mitm/harvest.csv export.
 class MitmScreen : public Screen {
 public:
     static MitmScreen& instance();
@@ -22,8 +26,9 @@ public:
     void onScanEvent(const ScanNotification& ev) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* title() const override { return "MITM"; }
     const char* helpText() const override {
-        return "MITM AUDIT\n\nArrows: adjust duration\nS: toggle traffic sniff\nD: add DNS-spoof host->IP\nENTER: start/stop\nDEL: back";
+        return "MITM AUDIT\nMENU>NET>HOST>M(MITM)\nArrows: adjust duration\nS: toggle traffic sniff\nD: add DNS-spoof host->IP\nENTER: start/stop\n(running) H: harvested creds\nDEL: back";
     }
 
 private:
@@ -32,6 +37,7 @@ private:
     static constexpr uint8_t kLogLines = 5;
 
     void pushLog(const String& line);
+    void drawHarvest(M5Canvas& gfx);
 
     State _state = State::Idle;
     IPAddress _target;
@@ -41,4 +47,8 @@ private:
     uint8_t _logCount = 0;
     String _pendingHost;
     String _pendingIpText;
+
+    bool _harvestView = false;
+    size_t _harvestSelected = 0;
+    bool _harvestDetail = false;
 };

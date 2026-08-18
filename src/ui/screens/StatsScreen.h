@@ -16,8 +16,9 @@ public:
     void onKey(UiKey key, char ch) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* title() const override { return "STAT"; }
     const char* helpText() const override {
-        return "STATS\n\nHost-count trend across your\nlast scans of this network.\nRed bar = a critical host was\nfound that scan.\nDEL: back";
+        return "STATS\nMENU>HIST>S(STAT)\nHost-count trend across your\nlast scans of this network.\nRed bar = a critical host was\nfound that scan.\nDEL: back";
     }
 
 private:

@@ -12,7 +12,12 @@
 #include <SD.h>
 
 namespace {
-constexpr const char* kBackupPath = "/config_backup.json";
+// Under /netrunner (Fase 42) - the same shared artifact folder every
+// other report/export this firmware produces already lands in (see
+// storage/NetrunnerPaths.h), so a config backup shows up in FILE
+// MANAGER's N-jump right alongside everything else instead of sitting
+// alone at the SD root.
+constexpr const char* kBackupPath = "/netrunner/config_backup.json";
 }  // namespace
 
 SettingsScreen& SettingsScreen::instance() {

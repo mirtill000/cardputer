@@ -193,6 +193,19 @@ uint32_t WifiManager::hostCount() const {
 
 void WifiManager::beginScan() {
     WiFi.mode(WIFI_STA);
+    // A saved network's autoConnect()/connectSaved() may still be
+    // retrying in the background if the AP wasn't reachable when it
+    // tried (out of range, temporarily down, password changed on the
+    // router) - the ESP32 WiFi driver keeps that connection attempt
+    // alive and retries it on its own, which monopolizes the radio and
+    // can make scanNetworks() below hang forever (scanComplete() stuck
+    // at kScanRunning) or fail outright. Stop it first - but only when
+    // we're NOT already successfully connected: an established
+    // connection scans around it just fine on this hardware, no need to
+    // drop a working session just to look for other networks. Mirrors
+    // what forgetSavedCredentials() already does, minus erasing
+    // anything - this is "stop trying for now", not "forget".
+    if (!isConnected()) WiFi.disconnect(/*wifioff=*/false, /*eraseap=*/false);
     // async=true: returns immediately with kScanRunning: the UI task
     // polls scanStatus() instead of blocking the render loop on a scan
     // that can take a couple of seconds.

@@ -18,8 +18,9 @@ public:
     void onKey(UiKey key, char ch) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* title() const override { return "SRCH"; }
     const char* helpText() const override {
-        return "SEARCH\n\nType to filter hosts by\nIP / MAC / vendor / hostname.\nENTER: browse matches\n(in browse) ENTER: open host\nDEL: erase / back";
+        return "SEARCH\nMENU>NET>S(SRCH)\nType to filter hosts by\nIP / MAC / vendor / hostname.\nENTER: browse matches\n(in browse) ENTER: open host\nDEL: erase / back";
     }
 
 private:

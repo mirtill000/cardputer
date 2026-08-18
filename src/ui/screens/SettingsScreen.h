@@ -15,6 +15,7 @@ public:
     void onKey(UiKey key, char ch) override;
     void draw(M5Canvas& gfx) override;
 
+    const char* title() const override { return "SET"; }
     const char* helpText() const override {
         return "SETTINGS\n\narrows: select / adjust value\nO: OTA update   F: file manager\nC: captures browser\nB/R: backup/restore config\nD: hardware diagnostics\nENTER/DEL: save & exit";
     }
