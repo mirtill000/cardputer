@@ -91,7 +91,7 @@ void OsFingerprint::onPromiscuousFrame(const uint8_t* p, uint16_t len) {
     IPAddress srcIp(ip[12], ip[13], ip[14], ip[15]);
 
     // Walk the TCP options, recording each kind's single-letter code in
-    // the order seen (RFC 9293 §3.1's TCP option format: NOP is a bare
+    // the order seen (RFC 9293 3.1's TCP option format: NOP is a bare
     // 1-byte kind; every other option is kind+length+data, length
     // counting itself). Malformed/truncated options just stop the walk
     // early - whatever was decoded before that point is still useful.
@@ -126,7 +126,7 @@ void OsFingerprint::onPromiscuousFrame(const uint8_t* p, uint16_t len) {
 void OsFingerprint::observe(const IPAddress& ip, const uint8_t mac[6], uint8_t ttl, uint16_t window,
                              const String& optionOrder) {
     bool isNew = false;
-    if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+    if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
         Sighting* existing = nullptr;
         for (auto& s : _hosts) {
             if (s.ip == ip) {
