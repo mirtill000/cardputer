@@ -2618,6 +2618,47 @@ NEGOTIATE/SESSION_SETUP corretto è un pezzo di lavoro grande e
 separato, fuori scope per questa fase. Qui ci si ferma alla prova che
 il poisoning funziona, non alla cattura dell'hash.
 
+### Fase 47: OS FINGERPRINT — TTL/finestra/opzioni TCP da un SYN-ACK
+
+Sesto di 10 sviluppi offensive proposti in chat, implementato su
+richiesta esplicita. Fingerprinting passivo dello stack TCP/IP in stile
+`p0f`, ma volutamente ridotto all'osso: ascolta in modalità promiscua
+pacchetti TCP SYN-ACK e legge, per host sorgente, l'unico segnale
+davvero affidabile senza un vero database di firme — il TTL iniziale,
+arrotondato al più vicino tra i tre valori che gli stack reali usano
+davvero (Linux/BSD/macOS/Android di default 64, Windows 128,
+apparati di rete/Unix datati 255) — insieme alla finestra TCP grezza e
+all'ordine delle opzioni TCP osservate.
+
+Scelta deliberata: **non** tenta di indovinare un OS/versione specifico
+da finestra+ordine opzioni come farebbe un vero file di firme p0f —
+servirebbero migliaia di firme verificate che questo progetto non ha
+modo di costruire o controllare, quindi i due campi grezzi vengono
+mostrati così come sono (via `I:detail`) per chi conosce p0f e vuole
+interpretarli da sé, invece di trasformarli in un'etichetta con falsa
+precisione. Stessa filosofia "sola lettura, mai millantare" di
+`UdpProbe.h` (aperto vs silenzioso) e delle etichette "best-effort" già
+usate per WPS.
+
+`scan/OsFingerprint` riusa `ieee80211::parseDataFrame`/`parseSnap`
+(già condivisi da `PassiveHostDiscovery`/`CdpLldpSniffer`/
+`RogueDhcpDetector`) per arrivare all'header IP, poi fa un parsing
+diretto di IP+TCP mai fatto prima in questo progetto: verifica
+protocollo TCP, filtra sui flag SYN+ACK, legge il TTL e la finestra a
+offset fissi, e cammina sulle opzioni TCP codificando l'ordine come una
+stringa di lettere (M=MSS, W=Window Scale, S=SACK Permitted,
+T=Timestamps, N=NOP). Tenuto come lista a sé con schermata propria
+invece che dentro la tabella host di `ScanManager`, stessa scelta
+architetturale di `PassiveHostDiscovery` (vedi il suo commento in
+testa al file per il ragionamento completo).
+
+Nuova voce `OS FINGERPRINT` nel gruppo "PASSIVE LISTENERS" di
+`DISCOVERY` (`MENU>NET>D>Ent(OSFP)`) — nessun prerequisito, funziona in
+standalone come PASSIVE HOSTS/GUARD MODE. Serve un host che tenti/
+completi un handshake TCP mentre è in ascolto: capita naturalmente
+durante un PORT SCAN su un target, o quando qualunque dispositivo
+sulla LAN apre una propria connessione in uscita.
+
 ## Compilare e flashare
 
 ```
@@ -2966,6 +3007,13 @@ originale.
       `OffensiveDisclaimerScreen`, come deauth/PMKID/evil-twin). Nessuna
       cattura di credenziali in questa fase — solo prova/log del
       poisoning riuscito, vedi "Limiti noti".
+- [x] **Fase 47 — OS FINGERPRINT (TTL/finestra/opzioni TCP da SYN-ACK)**:
+      nuovo `scan/OsFingerprint` ascolta in modalità promiscua pacchetti
+      TCP SYN-ACK e mostra, per host, il bucket TTL (64/128/255 —
+      l'unica etichetta OS che si permette di dare per certa), finestra
+      TCP grezza e ordine delle opzioni osservate, stile `p0f` ma senza
+      fingere una precisione di firma che non ha. Nuova voce `OS
+      FINGERPRINT` nel gruppo passivo di `DISCOVERY`.
 
 ## Test plan — Fase 1
 
@@ -4276,6 +4324,30 @@ di questo firmware:
    sospendono per fare channel hopping) — verificabile controllando che
    l'IP mostrato nello status bar del menu principale non cambi.
 
+## Test plan — Fase 47 (OS FINGERPRINT: TTL/finestra/opzioni TCP)
+
+1. **Bucket TTL corretto**: avviare OS FINGERPRINT e far completare un
+   handshake TCP a un dispositivo Windows noto (es. aprire un PORT SCAN
+   verso di lui, o lasciarlo generare traffico proprio) — il bucket
+   mostrato deve essere "t128"; ripetere con un dispositivo Linux/
+   Android/macOS noto — deve essere "t64".
+2. **Nessuna finta precisione**: il dettaglio (`I`) deve mostrare
+   l'etichetta generica ("Windows", "Linux/BSD/macOS/Android", ...) più
+   i valori grezzi (TTL esatto, finestra, ordine opzioni) — mai un nome
+   di OS/versione specifico che il codice non può verificare.
+3. **Ordine opzioni leggibile**: verificare che la stringa nel dettaglio
+   (es. "MSWT") corrisponda a un ordine plausibile di opzioni TCP
+   (M/W/S/T/N) e non contenga caratteri "?" a raffica su un host con
+   uno stack TCP/IP standard (un singolo "?" occasionale è accettabile
+   — un'opzione TCP non tra le quattro riconosciute).
+4. **Nessun impatto su altri strumenti radio**: come per gli altri
+   ascoltatori passivi, verificare che non giri insieme a un secondo
+   consumatore promiscuo (es. WAR DRIVING) senza il tag "RF:N!" in
+   header che segnala il conflitto.
+5. **Sola lettura**: verificare che nessun pacchetto venga inviato da
+   questo dispositivo durante l'ascolto (a differenza di NAME SPOOF/
+   MITM AUDIT) — solo osservazione di traffico TCP altrui già in corso.
+
 ## Limiti noti e tagli di scope deliberati
 
 Riepilogo di quanto già menzionato nelle sezioni sopra, in un unico
@@ -4738,3 +4810,23 @@ posto:
   vero (es. Windows, Responder stesso) — solo scritti e riletti a mano
   seguendo RFC 4795/RFC 1002. Se il poisoning non sembra funzionare in
   test reale, è il primo posto da controllare.
+- **`OS FINGERPRINT`: solo il bucket TTL è una vera etichetta, il resto
+  è dato grezzo** (Fase 47): a differenza di un vero `p0f` con file di
+  firme verificate, non tenta di distinguere Linux da macOS/Android/BSD
+  (tutti a TTL~64) né una versione Windows specifica — servirebbe un
+  database di firme che questo progetto non ha modo di costruire o
+  verificare. Finestra TCP e ordine opzioni sono mostrati grezzi (`I`)
+  per un umano che conosce p0f, non trasformati in un secondo guess.
+- **`OS FINGERPRINT`: solo host che completano un handshake TCP visto
+  da questo dispositivo** (Fase 47): come `PassiveHostDiscovery`, serve
+  traffico che passi per l'aria in modalità promiscua su una rete
+  aperta (WPA cifra il payload) — un host che non tenta mai una
+  connessione TCP mentre l'ascolto è attivo non compare mai, e non c'è
+  probe attivo di alcun tipo per stanarlo.
+- **`net/Ieee80211Frame`'s parseDataFrame/parseSnap ora hanno un quinto
+  chiamante** (Fase 47): `OsFingerprint` si aggiunge a
+  `PassiveHostDiscovery`/`CdpLldpSniffer`/`RogueDhcpDetector`/
+  `ArpSpoofManager` nel riusare questo parsing condiviso — nessuna
+  modifica al parsing stesso, solo un nuovo consumatore, ma vale la
+  pena notarlo perché un bug reale lì (vedi Fase 16) si propagherebbe
+  ora a cinque moduli invece di quattro.

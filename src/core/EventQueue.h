@@ -73,6 +73,7 @@ enum class ScanSource : uint8_t {
     IotOt,
     Playbook,
     NameSpoof,
+    OsFingerprint,
 };
 
 struct ScanNotification {
