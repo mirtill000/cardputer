@@ -23,6 +23,14 @@ void WifiSetupScreen::onEnter() {
 
 void WifiSetupScreen::onExit() {
     g_ui.setTextEntryMode(false);  // redundant with UiManager's own safety net, but explicit costs nothing
+    // beginScan() (see WifiManager.cpp) may have cancelled a saved
+    // network's pending connection attempt to free the radio for
+    // scanning - if we're leaving without having connected to anything
+    // (this one or a different one), resume trying the saved network(s)
+    // rather than leaving the device sitting disconnected until the
+    // next reboot. No-op if nothing's saved or a connection already
+    // succeeded.
+    if (!g_wifi.isConnected()) g_wifi.autoConnect();
 }
 
 void WifiSetupScreen::startScan() {

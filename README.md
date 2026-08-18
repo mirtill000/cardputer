@@ -2490,6 +2490,34 @@ pre-Fase-42 da preservare — chi ha già un `/config_backup.json` alla
 radice della SD da una build precedente dovrà rifare il backup una
 volta con `B` dopo l'aggiornamento.
 
+### Fase 43: bug fix — la scansione WiFi non partiva con una rete già salvata
+
+Segnalazione diretta dell'utente: con una rete WiFi già salvata, `ENTER`
+su WIFI SCAN non avviava mai una scansione — bisognava prima fare
+"forget" perché ricominciasse a funzionare. La lista delle reti salvate
+(tasto `S`) esisteva già (vedi `WifiSetupScreen::State::SavedList`), ma
+di fatto era raggiungibile solo forgettando prima, che è l'opposto di
+quello che dovrebbe fare una lista di reti salvate.
+
+- **Causa**: `WifiManager::autoConnect()` (chiamato al boot se esiste
+  una rete salvata) avvia `WiFi.begin()` in modo asincrono. Se quella
+  rete non è raggiungibile in quel momento (fuori portata,
+  temporaneamente spenta, password cambiata sul router), il driver WiFi
+  dell'ESP32 continua a ritentare la connessione in background da solo —
+  e quel tentativo perpetuo monopolizza il radio, impedendo a
+  `WiFi.scanNetworks()` di completarsi mai (resta bloccato su
+  `kScanRunning`, o fallisce subito). Non a caso `forgetSavedCredentials()`
+  chiama esplicitamente `WiFi.disconnect()`: è quello che sblocca la
+  scansione, non il "dimenticare" in sé.
+- **Fix**: `WifiManager::beginScan()` ora chiama `WiFi.disconnect()`
+  prima di scansionare, ma **solo se non si è già connessi** — una
+  connessione già stabilita e funzionante non viene mai interrotta solo
+  per cercare altre reti (questo hardware scansiona tranquillamente
+  attorno a una connessione già associata). `WifiSetupScreen::onExit()`
+  poi richiama `autoConnect()` se si esce dalla schermata senza essersi
+  connessi a nulla, per non lasciare il dispositivo scollegato fino al
+  prossimo riavvio solo per aver dato un'occhiata alle reti vicine.
+
 ## Compilare e flashare
 
 ```
@@ -2814,6 +2842,13 @@ originale.
       allowlist WAR DRIVING) scrive ora a `/netrunner/config_backup.json`
       invece che alla radice della SD, coerente con ogni altro export di
       questo firmware.
+- [x] **Fase 43 — Bug fix: scansione WiFi bloccata da una rete salvata
+      irraggiungibile**: `WifiManager::beginScan()` interrompe ora un
+      tentativo di connessione bloccato (mai riuscito) prima di
+      scansionare, invece di lasciare che monopolizzi il radio — una
+      connessione già stabilita non viene mai toccata.
+      `WifiSetupScreen::onExit()` ripristina il tentativo se si esce
+      senza esserci connessi a nulla.
 
 ## Test plan — Fase 1
 
@@ -4045,6 +4080,27 @@ di questo firmware:
 3. **Nessun backup trovato**: su una SD che non ha mai avuto un backup
    scritto da questa build, `R` deve mostrare "no backup found on SD",
    non un errore di parsing.
+
+## Test plan — Fase 43 (bug fix: scansione WiFi bloccata)
+
+1. **Scansione con rete salvata irraggiungibile**: salvare una rete
+   WiFi, poi spegnerla/portare il dispositivo fuori portata, riavviare
+   (così `autoConnect()` resta a ritentare invano) e aprire WIFI SCAN —
+   `ENTER` deve produrre una lista di reti entro pochi secondi, non
+   restare bloccato su "scanning...".
+2. **Nessuna interruzione se già connessi**: con una connessione già
+   stabilita e funzionante, `ENTER` su WIFI SCAN deve comunque produrre
+   una lista di reti, e la connessione esistente non deve mai cadere
+   durante la scansione.
+3. **Ripristino all'uscita**: dopo una scansione senza essersi connessi
+   a nulla (es. `DEL` da NETWORK LIST), il dispositivo deve tornare a
+   tentare la rete salvata da solo (verificabile aspettando che
+   `isConnected()` torni vero se la rete rientra in portata), non
+   restare scollegato fino al riavvio successivo.
+4. **Lista reti salvate**: con almeno una rete salvata, `S` da WIFI SCAN
+   deve mostrare la lista (fino a 3, più recente prima) indipendentemente
+   dallo stato della scansione — non deve più essere necessario fare
+   "forget" per raggiungerla.
 
 ## Limiti noti e tagli di scope deliberati
 
