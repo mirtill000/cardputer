@@ -22,11 +22,14 @@ void AppConfig::load() {
     scanTimeoutMs = prefs.getUShort("scanTimeout", scanTimeoutMs);
     maxConcurrentProbes = prefs.getUChar("maxProbes", maxConcurrentProbes);
     interProbeDelayMs = prefs.getUShort("probeDelay", interProbeDelayMs);
+    autoExportOnScanFinish = prefs.getBool("autoExport", autoExportOnScanFinish);
     credAuditAcknowledged = prefs.getBool("credAck", credAuditAcknowledged);
     // credAuditEnabled is intentionally NOT persisted: every boot starts
     // with the audit module off, even if it was acknowledged/used before.
+    offensiveAcknowledged = prefs.getBool("offAck", offensiveAcknowledged);
+    // offensiveEnabled likewise never persisted - see its declaration.
     uiSoundEnabled = prefs.getUChar("sound", uiSoundEnabled);
-    rainDensity = prefs.getUChar("rainDensity", rainDensity);
+    lowPowerMode = prefs.getUChar("lowpow", lowPowerMode);
 
     prefs.end();
 }
@@ -42,9 +45,11 @@ void AppConfig::save() const {
     prefs.putUShort("scanTimeout", scanTimeoutMs);
     prefs.putUChar("maxProbes", maxConcurrentProbes);
     prefs.putUShort("probeDelay", interProbeDelayMs);
+    prefs.putBool("autoExport", autoExportOnScanFinish);
     prefs.putBool("credAck", credAuditAcknowledged);
+    prefs.putBool("offAck", offensiveAcknowledged);
     prefs.putUChar("sound", uiSoundEnabled);
-    prefs.putUChar("rainDensity", rainDensity);
+    prefs.putUChar("lowpow", lowPowerMode);
 
     prefs.end();
 }

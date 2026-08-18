@@ -4,26 +4,26 @@
 
 extern "C" {
 #include "lwip/etharp.h"
-#include "esp_netif.h"
+#include "lwip/netif.h"
 }
+
+// EDIT (post-review, build-verified on real hardware/toolchain): the
+// original version of this file went through esp_netif
+// (esp_netif_get_handle_from_ifkey() + esp_netif_get_netif_impl()) to
+// reach lwIP's struct netif*. esp_netif_get_netif_impl() doesn't exist
+// in the esp-idf version this project's pinned espressif32 platform
+// bundles ("was not declared in this scope" at compile time) — exactly
+// the kind of version-sensitivity this file's original comment warned
+// about. Switched to lwIP's own `netif_default` global instead: it's
+// plain lwIP (declared in lwip/netif.h, not an ESP-IDF wrapper), so it
+// doesn't depend on esp_netif's internal API surface at all, and for a
+// STA-only device (no AP, no Ethernet) it reliably points at the WiFi
+// interface — there's only one netif to be "default".
 
 namespace ArpResolver {
 
 bool lookupMac(const IPAddress& ip, uint8_t mac[6]) {
-    // "WIFI_STA_DEF" is the ifkey arduino-esp32 registers the station
-    // interface under internally (via ESP-IDF's
-    // esp_netif_create_default_wifi_sta()) — going through this stable
-    // ESP-IDF lookup instead of Arduino's WiFiSTAClass keeps this file's
-    // only real dependency on ESP-IDF itself, not on whichever
-    // arduino-esp32 wrapper method happens to exist in a given release.
-    esp_netif_t* espNetif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
-    if (!espNetif) return false;
-
-    // esp_netif is ESP-IDF's abstraction layer; etharp_find_addr() is a
-    // plain lwIP call and wants the underlying lwIP `struct netif*`.
-    // esp_netif_get_netif_impl() is the documented way to get from one
-    // to the other.
-    auto* lwipNetif = static_cast<struct netif*>(esp_netif_get_netif_impl(espNetif));
+    struct netif* lwipNetif = netif_default;
     if (!lwipNetif) return false;
 
     ip4_addr_t target;

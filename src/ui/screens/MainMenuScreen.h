@@ -5,6 +5,11 @@
 struct MenuItem {
     const char* label;
     Screen* target;  // pushed onto the UI stack on Enter; null = disabled entry
+    // true = route through OffensiveDisclaimerScreen first, same gate
+    // per-host offensive actions (MITM/deauth/PMKID/evil-twin) already
+    // use, for a top-level entry that IS the offensive action itself
+    // rather than a screen reached after picking a target elsewhere.
+    bool offensive = false;
 };
 
 // Top-level navigation hub. Deliberately knows nothing about which
@@ -21,8 +26,10 @@ public:
     void onKey(UiKey key, char ch) override;
     void draw(M5Canvas& gfx) override;
 
-    bool wantsRain() const override { return true; }
-    uint8_t rainDensity() const override { return 4; }  // sparse/dim so menu text stays legible
+    const char* title() const override { return "MENU"; }
+    const char* helpText() const override {
+        return "MAIN MENU\n\nArrows: move selection\nENTER: open highlighted tool\n\nOther screens list their own\npath, e.g. NET>D>Ent(BCN).";
+    }
 
 private:
     const MenuItem* _items = nullptr;

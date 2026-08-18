@@ -11,4 +11,3 @@
 # artifact. Compiled firmware binaries live under .pio/, already ignored.
 build/
 .cache/
-include/secrets.h

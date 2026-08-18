@@ -1,16 +1,76 @@
-# Custom partition table — ESP32-S3FN8 (8 MB flash, no PSRAM), no OTA.
+# Custom partition table — ESP32-S3FN8 (8 MB flash, no PSRAM), OTA-capable.
 #
-# We don't implement OTA updates in this firmware (reflashing over USB-C
-# is the expected workflow for a pentesting tool you keep on a bench), so
-# the space that a dual-OTA scheme would reserve for a second app slot is
-# given to LittleFS instead. That's what stores the OUI vendor database,
-# the default-credentials dictionary and exported scan results (JSON/CSV),
-# all of which benefit far more from 3.9 MB of room than a second 4 MB app
-# slot nobody writes to would.
+# Two 2.25 MB app slots (ota_0/ota_1) instead of one 4 MB "factory"
+# slot, so OtaUpdater (src/net/OtaUpdater.h) has an inactive slot to
+# flash a new image into and fall back from if it's bad — swapped for
+# LittleFS space, which still comes out ahead of the original no-OTA
+# table's 3.9 MB (see git history): 4.5 MB now, since two 2.25 MB app
+# slots (4.5 MB) take a bit more room than the original two-1.6 MB
+# layout below did, at spiffs's expense (see the Fase 13 bug below).
+#
+# RISK, CONFIRMED AND FIXED ONCE ALREADY (Fase 13) — the one thing this
+# assistant cannot verify without a real build (see README's testing
+# note): whether the actual compiled firmware image fits inside the
+# per-slot size. The original 0x190000 (1,638,400 bytes) slots, sized
+# before OTA/BLE/STATS/ConfigBackup/SignalFinder existed, turned out
+# too small once Fase 13 added BLE scanning (which alone pulls in the
+# whole classic Arduino-ESP32 BLE stack — by far the heaviest library
+# this firmware links against) plus six other new modules: the compiled
+# image came out to 1,857,937 bytes, 219,537 bytes over the old slot
+# size. `pio run -t upload` failed loudly at the "checkprogsize" step —
+# a safe, visible failure, not a bricked device — exactly as this
+# comment always said it would. Fixed by growing ota_0/ota_1 to
+# 0x240000 (2,359,296 bytes each) and shrinking spiffs to match (both
+# must change together to keep the table summing to exactly 0x800000).
+# That leaves ~490 KB of headroom above the Fase 13 image size — should
+# absorb several more phases of growth, but is not a permanent
+# guarantee; if this fails again, the fix is the same trade one more
+# time (LittleFS static assets — OUI/port DBs, wordlists — total only
+# ~1.5 MB, so spiffs has plenty of room left to give up before it would
+# ever become the tight constraint).
+#
+# SubType "spiffs" below, not "littlefs": ESP-IDF's partition tool
+# (gen_esp32part.py) validates SubType against a fixed keyword list
+# that predates LittleFS support and has no "littlefs" entry — using it
+# fails the build ("Value 'littlefs' is not valid"). This is cosmetic,
+# not functional: the SubType/Name fields are just labels for the
+# partition table itself, not a promise about which filesystem format
+# is written inside. "spiffs" is what arduino-esp32's LittleFS library
+# looks for by default (LittleFS.begin()'s partitionLabel parameter
+# defaults to "spiffs" for historical drop-in-replacement reasons), and
+# what PlatformIO's `uploadfs` target expects when locating where to
+# flash the filesystem image — so this naming isn't just convention,
+# it's what makes both of those work without extra parameters anywhere
+# in this codebase.
+#
+# otadata MUST be at 0xE000 — a real bug found on the first real
+# flash of this table (not something reviewable from source, only from
+# a hardware log): PlatformIO/arduino-esp32 auto-flashes a small
+# "boot_app0.bin" blob (initializes otadata to point at ota_0) at a
+# HARDCODED offset of 0xE000 whenever it detects an OTA-style partition
+# table (ota_0/ota_1/otadata present) — regardless of what this file
+# says. An earlier version of this table put otadata at 0xF000 (with a
+# phy_init partition at 0xE000, matching the old non-OTA table's
+# layout), so that auto-flash silently overwrote all of phy_init and
+# the first half of otadata with boot_app0.bin's bytes, leaving otadata
+# corrupted and the bootloader crash-looping before it could print
+# anything (same banner over and over, identical PC every time — see
+# git history for the full symptom + diagnosis). There's no longer a
+# phy_init entry at all: Arduino-ESP32's own reference OTA partition
+# tables don't have one either (PHY calibration works without a
+# dedicated partition, falling back gracefully), which is what makes
+# 0xE000 free for otadata in the first place.
+#
+# ota_0/ota_1 offsets are 0x10000-aligned (a hard requirement for app
+# partitions - the bootloader memory-maps them at 64KB granularity).
+# otadata left blank/erased (as it is on a first flash before any OTA
+# update has ever run) makes the bootloader's documented fallback boot
+# ota_0 - so a plain `pio run -t upload` needs no special handling.
 #
 # Name,      Type, SubType,  Offset,   Size,     Flags
 nvs,         data, nvs,      0x9000,   0x5000,
-phy_init,    data, phy,      0xe000,   0x1000,
-factory,     app,  factory,  0x10000,  0x400000,
-littlefs,    data, littlefs, 0x410000, 0x3E0000,
+otadata,     data, ota,      0xe000,   0x2000,
+ota_0,       app,  ota_0,    0x10000,  0x240000,
+ota_1,       app,  ota_1,    0x250000, 0x240000,
+spiffs,      data, spiffs,   0x490000, 0x360000,
 coredump,    data, coredump, 0x7F0000, 0x10000,

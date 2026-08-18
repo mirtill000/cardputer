@@ -3,7 +3,6 @@
 #include <M5GFX.h>
 #include <vector>
 #include "InputManager.h"
-#include "MatrixRain.h"
 #include "../core/EventQueue.h"
 
 class Screen;
@@ -20,7 +19,18 @@ class Screen;
 // polling or vice versa.
 class UiManager {
 public:
-    void begin();
+    // initialScreen is activated synchronously, on the calling task,
+    // BEFORE the render task is created — see the .cpp for why this
+    // matters: every pushScreen()/popScreen()/replaceScreen() call in
+    // this codebase happens from inside a screen's own onKey(), which
+    // only ever runs on the UI task itself (via run() -> handleKeyEvent()),
+    // so _stack and _canvas are otherwise never touched from more than
+    // one task. Passing the first screen through begin() instead of a
+    // separate pushScreen() call after starting the task keeps that
+    // invariant true from the very first frame instead of racing setup()
+    // (a different task) against the newly-started render task over the
+    // same unsynchronized std::vector and M5Canvas.
+    void begin(Screen* initialScreen);
 
     void pushScreen(Screen* s);
     void popScreen();
@@ -30,17 +40,51 @@ public:
     // forwards each notification to the active screen's onScanEvent().
     QueueHandle_t scanQueue() const { return _scanQueue; }
 
+    // Forwards to InputManager — see its header for what this does and
+    // why a screen must turn it back off. Also force-reset to off on
+    // every screen transition (push/pop/replace) as a safety net, so a
+    // screen that forgets to clean up on exit can't permanently wedge
+    // arrow-key navigation everywhere else in the app.
+    void setTextEntryMode(bool enabled) { _input.setTextEntryMode(enabled); }
+
+    // Full navigation breadcrumb ("MENU/NET/DISC") built by joining
+    // every ancestor screen's title() from the root down to (but not
+    // including) the active screen — used by chrome::drawHeader for the
+    // breadcrumb prefix. Empty at the root. Screens with no title() are
+    // silently skipped rather than leaving a visible gap (purely
+    // additive, same principle the original single-level version used).
+    String breadcrumbPath() const;
+
 private:
     static void taskEntry(void* arg);
     void run();
     void handleKeyEvent(const UiKeyEvent& ev);
     void activate(Screen* s);
+    void drawHelpOverlay(Screen* top);
 
     M5Canvas _canvas;
-    MatrixRain _rain;
     InputManager _input;
     std::vector<Screen*> _stack;
     QueueHandle_t _scanQueue = nullptr;
+
+    // Screen timeout: after kIdleTimeoutMs with no key event, the
+    // display dims (not blanks - see the .cpp) rather than doing
+    // anything to _stack/the active screen. Every background manager
+    // (ScanManager, PortScanManager, CredAuditManager, WardrivingManager)
+    // is its own independent FreeRTOS task with no dependency on the UI
+    // task or on screen state, so none of them notice or care that the
+    // display went dim - this is purely a backlight/battery concern.
+    uint32_t _lastInputMs = 0;
+    bool _dimmed = false;
+
+    // Low-battery one-shot alert (with hysteresis) - see run().
+    bool _lowBattWarned = false;
+    uint32_t _lastBattCheckMs = 0;
+
+    // Global '?' help overlay: toggled in handleKeyEvent (unless a text
+    // field owns the keyboard), drawn over the active screen, dismissed by
+    // any other key. Reset on every screen transition.
+    bool _helpVisible = false;
 };
 
 extern UiManager g_ui;

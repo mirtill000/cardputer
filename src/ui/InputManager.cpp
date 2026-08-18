@@ -34,14 +34,26 @@ void InputManager::run() {
             } else if (status.tab) {
                 ev.key = UiKey::Tab;
             } else {
+                // Space isn't special-cased here: unlike enter/del/tab
+                // (dedicated boolean flags on KeysState because they
+                // have no printable ASCII form of their own), the space
+                // bar is a normal character key and comes through as
+                // ' ' in status.word like any other, so the loop below
+                // already handles it via the UiKey::Char fallthrough.
+                bool textEntry = _textEntryMode;
                 for (char c : status.word) {
-                    switch (c) {
-                        case ';': ev.key = UiKey::Up; break;
-                        case '.': ev.key = UiKey::Down; break;
-                        case ',': ev.key = UiKey::Left; break;
-                        case '/': ev.key = UiKey::Right; break;
-                        default:  ev.key = UiKey::Char; ev.ch = c; break;
+                    UiKey mapped = UiKey::Char;
+                    if (!textEntry) {
+                        switch (c) {
+                            case ';': mapped = UiKey::Up; break;
+                            case '.': mapped = UiKey::Down; break;
+                            case ',': mapped = UiKey::Left; break;
+                            case '/': mapped = UiKey::Right; break;
+                            default: break;
+                        }
                     }
+                    ev.key = mapped;
+                    if (mapped == UiKey::Char) ev.ch = c;
                     break;  // one logical key per event; simultaneous chars are rare on this keyboard
                 }
             }

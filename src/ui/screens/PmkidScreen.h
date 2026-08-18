@@ -1,0 +1,38 @@
+#pragma once
+
+#include "Screen.h"
+
+// "PMKID CAPTURE": drives PmkidManager against one AP (set via
+// setTarget() before this screen is pushed, from a selected WAR
+// DRIVING sighting) — no client MAC needed, unlike DEAUTH + CAPTURE,
+// since this never targets a specific client at all.
+class PmkidScreen : public Screen {
+public:
+    static PmkidScreen& instance();
+
+    void setTarget(const String& ssid, const String& bssid, uint8_t channel);
+
+    void onEnter() override;
+    void onKey(UiKey key, char ch) override;
+    void onScanEvent(const ScanNotification& ev) override;
+    void draw(M5Canvas& gfx) override;
+
+    const char* title() const override { return "PMK"; }
+    const char* helpText() const override {
+        return "PMKID CAPTURE\nMENU>WD>P(PMK)\nAssociates w/ wrong password\nto catch a PMKID, if offered.\nNo deauth. Detects (never\ncracks) if a PMKID looks\npresent in the capture.\nENTER:start  DEL:back";
+    }
+
+private:
+    enum class State { Idle, Running, Done };
+
+    static constexpr uint8_t kLogLines = 6;
+
+    void pushLog(const String& line);
+
+    String _ssid;
+    String _bssid;
+    uint8_t _channel = 1;
+    State _state = State::Idle;
+    String _log[kLogLines];
+    uint8_t _logCount = 0;
+};

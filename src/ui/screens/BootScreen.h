@@ -2,19 +2,22 @@
 
 #include "Screen.h"
 
-// Splash screen: full-screen Matrix rain background, a scripted boot log
-// that "types" itself in, then a glitch-in title and a blinking prompt.
-// Purely cosmetic at this stage (see README roadmap) — later phases can
-// wire the log lines to real subsystem init results if desired.
+// Splash screen: a scripted boot log that "types" itself in, then hands
+// off to a branded NETRUNNER dashboard view (title, subtitle, version,
+// skyline, status bar — matching MainMenuScreen's visual language) with
+// a blinking "PRESS ENTER" prompt. No Matrix rain (removed for
+// simplicity while getting a stable baseline working; see README).
 class BootScreen : public Screen {
 public:
     void onEnter() override;
+    void onExit() override;
     void onKey(UiKey key, char ch) override;
     void update(uint32_t nowMs) override;
     void draw(M5Canvas& gfx) override;
 
-    bool wantsRain() const override { return true; }
-    uint8_t rainDensity() const override { return 16; }
+    const char* helpText() const override {
+        return "CARDPUTER NETAUDIT\n\nBoot sequence.\nENTER: skip to main menu\n(once the boot log finishes)";
+    }
 
 private:
     uint32_t _enterMs = 0;
