@@ -18,7 +18,7 @@ public:
 
     const char* title() const override { return "HOST"; }
     const char* helpText() const override {
-        return "HOST DETAIL\nMENU>NET>Ent(HOST)\nTAB: port scan this host\nC: credential audit\nV: service audit (per-service)\nH: http path brute (if http)\nM: mitm audit\nS: smb negotiate (if smb)\nDEL: back";
+        return "HOST DETAIL\nMENU>NET>Ent(HOST)\nTAB:port scan  C:cred audit\nV:service audit (per-svc)\nH:http brute (if http)\nM:mitm audit\nS:smb negotiate (if smb)\nDEL:back";
     }
 
 private:

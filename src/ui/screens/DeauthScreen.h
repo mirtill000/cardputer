@@ -24,7 +24,7 @@ public:
 
     const char* title() const override { return "DTH"; }
     const char* helpText() const override {
-        return "DEAUTH + CAPTURE\nMENU>WD>X(DTH)\nType the ONE client MAC to\ndeauth, ENTER to start.\nFixed burst + bounded capture\nto SD, never repeats.\n\nDetects (never cracks) whether\na full M1+M2 handshake pair\nstructurally looks captured.\nDEL: erase digit / back";
+        return "DEAUTH + CAPTURE\nMENU>WD>X(DTH)\nType the ONE client MAC,\nENTER to start. Fixed burst\n+ bounded capture to SD.\nDetects (never cracks) if a\nfull M1+M2 pair looks captured.\nDEL: erase digit / back";
     }
 
 private:

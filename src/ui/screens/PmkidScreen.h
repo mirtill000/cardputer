@@ -19,7 +19,7 @@ public:
 
     const char* title() const override { return "PMK"; }
     const char* helpText() const override {
-        return "PMKID CAPTURE\nMENU>WD>P(PMK)\nAssociates with a deliberately\nwrong password to catch a\nPMKID, if this AP offers one.\nNo deauth involved.\n\nDetects (never cracks) whether\na PMKID structurally looks\npresent in the capture.\nENTER: start\nDEL: back";
+        return "PMKID CAPTURE\nMENU>WD>P(PMK)\nAssociates w/ wrong password\nto catch a PMKID, if offered.\nNo deauth. Detects (never\ncracks) if a PMKID looks\npresent in the capture.\nENTER:start  DEL:back";
     }
 
 private:

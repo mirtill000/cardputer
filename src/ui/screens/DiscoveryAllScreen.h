@@ -17,7 +17,7 @@ public:
 
     const char* title() const override { return "ALL"; }
     const char* helpText() const override {
-        return "RUN ALL DISCOVERY\nMENU>NET>D>Ent(ALL)\nRuns every discovery tool in turn\n(UPnP, mDNS, SNMP, data-store,\nthen CDP/LLDP, passive hosts,\nrogue DHCP - one radio at a time).\n\nENTER: start / stop\nDEL: back (keeps running)";
+        return "RUN ALL DISCOVERY\nMENU>NET>D>Ent(ALL)\nEvery discovery tool in turn:\nUPnP/mDNS/SNMP/IoT-OT/LDAP/\nNTLM, then LAN topo/passive\nhosts/rogue DHCP/beacon-probe.\nENTER: start/stop\nDEL: back (keeps running)";
     }
 
 private:

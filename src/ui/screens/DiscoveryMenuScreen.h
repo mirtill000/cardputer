@@ -18,7 +18,7 @@ public:
 
     const char* title() const override { return "DISC"; }
     const char* helpText() const override {
-        return "DISCOVERY\nMENU>NET>D(DISC)\nAll network-discovery tools\nin one place.\nArrows: move   ENTER: open\nDEL: back to NETWORK SCAN\n\nDot: green=ready red=waiting\non its NETWORK/PORT SCAN.";
+        return "DISCOVERY\nMENU>NET>D(DISC)\nAll discovery tools, one place.\nArrows:move  ENTER:open\nDEL:back to NETWORK SCAN\nDot: green=ready, red=waiting\non its NETWORK/PORT SCAN.";
     }
 
 private:

@@ -21,7 +21,7 @@ public:
 
     const char* title() const override { return "SENT"; }
     const char* helpText() const override {
-        return "SENTINEL MODE\n\nWatches your connected\nnetwork continuously:\n- sound alert on new OR\n  missing devices\n- deauth/disassoc flood\n  detection (like GUARD MODE)\n- traffic dump to rotating\n  .pcap files on SD\n- session summary saved\n  on stop\nI: event detail\nENTER: start/stop\nArrows: move   DEL: back";
+        return "SENTINEL MODE\nWatches connected net: new/\nmissing device alert, deauth\nflood detect, traffic dump to\nrotating .pcap, summary on stop\nI:event detail\nENTER:start/stop  Arrows:move\nDEL:back";
     }
 
 private:

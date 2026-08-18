@@ -2518,6 +2518,38 @@ quello che dovrebbe fare una lista di reti salvate.
   connessi a nulla, per non lasciare il dispositivo scollegato fino al
   prossimo riavvio solo per aver dato un'occhiata alle reti vicine.
 
+### Fase 44: l'overlay di aiuto non tronca più su 10 schermate
+
+Audit richiesto esplicitamente dall'utente ("vedi altri miglioramenti
+UX/UI?"), con conteggio reale (non stimato) delle righe: il budget di
+contenuto di `UiManager::drawHelpOverlay` è **8 righe esatte**, non le
+~7 approssimate menzionate nella Fase 37 — geometria precisa: parte da
+`y=26`, passo di 10px, taglio a `y < altezza-32` (103px su schermo
+135px alto), quindi 8 iterazioni prima di fermarsi. Dieci schermate
+superavano questo limite, alcune di molto:
+
+| Schermata | Righe prima | Righe dopo |
+|---|---|---|
+| BEACON/PROBE INTEL | 19 | 8 |
+| SENTINEL MODE | 15 | 8 |
+| PMKID CAPTURE | 12 | 8 |
+| DEAUTH + CAPTURE | 11 | 8 |
+| WAR DRIVING | 10 | 7 |
+| PORT MAPPING | 10 | 8 |
+| GUARD MODE | 10 | 8 |
+| HOST DETAIL | 9 | 8 |
+| DISCOVERY | 9 | 7 |
+| RUN ALL DISCOVERY | 9 | 8 |
+
+Nessuna informazione realmente utile è stata rimossa — solo
+condensata (frasi accorciate, spiegazioni su più righe unite in una,
+righe vuote separatrici eliminate dove non servivano). Un effetto
+collaterale positivo: il testo di RUN ALL DISCOVERY era anche
+*obsoleto* (menzionava solo UPnP/mDNS/SNMP/data-store/CDP-LLDP/
+passive-hosts/rogue-DHCP, senza IOT/OT SWEEP, LDAP, NTLM o
+BEACON/PROBE aggiunti nelle fasi successive) — corretto insieme al
+resto.
+
 ## Compilare e flashare
 
 ```
@@ -2849,6 +2881,11 @@ originale.
       connessione già stabilita non viene mai toccata.
       `WifiSetupScreen::onExit()` ripristina il tentativo se si esce
       senza esserci connessi a nulla.
+- [x] **Fase 44 — Overlay di aiuto: fine del troncamento su 10
+      schermate**: budget reale misurato a 8 righe esatte (non ~7 come
+      stimato in Fase 37); tutti i `helpText()` che lo superavano
+      (BEACON/PROBE INTEL a 19 righe, SENTINEL MODE a 15, fino a HOST
+      DETAIL a 9) condensati per starci, nessuna informazione persa.
 
 ## Test plan — Fase 1
 
@@ -4102,6 +4139,20 @@ di questo firmware:
    dallo stato della scansione — non deve più essere necessario fare
    "forget" per raggiungerla.
 
+## Test plan — Fase 44 (overlay di aiuto non più troncato)
+
+1. **Nessun troncamento sulle 10 schermate corrette**: per ognuna delle
+   dieci elencate nella sezione "Fase 44" sopra, premere `?` e
+   verificare che l'ultima riga del testo sia completamente visibile
+   (non tagliata dal bordo inferiore del pannello).
+2. **Nessuna informazione persa**: per almeno tre schermate (es. BEACON/
+   PROBE INTEL, PMKID CAPTURE, GUARD MODE), verificare che ogni tasto/
+   comportamento documentato prima della Fase 44 sia ancora menzionato
+   da qualche parte nel testo condensato.
+3. **Le altre schermate restano invariate**: aprire l'help overlay su
+   una schermata NON toccata da questa fase (es. THREATS, già a 7 righe)
+   — deve apparire identica a prima.
+
 ## Limiti noti e tagli di scope deliberati
 
 Riepilogo di quanto già menzionato nelle sezioni sopra, in un unico
@@ -4443,17 +4494,16 @@ posto:
   — come ogni altro modulo che condivide il callback promiscuo — un AP
   alla volta, mai in parallelo: uno sweep su molti sighting può richiedere
   diversi minuti (~8s + tempo di associazione per AP).
-- **Overlay di aiuto globale: budget di righe ristretto, alcuni
-  `helpText()` già esistenti restavano troncati anche PRIMA di questa
-  fase** (Fase 37, punto 15): aggiungere la riga fissa sui tasti globali
-  ha ridotto lo spazio di contenuto disponibile a circa 7 righe — ma
-  diversi `helpText()` già scritti in fasi precedenti (`SentinelScreen`,
-  `BeaconProbeScreen` fra gli altri) ne avevano già più del budget
-  PRECEDENTE (circa 8), quindi le righe in eccesso venivano già tagliate
-  silenziosamente prima di questa modifica. Riscrivere ogni `helpText()`
-  troppo lungo per starci in una singola schermata di aiuto sarebbe stato
-  uno scope significativamente più ampio dei 15 punti richiesti — resta
-  un miglioramento futuro, non affrontato qui.
+- **RISOLTO in Fase 44 — Overlay di aiuto globale: budget di righe
+  ristretto, alcuni `helpText()` già esistenti restavano troncati**
+  (Fase 37, punto 15): aggiungere la riga fissa sui tasti globali aveva
+  ridotto lo spazio di contenuto disponibile, e diversi `helpText()` già
+  scritti in fasi precedenti (`SentinelScreen`, `BeaconProbeScreen` fra
+  gli altri) ne avevano già più del budget — le righe in eccesso
+  venivano tagliate silenziosamente. La Fase 44 ha misurato il budget
+  reale (8 righe esatte, non la stima di ~7 qui sopra) e condensato
+  tutti e 10 i `helpText()` che lo superavano — vedi la sezione "Fase
+  44" più sopra per l'elenco completo e i numeri prima/dopo.
 - **`CAPTURES`: sola visualizzazione/cancellazione, non ricorsiva, solo
   `.pcap`** (Fase 37, punto 7): scansiona il primo livello di
   `/handshakes` e `/netrunner` (non entra in eventuali sottocartelle) e
