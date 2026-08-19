@@ -19,6 +19,22 @@ namespace {
 constexpr uint16_t kEtherArp = 0x0806;
 constexpr uint16_t kEtherIpv4 = 0x0800;
 
+// Bounded single-generation rotation cap for /mitm/harvest.csv - a long
+// sniffing session captures real cleartext credentials/cookies and the
+// file must not grow without limit (the .pcap writers already rotate;
+// this is the CSV equivalent). Over the cap, one prior generation is
+// kept as harvest.prev.csv and a fresh file is started.
+constexpr size_t kMaxHarvestCsvBytes = 256 * 1024;
+
+// True if `path` already exists and is larger than the rotation cap.
+bool harvestCsvOverCap(fs::FS& fs, const char* path) {
+    File f = fs.open(path, "r");
+    if (!f) return false;
+    size_t sz = f.size();
+    f.close();
+    return sz > kMaxHarvestCsvBytes;
+}
+
 // Simple byte-range substring search — deliberately not relying on the
 // buffer being null-terminated (it's a raw captured frame, not a C
 // string) or on memmem() being available in this toolchain.
@@ -158,16 +174,37 @@ void DnsSpoofList::remove(uint8_t index) {
     prefs.end();
 }
 
+void DnsSpoofList::clear() {
+    // Wipes the whole namespace (every h/a key plus the count). Called
+    // once at boot from ArpSpoofManager::begin() so the DNS-spoof list
+    // doesn't outlive the offensive consent that gates it - see the note
+    // there and AppConfig's deliberately-not-persisted offensiveEnabled.
+    Preferences prefs;
+    if (!prefs.begin(kDnsSpoofNamespace, /*readOnly=*/false)) return;
+    prefs.clear();
+    prefs.end();
+}
+
 // --- ArpSpoofManager ----------------------------------------------------
 
 void ArpSpoofManager::begin(QueueHandle_t outQueue) {
     _mutex = xSemaphoreCreateMutex();
     g_pendingDnsMutex = xSemaphoreCreateMutex();
     _outQueue = outQueue;
+    // The offensive gate (AppConfig::offensiveEnabled) is deliberately
+    // not persisted across reboots; the DNS-spoof list it protects
+    // shouldn't be either. Cleared here, once, at boot so a power cycle
+    // drops any entries the previous session left in NVS - they must be
+    // re-added after re-acknowledging the offensive disclaimer.
+    DnsSpoofList::clear();
 }
 
 bool ArpSpoofManager::start(const IPAddress& target, uint16_t durationS, bool sniffTraffic) {
     if (_running) return false;
+    // Defense in depth: the UI already gates this behind
+    // OffensiveDisclaimerScreen, but never launch a live offensive
+    // session if that per-boot consent flag somehow isn't set.
+    if (!g_config.offensiveEnabled) return false;
 
     HostInfo h;
     if (!g_scanManager.getHostByIp(target, h) || !h.macKnown) return false;  // run NETWORK SCAN first
@@ -191,7 +228,7 @@ bool ArpSpoofManager::start(const IPAddress& target, uint16_t durationS, bool sn
     _sniffTraffic = sniffTraffic;
     _poisonSent = 0;
 
-    if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+    if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
         _log.clear();
         _harvested.clear();
         xSemaphoreGive(_mutex);
@@ -203,7 +240,15 @@ bool ArpSpoofManager::start(const IPAddress& target, uint16_t durationS, bool sn
     // Larger stack than most other managers' worker tasks: maybeSpoofDns()
     // builds a full Ethernet+IP+UDP+DNS frame in on-stack buffers
     // (~1.3KB) - see that function.
-    xTaskCreatePinnedToCore(&ArpSpoofManager::taskEntry, "arpspoof", 8192, this, 1, nullptr, 0);
+    if (xTaskCreatePinnedToCore(&ArpSpoofManager::taskEntry, "arpspoof", 8192, this, 1, nullptr, 0) != pdPASS) {
+        // Task never got created (out of memory) - undo the "running"
+        // flag so the UI doesn't sit forever on a session with nothing
+        // behind it.
+        _running = false;
+        notify("start failed - out of memory");
+        notify(ScanEventType::ScanFinished, 100);
+        return false;
+    }
     return true;
 }
 
@@ -232,7 +277,7 @@ void ArpSpoofManager::run() {
         // Drain any DNS spoof reply queued up by the promiscuous
         // callback — see PendingDnsReply's comment for why the actual
         // send happens here, not inside that callback.
-        if (xSemaphoreTake(g_pendingDnsMutex, pdMS_TO_TICKS(20)) == pdTRUE) {
+        if (g_pendingDnsMutex && xSemaphoreTake(g_pendingDnsMutex, pdMS_TO_TICKS(20)) == pdTRUE) {
             if (g_pendingDns.pending) {
                 g_pendingDns.pending = false;
                 maybeSpoofDns(g_pendingDns.query, g_pendingDns.queryLen, g_pendingDns.requesterIp,
@@ -368,7 +413,7 @@ void ArpSpoofManager::analyzeFrame(const uint8_t* p, uint16_t ipOffset, uint16_t
             // this session's poisoned target, or from anyone at all when
             // not actively spoofing a specific target (open-network
             // sniffing mode) - queue for run() to actually decide/send.
-            if (xSemaphoreTake(g_pendingDnsMutex, 0) == pdTRUE) {
+            if (g_pendingDnsMutex && xSemaphoreTake(g_pendingDnsMutex, 0) == pdTRUE) {
                 if (!g_pendingDns.pending) {
                     uint16_t qLen = l4Len - 8;
                     if (qLen > sizeof(g_pendingDns.query)) qLen = sizeof(g_pendingDns.query);
@@ -521,7 +566,7 @@ void ArpSpoofManager::maybeSpoofDns(const uint8_t* q, uint16_t qLen, const IPAdd
 }
 
 void ArpSpoofManager::log(const String& text) {
-    if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+    if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
         LogEntry e;
         e.text = text;
         e.atMs = millis();
@@ -542,7 +587,7 @@ void ArpSpoofManager::harvest(const String& kind, const String& line, const uint
     h.dstPort = dstPort;
     h.atMs = millis();
 
-    if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+    if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
         if (_harvested.size() >= kMaxHarvested) _harvested.erase(_harvested.begin());
         _harvested.push_back(h);
         xSemaphoreGive(_mutex);
@@ -554,6 +599,13 @@ void ArpSpoofManager::harvest(const String& kind, const String& line, const uint
     // uncleanly, not just what fits in the in-RAM ring buffer above.
     fs::FS& fs = sdcard::exportFs();
     fs.mkdir("/mitm");
+    // Bounded single-generation rotation so a long capture can't grow
+    // this file without limit - over the cap, keep one prior file
+    // (harvest.prev.csv) and start fresh. See kMaxHarvestCsvBytes.
+    if (harvestCsvOverCap(fs, "/mitm/harvest.csv")) {
+        fs.remove("/mitm/harvest.prev.csv");
+        fs.rename("/mitm/harvest.csv", "/mitm/harvest.prev.csv");
+    }
     File f = fs.open("/mitm/harvest.csv", "a");
     if (f) {
         f.println(String(millis() / 1000) + "," + h.srcMac + "," + dstIp.toString() + "," + String(dstPort) + "," +

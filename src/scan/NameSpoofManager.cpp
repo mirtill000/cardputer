@@ -3,6 +3,7 @@
 #include "../net/WifiManager.h"
 #include "../net/LlmnrWire.h"
 #include "../net/NbnsWire.h"
+#include "../core/Config.h"
 
 NameSpoofManager g_nameSpoofManager;
 
@@ -13,10 +14,14 @@ void NameSpoofManager::begin(QueueHandle_t outQueue) {
 
 bool NameSpoofManager::start(uint16_t durationS) {
     if (_running) return false;
+    // Defense in depth: NAME SPOOF is a gated top-level menu entry
+    // (reached through OffensiveDisclaimerScreen), but never answer
+    // name queries LAN-wide unless the per-boot consent flag is set.
+    if (!g_config.offensiveEnabled) return false;
     if (durationS > kMaxDurationS) durationS = kMaxDurationS;
     if (durationS == 0) durationS = 1;
 
-    if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+    if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
         _log.clear();
         xSemaphoreGive(_mutex);
     }
@@ -25,7 +30,13 @@ bool NameSpoofManager::start(uint16_t durationS) {
     _durationMs = (uint32_t)durationS * 1000UL;
     _running = true;
     notify(ScanEventType::ScanStarted);
-    xTaskCreatePinnedToCore(&NameSpoofManager::taskEntry, "namespoof", 4096, this, 1, nullptr, 0);
+    if (xTaskCreatePinnedToCore(&NameSpoofManager::taskEntry, "namespoof", 4096, this, 1, nullptr, 0) != pdPASS) {
+        // Task never started (out of memory) - clear the running flag so
+        // the UI doesn't sit on a session with nothing behind it.
+        _running = false;
+        notify(ScanEventType::ScanFinished, 100);
+        return false;
+    }
     return true;
 }
 
@@ -120,7 +131,7 @@ void NameSpoofManager::run() {
 }
 
 void NameSpoofManager::log(const String& text) {
-    if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+    if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
         LogEntry e;
         e.text = text;
         e.atMs = millis();

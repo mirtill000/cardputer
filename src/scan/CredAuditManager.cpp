@@ -13,7 +13,7 @@ CredAuditManager g_credAuditManager;
 
 namespace {
 
-constexpr size_t kMaxWordlistEntries = 200;  // bounds RAM + worst-case run time — see WordlistLoader.h
+constexpr size_t kMaxWordlistEntries = 200;  // bounds RAM + worst-case run time - see WordlistLoader.h
 
 String readLine(WiFiClient& client, uint16_t timeoutMs) {
     String out;
@@ -31,7 +31,7 @@ String readLine(WiFiClient& client, uint16_t timeoutMs) {
     return out;
 }
 
-// Grabs whatever the peer sends within windowMs — used to scrape a
+// Grabs whatever the peer sends within windowMs - used to scrape a
 // telnet login/password prompt and its response. Capped at 200 bytes:
 // this is heuristic prompt-scraping, not a transcript.
 String readChunk(WiFiClient& client, uint16_t windowMs) {
@@ -69,7 +69,12 @@ void CredAuditManager::startAudit(const IPAddress& target) {
     _successes = 0;
     _running = true;
     notify(ScanEventType::ScanStarted);
-    xTaskCreatePinnedToCore(&CredAuditManager::taskEntry, "credaudit", 6144, this, 1, nullptr, 0);
+    if (xTaskCreatePinnedToCore(&CredAuditManager::taskEntry, "credaudit", 6144, this, 1, nullptr, 0) != pdPASS) {
+        // Task never started (out of memory) - clear the running flag so
+        // the UI doesn't sit forever on an audit with nothing behind it.
+        _running = false;
+        notify(ScanEventType::ScanFinished, 100);
+    }
 }
 
 void CredAuditManager::taskEntry(void* arg) {
@@ -208,7 +213,7 @@ bool CredAuditManager::tryTelnetLogin(const IPAddress& ip, const String& user, c
     String response = readChunk(client, 500);
     client.stop();
 
-    // Heuristic, not a protocol-level guarantee — telnetd login prompts
+    // Heuristic, not a protocol-level guarantee - telnetd login prompts
     // vary a lot across implementations (see README). A failure message
     // is strong negative evidence; its absence alongside something that
     // looks like a shell prompt is (weak) positive evidence. Requiring
@@ -243,7 +248,7 @@ bool CredAuditManager::tryFtpLogin(const IPAddress& ip, const String& user, cons
         return true;
     }
     if (!resp.startsWith("331")) {
-        client.stop();  // user rejected outright — don't bother sending a password
+        client.stop();  // user rejected outright - don't bother sending a password
         return false;
     }
 
@@ -286,7 +291,7 @@ bool CredAuditManager::tryImapLogin(const IPAddress& ip, const String& user, con
 
     readLine(client, g_config.scanTimeoutMs);  // "* OK ..." greeting
 
-    // Tagged command/response, RFC 3501 — "a1" is an arbitrary tag this
+    // Tagged command/response, RFC 3501 - "a1" is an arbitrary tag this
     // client picks and the server echoes back on its final status line;
     // no need to escape user/pass here since the wordlist entries are
     // plain untrusted-but-not-adversarial strings this same device also
@@ -340,7 +345,10 @@ bool CredAuditManager::trySmtpLogin(const IPAddress& ip, const String& user, con
 
 void CredAuditManager::logAttempt(const char* service, const String& user, const String& pass, bool success) {
     String combo = user + ":" + pass;
-    if (combo.length() > 28) combo = combo.substring(0, 28);  // leaves room for " FAIL"/" OK" in the 40-byte field
+    // Cap to 28 chars to leave room for " FAIL"/" OK" in the 40-byte
+    // field. Mark the cut with "..." so a clipped long user/pass is
+    // visibly truncated rather than silently misreported as shorter.
+    if (combo.length() > 28) combo = combo.substring(0, 25) + "...";
 
     ScanNotification n;
     n.source = ScanSource::CredAudit;

@@ -1,6 +1,7 @@
 #include "VlanHopProbe.h"
 #include "../net/Ieee80211Frame.h"
 #include "../net/RawFrame.h"
+#include "../core/Config.h"
 #include <WiFi.h>
 #include <Arduino.h>  // millis()
 #include <cstring>
@@ -80,7 +81,7 @@ void VlanHopProbe::onPromiscuousFrame(const uint8_t* p, uint16_t len) {
 
 void VlanHopProbe::observe(const uint8_t mac[6], uint16_t outerVlanId, bool doubleTagged, uint16_t innerVlanId) {
     bool isNew = false;
-    if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+    if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
         TagSighting* existing = nullptr;
         for (auto& s : _sightings) {
             if (memcmp(s.mac, mac, 6) == 0) {
@@ -116,6 +117,22 @@ void VlanHopProbe::observe(const uint8_t mac[6], uint16_t outerVlanId, bool doub
 }
 
 bool VlanHopProbe::sendDoubleTagProbe(uint16_t nativeVlanId, uint16_t targetVlanId) {
+    // Defense in depth: the active send is gated in VlanHopScreen behind
+    // OffensiveDisclaimerScreen, but never inject a crafted frame unless
+    // the per-boot offensive consent flag is set.
+    if (!g_config.offensiveEnabled) {
+        notify("double-tag probe skipped: not authorized");
+        return false;
+    }
+    // The frame embeds this device's own MAC/IP; without an up STA
+    // interface those come back as zeros, producing a meaningless
+    // "who has 0.0.0.0 from 00:00:..." frame. Skip rather than send
+    // garbage onto the wire.
+    if (WiFi.status() != WL_CONNECTED) {
+        notify("double-tag probe skipped: WiFi not connected");
+        return false;
+    }
+
     uint8_t selfMac[6];
     WiFi.macAddress(selfMac);
     uint32_t selfIpRaw = (uint32_t)WiFi.localIP();

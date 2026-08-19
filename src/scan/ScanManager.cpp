@@ -67,7 +67,19 @@ void ScanManager::startDiscoveryScan() {
 
     for (uint8_t i = 0; i < workerCount; i++) {
         auto* args = new WorkerArgs{this, i, workerCount};
-        xTaskCreatePinnedToCore(&ScanManager::workerTaskEntry, "scanw", 6144, args, 1, nullptr, 0);
+        if (xTaskCreatePinnedToCore(&ScanManager::workerTaskEntry, "scanw", 6144, args, 1, nullptr, 0) != pdPASS) {
+            // Task never got created (out of memory): reclaim its args
+            // (workerTaskEntry, which normally deletes them, will never
+            // run) and account for the worker that will never call
+            // onWorkerFinished() itself. If this was the last outstanding
+            // worker, onWorkerFinished() flips _running off and fires
+            // ScanFinished, so the scan can never hang "running" with no
+            // task behind it. Any interleaved index this worker would
+            // have covered is simply left unprobed - a degraded scan
+            // under memory pressure, not a stuck one.
+            delete args;
+            onWorkerFinished();
+        }
     }
 }
 

@@ -55,7 +55,7 @@ bool hostHasPort(const HostInfo& h, uint16_t port) {
     return false;
 }
 
-// The inline stylesheet — dark cyberpunk palette matching the device UI
+// The inline stylesheet - dark cyberpunk palette matching the device UI
 // (neon green text, cyan/magenta accents), monospace, no external fonts.
 void writeStyle(File& f) {
     f.print(
@@ -243,18 +243,32 @@ bool ReportGenerator::generate(fs::FS& fs, const char* path) {
     f.print("<h2>COMPANION ARTIFACTS</h2>");
     // wardrive.csv moved under /netrunner/ in Fase 29 - covered by the
     // generic /netrunner/ directory check below now, not a fixed path
-    // here anymore.
-    const char* artifacts[] = {
-        "/eviltwin/associations.csv",
+    // here anymore. The two fixed-path CSVs here are the ones offensive
+    // sessions live-append outside /netrunner/: evil-twin associations
+    // and MITM cleartext harvest (the latter carries real captured
+    // credentials/cookies - flagged so the report indexes it rather than
+    // leaving it invisible).
+    struct FixedArtifact {
+        const char* path;
+        const char* note;  // nullptr = list the path alone
+    };
+    const FixedArtifact artifacts[] = {
+        {"/eviltwin/associations.csv", "clients that joined a look-alike AP (MAC + timestamp)"},
+        {"/mitm/harvest.csv", "MITM AUDIT: cleartext credentials/cookies captured - handle as sensitive"},
     };
     bool anyArtifact = false;
     f.print("<ul>");
-    for (const char* a : artifacts) {
-        if (fs.exists(a)) {
+    for (const FixedArtifact& a : artifacts) {
+        if (fs.exists(a.path)) {
             anyArtifact = true;
             f.print("<li><code>");
-            f.print(a);
-            f.print("</code></li>");
+            f.print(a.path);
+            f.print("</code>");
+            if (a.note) {
+                f.print(" &mdash; ");
+                f.print(a.note);
+            }
+            f.print("</li>");
         }
     }
     // /netrunner/ - every NETWORK SCAN export (JSON/CSV) and HTML report

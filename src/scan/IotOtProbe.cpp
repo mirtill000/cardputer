@@ -11,7 +11,7 @@ namespace {
 
 // Reads up to maxLen bytes for up to timeoutMs over TCP, returning
 // whatever arrived (stops early once the peer pauses after sending
-// something) — same helper as DataStoreProbe's readSome().
+// something) - same helper as DataStoreProbe's readSome().
 size_t readSome(WiFiClient& c, uint16_t timeoutMs, uint8_t* buf, size_t maxLen) {
     size_t got = 0;
     uint32_t start = millis();
@@ -34,9 +34,9 @@ size_t readSome(WiFiClient& c, uint16_t timeoutMs, uint8_t* buf, size_t maxLen) 
 // bytes); this firmware only ever sends a 6-byte header block, so no
 // multi-block chunking is needed. NOT verified against a real DNP3
 // outstation in this environment (no hardware/simulator available here
-// - see README "Limiti noti") - if the CRC is wrong, compliant devices
-// silently drop the frame, which fails safe (a missed finding, never a
-// false one) rather than corrupting anything on the wire.
+// - see README) - if the CRC is wrong, compliant devices silently drop
+// the frame, which fails safe (a missed finding, never a false one)
+// rather than corrupting anything on the wire.
 uint16_t dnp3Crc(const uint8_t* data, size_t len) {
     uint16_t crc = 0x0000;
     for (size_t i = 0; i < len; i++) {
@@ -61,14 +61,20 @@ void IotOtProbe::begin(QueueHandle_t outQueue) {
 
 bool IotOtProbe::start() {
     if (_running) return false;
-    if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+    if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
         _findings.clear();
         xSemaphoreGive(_mutex);
     }
     _progressPct = 0;
     _running = true;
     notify(ScanEventType::ScanStarted);
-    xTaskCreatePinnedToCore(&IotOtProbe::taskEntry, "iotot", 6144, this, 1, nullptr, 0);
+    if (xTaskCreatePinnedToCore(&IotOtProbe::taskEntry, "iotot", 6144, this, 1, nullptr, 0) != pdPASS) {
+        // Task never started (out of memory) - clear the running flag so
+        // the UI doesn't sit on a sweep with nothing behind it.
+        _running = false;
+        notify(ScanEventType::ScanFinished, 100);
+        return false;
+    }
     return true;
 }
 
@@ -334,7 +340,7 @@ void IotOtProbe::probeDnp3(const IPAddress& ip) {
 }
 
 void IotOtProbe::addFinding(const IPAddress& ip, const char* service, const String& detail, bool noAuth) {
-    if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+    if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
         if (_findings.size() < kMaxFindings) _findings.push_back({ip, String(service), detail, noAuth});
         xSemaphoreGive(_mutex);
     }
