@@ -26,6 +26,15 @@
 // they persist even after this scanner moves on to a different host.
 class PortScanManager {
 public:
+    // Maximum span of the configured PORT START..PORT END range a scan
+    // will actually probe. A larger configured range is silently capped
+    // to this many ports (the curated WellKnownHighPorts set is still
+    // probed on top, so nothing notable is missed) to keep _portList from
+    // forcing a ~128KB std::vector<uint16_t> on this no-PSRAM board.
+    // Exposed so the SETTINGS screen can warn when the configured range
+    // exceeds it, rather than capping silently.
+    static constexpr uint32_t kMaxRangeSpan = 8192;
+
     void begin(QueueHandle_t outQueue);
 
     // No-op if a scan is already running or the range is invalid.

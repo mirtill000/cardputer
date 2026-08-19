@@ -7,6 +7,7 @@
 #include "../Theme.h"
 #include "../Chrome.h"
 #include "../../core/Config.h"
+#include "../../scan/PortScanManager.h"
 #include "../../storage/ConfigBackup.h"
 #include "../../storage/SdCard.h"
 #include <SD.h>
@@ -189,6 +190,14 @@ void SettingsScreen::draw(M5Canvas& gfx) {
         gfx.setTextColor(theme::CYAN, theme::BG);
         gfx.setCursor(4, gfx.height() - 19);
         gfx.print(_statusLine);
+    } else if ((uint32_t)g_config.portRangeEnd - (uint32_t)g_config.portRangeStart + 1 >
+               PortScanManager::kMaxRangeSpan) {
+        // The configured PORT range is wider than a scan will actually
+        // probe (PortScanManager::kMaxRangeSpan). Surface the effective
+        // cap here instead of capping silently once the scan starts.
+        gfx.setTextColor(theme::MAGENTA, theme::BG);
+        gfx.setCursor(4, gfx.height() - 19);
+        gfx.print(String("range caps at ") + String((unsigned)PortScanManager::kMaxRangeSpan) + " ports");
     }
 
     gfx.setTextColor(theme::GREY, theme::BG);
