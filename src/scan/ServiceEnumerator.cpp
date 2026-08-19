@@ -82,14 +82,21 @@ void ServiceEnumerator::begin(QueueHandle_t outQueue) {
 }
 
 bool ServiceEnumerator::start() {
-    if (_running) return false;
-    if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+    if (_running) {
+        notify("service enum already running");
+        return false;
+    }
+    if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
         _services.clear();
         xSemaphoreGive(_mutex);
     }
     _running = true;
     notify(ScanEventType::ScanStarted);
-    xTaskCreatePinnedToCore(&ServiceEnumerator::taskEntry, "svcenum", 8192, this, 1, nullptr, 0);
+    if (xTaskCreatePinnedToCore(&ServiceEnumerator::taskEntry, "svcenum", 8192, this, 1, nullptr, 0) != pdPASS) {
+        _running = false;
+        notify(ScanEventType::ScanFinished, 100);
+        return false;
+    }
     return true;
 }
 
@@ -169,7 +176,7 @@ void ServiceEnumerator::run() {
 }
 
 void ServiceEnumerator::addService(const Service& s) {
-    if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+    if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
         bool dup = false;
         for (const auto& e : _services) {
             if (e.type == s.type && e.instance == s.instance) {

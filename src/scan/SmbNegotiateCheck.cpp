@@ -72,16 +72,23 @@ void SmbNegotiateCheck::begin(QueueHandle_t outQueue) {
 }
 
 bool SmbNegotiateCheck::start(const IPAddress& ip, uint16_t port) {
-    if (_running) return false;
+    if (_running) {
+        notify("SMB check already running");
+        return false;
+    }
     _ip = ip;
     _port = port;
-    if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+    if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
         _result = Result{};  // reset
         xSemaphoreGive(_mutex);
     }
     _running = true;
     notify(ScanEventType::ScanStarted);
-    xTaskCreatePinnedToCore(&SmbNegotiateCheck::taskEntry, "smbneg", 4096, this, 1, nullptr, 0);
+    if (xTaskCreatePinnedToCore(&SmbNegotiateCheck::taskEntry, "smbneg", 4096, this, 1, nullptr, 0) != pdPASS) {
+        _running = false;
+        notify(ScanEventType::ScanFinished, 100);
+        return false;
+    }
     return true;
 }
 
@@ -154,7 +161,7 @@ void SmbNegotiateCheck::run() {
         notify(r.note);
     }
 
-    if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+    if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
         _result = r;
         xSemaphoreGive(_mutex);
     }

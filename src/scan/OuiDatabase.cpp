@@ -31,7 +31,14 @@ bool OuiDatabase::lookup(const uint8_t mac[6], String& vendorOut) const {
 
     // seek()+read() on a single shared File handle isn't atomic, so
     // callers from different scan tasks need to be serialized here.
-    if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(250)) != pdTRUE) return false;
+    // Block until the (tiny) critical section frees rather than giving up
+    // after a fixed timeout: under many concurrent scan workers a 250ms
+    // cap made lookups fail sporadically (a host silently getting no
+    // vendor). No code path holds this mutex across a blocking call, so
+    // waiting for it can't deadlock. Guard the handle too, in case
+    // begin()'s xSemaphoreCreateMutex() failed at boot.
+    if (!_mutex) return false;
+    if (xSemaphoreTake(_mutex, portMAX_DELAY) != pdTRUE) return false;
 
     bool found = false;
     int32_t lo = 0, hi = (int32_t)_count - 1;

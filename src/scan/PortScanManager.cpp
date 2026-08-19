@@ -11,16 +11,6 @@
 
 PortScanManager g_portScanManager;
 
-namespace {
-// Caps the configured range span so a user setting PORT END to 65535 in
-// SETTINGS can't force a ~128KB std::vector<uint16_t> on this no-PSRAM
-// board (see PortScanManager.h's note on _portList sizing). Ports past
-// the cap from the configured range are dropped; the curated
-// WellKnownHighPorts set is still probed on top regardless, so nothing
-// notable is silently missed.
-constexpr uint32_t kMaxRangeSpan = 8192;
-}  // namespace
-
 void PortScanManager::begin(QueueHandle_t outQueue) {
     _mutex = xSemaphoreCreateMutex();
     _outQueue = outQueue;
@@ -30,8 +20,10 @@ void PortScanManager::startScan(const IPAddress& target, uint16_t portStart, uin
     if (_running) return;
     if (portEnd < portStart) return;
 
-    // See kMaxRangeSpan above: bound the span before allocating _portList
-    // so a pathological range can't exhaust internal SRAM mid-scan.
+    // See kMaxRangeSpan in PortScanManager.h: bound the span before
+    // allocating _portList so a pathological range can't exhaust internal
+    // SRAM mid-scan. The SETTINGS screen warns when a configured range
+    // exceeds this, so the cap here is no longer a silent surprise.
     if ((uint32_t)portEnd - (uint32_t)portStart + 1 > kMaxRangeSpan) {
         portEnd = (uint16_t)((uint32_t)portStart + kMaxRangeSpan - 1);
     }

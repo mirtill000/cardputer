@@ -33,14 +33,20 @@ void SsdpDiscovery::begin(QueueHandle_t outQueue) {
 }
 
 void SsdpDiscovery::start() {
-    if (_running) return;
-    if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+    if (_running) {
+        notify("SSDP discovery already running");
+        return;
+    }
+    if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
         _devices.clear();
         xSemaphoreGive(_mutex);
     }
     _running = true;
     notify(ScanEventType::ScanStarted);
-    xTaskCreatePinnedToCore(&SsdpDiscovery::taskEntry, "ssdp", 4096, this, 1, nullptr, 0);
+    if (xTaskCreatePinnedToCore(&SsdpDiscovery::taskEntry, "ssdp", 4096, this, 1, nullptr, 0) != pdPASS) {
+        _running = false;
+        notify(ScanEventType::ScanFinished, 100);
+    }
 }
 
 void SsdpDiscovery::taskEntry(void* arg) {
@@ -114,7 +120,7 @@ void SsdpDiscovery::run() {
 }
 
 void SsdpDiscovery::addDevice(const Device& d) {
-    if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+    if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
         bool dup = false;
         for (const auto& existing : _devices) {
             if (existing.usn == d.usn && existing.fromIp == d.fromIp) {

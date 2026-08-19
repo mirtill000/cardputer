@@ -93,7 +93,12 @@ void CapturesScreen::draw(M5Canvas& gfx) {
     }
 
     gfx.fillScreen(theme::BG);
-    chrome::drawHeader(gfx, "CAPTURES");
+    // Label the header with the filesystem the list is actually reading
+    // from (SD when a card is mounted, otherwise on-board flash) - the
+    // same exportFs() the rows come from - so it's clear where captures
+    // live and get deleted.
+    String header = String("CAPTURES (") + sdcard::exportFsLabel() + ")";
+    chrome::drawHeader(gfx, header.c_str());
 
     if (_confirmDelete && _selected < _entries.size()) {
         gfx.setTextColor(theme::RED, theme::BG);

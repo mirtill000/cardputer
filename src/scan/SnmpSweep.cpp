@@ -125,15 +125,22 @@ void SnmpSweep::begin(QueueHandle_t outQueue) {
 }
 
 bool SnmpSweep::start() {
-    if (_running) return false;
-    if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+    if (_running) {
+        notify("snmp sweep already running");
+        return false;
+    }
+    if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
         _responders.clear();
         xSemaphoreGive(_mutex);
     }
     _progressPct = 0;
     _running = true;
     notify(ScanEventType::ScanStarted);
-    xTaskCreatePinnedToCore(&SnmpSweep::taskEntry, "snmp", 6144, this, 1, nullptr, 0);
+    if (xTaskCreatePinnedToCore(&SnmpSweep::taskEntry, "snmp", 6144, this, 1, nullptr, 0) != pdPASS) {
+        _running = false;
+        notify(ScanEventType::ScanFinished, 100);
+        return false;
+    }
     return true;
 }
 
@@ -171,6 +178,7 @@ void SnmpSweep::run() {
 
     for (size_t i = 0; i < targets.size() && _running; i++) {
         const IPAddress& ip = targets[i];
+        notify("probing " + ip.toString());
         udp.beginPacket(ip, kSnmpPort);
         udp.write(req.data(), req.size());
         udp.endPacket();
@@ -204,7 +212,7 @@ void SnmpSweep::run() {
 }
 
 void SnmpSweep::addResponder(const IPAddress& ip, const String& sysDescr) {
-    if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+    if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
         bool dup = false;
         for (auto& r : _responders) {
             if (r.ip == ip) {
