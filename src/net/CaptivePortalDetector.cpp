@@ -20,15 +20,25 @@ void CaptivePortalDetector::begin(QueueHandle_t outQueue) {
 }
 
 bool CaptivePortalDetector::start() {
-    if (_running) return false;
-    if (!g_wifi.isConnected()) return false;
-    if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+    if (_running) {
+        notify("captive check already running");
+        return false;
+    }
+    if (!g_wifi.isConnected()) {
+        notify("not connected to WiFi");
+        return false;
+    }
+    if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
         _result = Result{};
         _result.status = Status::Checking;
         xSemaphoreGive(_mutex);
     }
     _running = true;
-    xTaskCreatePinnedToCore(&CaptivePortalDetector::taskEntry, "captive", 4096, this, 1, nullptr, 0);
+    if (xTaskCreatePinnedToCore(&CaptivePortalDetector::taskEntry, "captive", 4096, this, 1, nullptr, 0) != pdPASS) {
+        _running = false;
+        notify("failed to start captive task");
+        return false;
+    }
     return true;
 }
 
@@ -101,7 +111,7 @@ void CaptivePortalDetector::run() {
         default: notify("no connectivity to check endpoint"); break;
     }
 
-    if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+    if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
         _result = r;
         xSemaphoreGive(_mutex);
     }

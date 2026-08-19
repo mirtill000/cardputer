@@ -16,7 +16,10 @@ void AssessmentRunner::begin(QueueHandle_t outQueue) {
 }
 
 bool AssessmentRunner::start() {
-    if (_running) return false;
+    if (_running) {
+        notify("assessment already running");
+        return false;
+    }
     _phase = Phase::Idle;
     _progressPct = 0;
     _hostsTotal = 0;
@@ -24,7 +27,12 @@ bool AssessmentRunner::start() {
     _reportOk = false;
     _running = true;
     notify(ScanEventType::ScanStarted);
-    xTaskCreatePinnedToCore(&AssessmentRunner::taskEntry, "assess", 6144, this, 1, nullptr, 0);
+    if (xTaskCreatePinnedToCore(&AssessmentRunner::taskEntry, "assess", 6144, this, 1, nullptr, 0) != pdPASS) {
+        _running = false;
+        setPhase(Phase::Failed, "failed to start assessment task");
+        notify(ScanEventType::ScanFinished, 100);
+        return false;
+    }
     return true;
 }
 
@@ -89,7 +97,7 @@ void AssessmentRunner::run() {
     String path = netrunner::reportBase(fs, g_wifi.currentSsid()) + ".html";
     bool ok = ReportGenerator::generate(fs, path.c_str());
     _reportOk = ok;
-    if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+    if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
         _reportPath = ok ? (String("(") + sdcard::exportFsLabel() + ") " + path) : String("report FAILED");
         xSemaphoreGive(_mutex);
     }
