@@ -6,7 +6,7 @@
 // Real settings editor (replaces the old placeholder). Edits AppConfig
 // fields directly in RAM as the user adjusts them (so a change takes
 // effect on the very next scan without leaving this screen), and
-// persists to NVS once on the way out — not on every keypress, to
+// persists to NVS once on the way out - not on every keypress, to
 // avoid hammering flash.
 class SettingsScreen : public Screen {
 public:
@@ -26,4 +26,5 @@ private:
     static constexpr uint8_t kFieldCount = 8;
     uint8_t _selected = 0;
     String _statusLine;  // transient feedback after B (backup) / R (restore)
+    bool _restoreArmed = false;  // R is a two-key confirm - see onKey()
 };
