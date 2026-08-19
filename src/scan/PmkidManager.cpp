@@ -36,7 +36,15 @@ bool PmkidManager::start(const String& ssid, const String& bssid, uint8_t channe
 
     _running = true;
     notify("PMKID capture: associating to " + ssid + " (no deauth)");
-    xTaskCreatePinnedToCore(&PmkidManager::taskEntry, "pmkid", 8192, this, 1, nullptr, 0);
+    if (xTaskCreatePinnedToCore(&PmkidManager::taskEntry, "pmkid", 8192, this, 1, nullptr, 0) != pdPASS) {
+        // Task never started (out of memory) - unwind the capture queue
+        // and the running flag so the UI doesn't sit on a dead session.
+        _running = false;
+        vQueueDelete(_captureQueue);
+        _captureQueue = nullptr;
+        notify("start failed - out of memory");
+        return false;
+    }
     return true;
 }
 
