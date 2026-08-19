@@ -11,6 +11,16 @@
 
 PortScanManager g_portScanManager;
 
+namespace {
+// Caps the configured range span so a user setting PORT END to 65535 in
+// SETTINGS can't force a ~128KB std::vector<uint16_t> on this no-PSRAM
+// board (see PortScanManager.h's note on _portList sizing). Ports past
+// the cap from the configured range are dropped; the curated
+// WellKnownHighPorts set is still probed on top regardless, so nothing
+// notable is silently missed.
+constexpr uint32_t kMaxRangeSpan = 8192;
+}  // namespace
+
 void PortScanManager::begin(QueueHandle_t outQueue) {
     _mutex = xSemaphoreCreateMutex();
     _outQueue = outQueue;
@@ -19,6 +29,12 @@ void PortScanManager::begin(QueueHandle_t outQueue) {
 void PortScanManager::startScan(const IPAddress& target, uint16_t portStart, uint16_t portEnd) {
     if (_running) return;
     if (portEnd < portStart) return;
+
+    // See kMaxRangeSpan above: bound the span before allocating _portList
+    // so a pathological range can't exhaust internal SRAM mid-scan.
+    if ((uint32_t)portEnd - (uint32_t)portStart + 1 > kMaxRangeSpan) {
+        portEnd = (uint16_t)((uint32_t)portStart + kMaxRangeSpan - 1);
+    }
 
     _portList.clear();
     _portList.reserve((size_t)(portEnd - portStart + 1) + kWellKnownHighPortsCount);
@@ -55,7 +71,18 @@ void PortScanManager::startScan(const IPAddress& target, uint16_t portStart, uin
 
     for (uint8_t i = 0; i < workerCount; i++) {
         auto* args = new WorkerArgs{this, i, workerCount};
-        xTaskCreatePinnedToCore(&PortScanManager::workerTaskEntry, "portscanw", 6144, args, 1, nullptr, 0);
+        if (xTaskCreatePinnedToCore(&PortScanManager::workerTaskEntry, "portscanw", 6144, args, 1, nullptr, 0) !=
+            pdPASS) {
+            // Task never created (out of memory): reclaim its args (the
+            // entry point that normally deletes them never runs) and
+            // account for the worker that will never call
+            // onWorkerFinished() itself - identical to ScanManager's
+            // handling. If this was the last outstanding worker,
+            // onWorkerFinished() finalizes the scan so it never hangs
+            // "running" with no task behind it.
+            delete args;
+            onWorkerFinished();
+        }
     }
 }
 
