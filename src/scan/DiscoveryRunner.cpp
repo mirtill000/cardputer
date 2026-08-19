@@ -20,12 +20,22 @@ void DiscoveryRunner::begin(QueueHandle_t outQueue) {
 }
 
 bool DiscoveryRunner::start() {
-    if (_running) return false;
+    if (_running) {
+        notify("discovery already running");
+        return false;
+    }
     _phase = Phase::Idle;
     _progressPct = 0;
     _running = true;
     notify(ScanEventType::ScanStarted);
-    xTaskCreatePinnedToCore(&DiscoveryRunner::taskEntry, "discall", 6144, this, 1, nullptr, 0);
+    if (xTaskCreatePinnedToCore(&DiscoveryRunner::taskEntry, "discall", 6144, this, 1, nullptr, 0) != pdPASS) {
+        // Task never started (out of memory) - clear the running flag so
+        // the UI doesn't sit on a run with nothing driving it.
+        _running = false;
+        notify("start failed - out of memory");
+        notify(ScanEventType::ScanFinished, 100);
+        return false;
+    }
     return true;
 }
 
