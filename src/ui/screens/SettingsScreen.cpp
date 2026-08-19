@@ -186,18 +186,24 @@ void SettingsScreen::draw(M5Canvas& gfx) {
         gfx.print(valStr);
     }
 
+    uint32_t portSpan = (uint32_t)g_config.portRangeEnd - (uint32_t)g_config.portRangeStart + 1;
     if (_statusLine.length()) {
         gfx.setTextColor(theme::CYAN, theme::BG);
         gfx.setCursor(4, gfx.height() - 19);
         gfx.print(_statusLine);
-    } else if ((uint32_t)g_config.portRangeEnd - (uint32_t)g_config.portRangeStart + 1 >
-               PortScanManager::kMaxRangeSpan) {
-        // The configured PORT range is wider than a scan will actually
-        // probe (PortScanManager::kMaxRangeSpan). Surface the effective
-        // cap here instead of capping silently once the scan starts.
+    } else if (portSpan > PortScanManager::kMaxRangeSpan) {
+        // Configured range is wider than a scan will actually probe
+        // (PortScanManager::kMaxRangeSpan) - surface the effective cap
+        // instead of capping silently once the scan starts.
         gfx.setTextColor(theme::MAGENTA, theme::BG);
         gfx.setCursor(4, gfx.height() - 19);
-        gfx.print(String("range caps at ") + String((unsigned)PortScanManager::kMaxRangeSpan) + " ports");
+        gfx.print(String("range caps at ") + String((unsigned)PortScanManager::kMaxRangeSpan) + " ports (+ high-ports)");
+    } else if (_selected == 3 || _selected == 4) {
+        // On a PORT row: how many ports the configured range actually
+        // probes (the curated well-known high ports are scanned on top).
+        gfx.setTextColor(theme::GREEN, theme::BG);
+        gfx.setCursor(4, gfx.height() - 19);
+        gfx.print(String("probes ") + String((unsigned)portSpan) + " ports (+ high-ports)");
     }
 
     gfx.setTextColor(theme::GREY, theme::BG);
