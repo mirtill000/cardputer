@@ -25,6 +25,12 @@ constexpr uint32_t kIdleTimeoutMs = 30000;
 constexpr uint32_t kLowPowerTimeoutMs = 8000;  // faster dim when lowPowerMode is on
 constexpr uint8_t kDimBrightness = 12;
 constexpr uint8_t kFullBrightness = 255;
+
+// Battery alert thresholds (see run()): a one-shot beep + red header at
+// the low mark, then a repeated beep + persistent on-screen banner once
+// it drops to critical, so a near-dead device can't be slept through.
+constexpr int kLowBattPct = 15;
+constexpr int kCriticalBattPct = 7;
 }  // namespace
 
 void UiManager::begin(Screen* initialScreen) {
@@ -126,6 +132,17 @@ void UiManager::run() {
             // background scan finishes, so the user doesn't have to stare
             // at the screen to know it's done (respects SOUND setting).
             if (sev.type == ScanEventType::ScanFinished) sound::playDone();
+            // Wake the backlight for events a user may have stepped away
+            // to catch: any scan finishing, plus any notification from the
+            // standing background monitors (SENTINEL / WAR DRIVING / EVIL
+            // TWIN), whose log lines ARE the alerts (new device, evil
+            // twin, deauth flood, ...). Routine foreground-scan progress
+            // deliberately does NOT wake it, so a long attended scan still
+            // dims as before.
+            if (sev.type == ScanEventType::ScanFinished || sev.source == ScanSource::Sentinel ||
+                sev.source == ScanSource::Wardriving || sev.source == ScanSource::EvilTwin) {
+                _lastInputMs = millis();
+            }
             if (!_stack.empty()) _stack.back()->onScanEvent(sev);
         }
 
@@ -136,16 +153,25 @@ void UiManager::run() {
             if (_helpVisible) drawHelpOverlay(top);
         }
 
-        // Low-battery one-shot alert (checked every ~5s, not per frame):
-        // beep once when it first drops below 15%, re-arm above 20% so it
-        // doesn't nag continuously around the threshold. Header shows the
-        // level in red regardless (see chrome::drawHeader).
+        // Low-battery alerts (checked every ~5s, not per frame). A
+        // one-shot beep with hysteresis at kLowBattPct; below
+        // kCriticalBattPct it re-beeps every check and the per-frame
+        // banner (further down) stays up until charging lifts it. Header
+        // shows the level in red regardless (see chrome::drawHeader).
         if (millis() - _lastBattCheckMs > 5000) {
             _lastBattCheckMs = millis();
             int32_t b = M5.Power.getBatteryLevel();
-            if (b >= 0 && b < 15 && !_lowBattWarned) {
-                _lowBattWarned = true;
-                sound::playAlert();
+            _lastBattLevel = (b > 100) ? 100 : (int)b;  // -1 stays -1 (no battery/unknown)
+            if (b >= 0 && b < kLowBattPct) {
+                bool crossedIn = !_lowBattWarned;
+                // Critical band re-beeps every check so it can't be slept
+                // through; the kCriticalBattPct..kLowBattPct band beeps
+                // once (hysteresis via _lowBattWarned, re-armed above 20%).
+                if (b < kCriticalBattPct || crossedIn) sound::playAlert();
+                if (crossedIn) {
+                    _lowBattWarned = true;
+                    _lastInputMs = millis();  // wake the screen so the warning is actually seen
+                }
             } else if (b >= 20) {
                 _lowBattWarned = false;
             }
@@ -168,6 +194,18 @@ void UiManager::run() {
         if (idle != _dimmed) {
             M5Cardputer.Display.setBrightness(idle ? kDimBrightness : kFullBrightness);
             _dimmed = idle;
+        }
+
+        // Persistent critical-battery banner, drawn over the footer so
+        // it's impossible to miss unlike the one-shot beep. Uses the
+        // level sampled on the ~5s cadence above, not a fresh per-frame
+        // read.
+        if (_lastBattLevel >= 0 && _lastBattLevel < kCriticalBattPct) {
+            int16_t by = _canvas.height() - 9;
+            _canvas.fillRect(0, by - 1, _canvas.width(), 10, theme::RED);
+            _canvas.setTextColor(theme::BG, theme::RED);
+            _canvas.setCursor(4, by);
+            _canvas.print(String("! BATTERY ") + String(_lastBattLevel) + "% - CHARGE NOW");
         }
         // Explicit destination, not the 2-arg pushSprite(x,y): that
         // overload pushes to a "parent" LovyanGFX* the sprite has to

@@ -91,6 +91,7 @@ private:
     void advanceKarmaCandidate();
     void logAssociation(const String& mac);
     void notify(const String& text);
+    void notify(ScanEventType type, uint8_t pct = 0);
 
     mutable SemaphoreHandle_t _mutex = nullptr;
     std::vector<Association> _associations;

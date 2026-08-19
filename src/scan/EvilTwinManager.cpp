@@ -84,6 +84,7 @@ bool EvilTwinManager::startKarma(uint8_t channel) {
         notify("start failed - out of memory");
         return false;
     }
+    notify(ScanEventType::ScanStarted);
     return true;
 }
 
@@ -131,6 +132,7 @@ bool EvilTwinManager::start(const String& ssid, uint8_t channel) {
         notify("start failed - out of memory");
         return false;
     }
+    notify(ScanEventType::ScanStarted);
     return true;
 }
 
@@ -180,6 +182,7 @@ void EvilTwinManager::run() {
     WiFi.softAPdisconnect(true);
     WiFi.mode(WIFI_STA);
     notify(_karmaMode ? "karma AP stopped" : "evil twin AP stopped");
+    notify(ScanEventType::ScanFinished, 100);
 }
 
 void EvilTwinManager::logAssociation(const String& mac) {
@@ -222,6 +225,15 @@ void EvilTwinManager::notify(const String& text) {
     n.source = ScanSource::EvilTwin;
     n.type = ScanEventType::LogLine;
     n.setText(text.c_str());
+    xQueueSend(_outQueue, &n, 0);
+}
+
+void EvilTwinManager::notify(ScanEventType type, uint8_t pct) {
+    if (!_outQueue) return;
+    ScanNotification n;
+    n.source = ScanSource::EvilTwin;
+    n.type = type;
+    n.progressPct = pct;
     xQueueSend(_outQueue, &n, 0);
 }
 
