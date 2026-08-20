@@ -14,6 +14,8 @@
 #include "DeauthWatchScreen.h"
 #include "OsFingerprintScreen.h"
 #include "VlanHopScreen.h"
+#include "IotCredScreen.h"
+#include "PasswordSprayScreen.h"
 #include "../UiManager.h"
 #include "../Theme.h"
 #include "../Chrome.h"
@@ -43,6 +45,8 @@ Screen* gNtlmHttp() { return &NtlmHttpScreen::instance(); }
 Screen* gGuardMode() { return &DeauthWatchScreen::instance(); }
 Screen* gOsFingerprint() { return &OsFingerprintScreen::instance(); }
 Screen* gVlanHop() { return &VlanHopScreen::instance(); }
+Screen* gIotCred() { return &IotCredScreen::instance(); }
+Screen* gSpray() { return &PasswordSprayScreen::instance(); }
 
 // Fase 37: per-row readiness dot for the two gated groups below -
 // "needs NETWORK SCAN" checks the host table isn't empty (a scan has
@@ -60,6 +64,28 @@ bool needsPortScanReady() {
         if (!g_scanManager.getHost(i, h) || !h.alive) continue;
         for (const auto& p : h.ports) {
             if (p.service == "http") return true;
+        }
+    }
+    return false;
+}
+// Fase 51 - the offensive credential sweeps below accept a wider set of
+// login-bearing services (the six CredAuditManager::tryLogin() knows):
+// http, telnet, ftp, pop3, imap, smtp. Green dot if ANY of them was seen
+// on ANY alive host - same "you have something to try against" spirit as
+// needsPortScanReady's HTTP-only check for NTLM DISCLOSURE.
+bool needsAnyLoginPortReady() {
+    size_t n = g_scanManager.hostCount();
+    HostInfo h;
+    for (size_t i = 0; i < n; i++) {
+        if (!g_scanManager.getHost(i, h) || !h.alive) continue;
+        for (const auto& p : h.ports) {
+            if (!p.open || p.isUdp) continue;
+            if (p.service == "http" || p.service == "telnet" || p.service == "ftp" ||
+                p.service == "pop3" || p.service == "imap" || p.service == "smtp")
+                return true;
+            if (p.port == 80 || p.port == 8080 || p.port == 23 || p.port == 21 ||
+                p.port == 110 || p.port == 143 || p.port == 25)
+                return true;
         }
     }
     return false;
@@ -90,6 +116,16 @@ const DItem kItems[] = {
     {"GUARD MODE", gGuardMode, nullptr},
     {"OS FINGERPRINT", gOsFingerprint, nullptr},
     {"VLAN HOP", gVlanHop, nullptr},
+    // Fase 51 - offensive credential tools. Both attempt REAL logins and
+    // are gated by AppConfig::credAuditEnabled (same consent as CRED
+    // AUDIT / SERVICE AUDIT / IOT/OT etc). IOT CREDS wants NETWORK SCAN
+    // + PORT SCAN to have found HTTP/Telnet hosts to fingerprint;
+    // PASSWORD SPRAY needs the same, since it walks the discovered-
+    // service list. Sit in their own section so the visual boundary vs
+    // the passive listeners above is impossible to miss.
+    {"-- OFFENSIVE (gated) --", nullptr, nullptr},
+    {"IOT CREDS", gIotCred, needsAnyLoginPortReady},
+    {"PASSWORD SPRAY", gSpray, needsAnyLoginPortReady},
 };
 constexpr size_t kCount = sizeof(kItems) / sizeof(kItems[0]);
 }  // namespace

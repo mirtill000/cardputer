@@ -75,6 +75,8 @@ enum class ScanSource : uint8_t {
     NameSpoof,
     OsFingerprint,
     VlanHop,
+    IotCred,   // IoT default-credential sweep (IotCredScanner - Fase 51)
+    Spray,     // one-password-across-many-hosts spray (PasswordSprayManager - Fase 51)
 };
 
 struct ScanNotification {

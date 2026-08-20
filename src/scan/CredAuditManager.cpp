@@ -133,22 +133,20 @@ void CredAuditManager::run() {
     notify(ScanEventType::ScanFinished, 100);
 }
 
+bool CredAuditManager::tryLogin(const char* service, const IPAddress& ip, uint16_t port, const String& user,
+                                const String& pass) {
+    if (strcmp(service, "http") == 0) return tryHttpBasicAuth(ip, port, user, pass);
+    if (strcmp(service, "telnet") == 0) return tryTelnetLogin(ip, user, pass);
+    if (strcmp(service, "pop3") == 0) return tryPop3Login(ip, user, pass);
+    if (strcmp(service, "imap") == 0) return tryImapLogin(ip, user, pass);
+    if (strcmp(service, "smtp") == 0) return trySmtpLogin(ip, user, pass);
+    if (strcmp(service, "ftp") == 0) return tryFtpLogin(ip, user, pass);
+    return false;
+}
+
 bool CredAuditManager::attemptService(const char* serviceName, uint16_t port, String& outUser, String& outPass) {
     auto tryOne = [&](const String& user, const String& pass) -> bool {
-        bool ok;
-        if (strcmp(serviceName, "http") == 0) {
-            ok = tryHttpBasicAuth(_target, port, user, pass);
-        } else if (strcmp(serviceName, "telnet") == 0) {
-            ok = tryTelnetLogin(_target, user, pass);
-        } else if (strcmp(serviceName, "pop3") == 0) {
-            ok = tryPop3Login(_target, user, pass);
-        } else if (strcmp(serviceName, "imap") == 0) {
-            ok = tryImapLogin(_target, user, pass);
-        } else if (strcmp(serviceName, "smtp") == 0) {
-            ok = trySmtpLogin(_target, user, pass);
-        } else {
-            ok = tryFtpLogin(_target, user, pass);
-        }
+        bool ok = tryLogin(serviceName, _target, port, user, pass);
         _attempts++;
         if (ok) _successes++;
         logAttempt(serviceName, user, pass, ok);

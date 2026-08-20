@@ -42,6 +42,8 @@
 #include "ui/screens/NameSpoofScreen.h"
 #include "scan/OsFingerprint.h"
 #include "scan/VlanHopProbe.h"
+#include "scan/IotCredScanner.h"
+#include "scan/PasswordSprayManager.h"
 #include "net/WifiManager.h"
 #include "net/CaptivePortalDetector.h"
 #include "net/TimeSync.h"
@@ -156,6 +158,12 @@ void setup() {
     g_nameSpoofManager.begin(g_ui.scanQueue());
     g_osFingerprint.begin(g_ui.scanQueue());
     g_vlanHopProbe.begin(g_ui.scanQueue());
+    // Fase 51 - offensive credential tools, both gated by the same
+    // CredAuditManager consent (AppConfig::credAuditEnabled). They reuse
+    // CredAuditManager::tryLogin() for the protocol handshakes, so
+    // g_credAuditManager.begin() above must run first (it does).
+    g_iotCredScanner.begin(g_ui.scanQueue());
+    g_passwordSpray.begin(g_ui.scanQueue());
 
     // Non-blocking: if a network was saved from a previous WIFI SCAN
     // run, this kicks the connection off immediately at boot instead of

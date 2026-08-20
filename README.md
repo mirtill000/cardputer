@@ -2771,6 +2771,59 @@ mostra il dettaglio completo (riga intera, non troncata), `H`/`DEL`
 torna al log. Materiale realmente sensibile — stesso livello di
 attenzione già riservato a un pcap PMKID/handshake, non un giocattolo.
 
+### Fase 51: IOT CREDS + PASSWORD SPRAY (offensive credential tools)
+
+Due strumenti offensivi di credential-checking sopravvissuti da un
+vecchio batch WIP scartato dopo che il remote era già più avanti (vedi
+il commit annullato prima di questa fase): entrambi tentano login
+**reali** su servizi già scoperti, quindi entrambi sono gated dallo
+stesso `AppConfig::credAuditEnabled` che protegge `CREDENTIAL AUDIT` e
+`SERVICE AUDIT`. Consenso `Y` inline nella schermata (non persistito:
+ogni boot ricomincia da OFF, per design).
+
+Entrambi riusano **`CredAuditManager::tryLogin()`** (metodo pubblico
+esposto in questa fase) invece di duplicare le sei handshake protocol
+già testate — HTTP-basic, Telnet, FTP, POP3, IMAP, SMTP. Zero nuovo
+codice di rete: solo composizione sopra una primitiva già validata.
+
+- **`IotCredScanner`** (`IOT CREDS`, gated). Fingerprinta ogni host
+  discovered concatenando OUI vendor + banner di ogni porta + nome del
+  servizio, poi cerca match case-insensitive in `IotDefaultCreds`
+  (tabella breve, vendor-doc: Hikvision `admin/12345`, Ubiquiti
+  `ubnt/ubnt`, TP-Link `admin/admin`, Netgear `admin/password`, Foscam
+  `admin/<blank>`, Axis `root/pass`, ...) più una manciata di generici
+  (`admin/admin`, `admin/`, `root/root`, ...) provati su ogni device.
+  **Un solo tentativo per (device, servizio) per sweep** — è la verifica
+  che il default di fabbrica NON sia stato cambiato, non un brute-force.
+  Si ferma al primo successo per servizio. Riusa `sound::playCredAlert`
+  se trova almeno un hit — la stessa mano audio di `CREDENTIAL AUDIT`.
+- **`PasswordSprayManager`** (`PASSWORD SPRAY`, gated). L'inverso del
+  brute: **una** password (l'utente la digita nella schermata) provata
+  su MOLTI host x lista utenti breve (`kSprayUsers` + opzionale
+  `/creds/users.txt`), con `kInterAttemptDelayMs=300ms` tra tentativi e
+  **UN solo tentativo per (utente, host, servizio) per sessione** — la
+  cadenza è esplicitamente calibrata per stare sotto le soglie di
+  lockout tipiche (5-10 fallimenti/hr/account). Vede tutti i sei
+  servizi che `tryLogin` sa fare. `DEL` in modalità browsing
+  interrompe una spray in corso e riporta al text-entry per cambiare
+  password (una spray a metà con la vecchia password, mentre l'utente
+  ne digita una nuova, sarebbe estremamente sorprendente).
+
+Nessuna delle due nel `RUN ALL DISCOVERY`: `IOT CREDS` è attivo/auth
+(un one-button non ha modo di ottenere il consenso), `PASSWORD SPRAY`
+richiede in più un input testuale (la password) che un runner
+sequenziato non può fornire. Vivono nella nuova sezione
+`-- OFFENSIVE (gated) --` in fondo a `DISCOVERY`, con il puntino di
+prontezza (verde/rosso) che accende solo quando c'è almeno un servizio
+login-capable aperto tra gli host discovered (`needsAnyLoginPortReady`,
+copre i sei servizi che `tryLogin` sa gestire; l'`needsPortScanReady`
+esistente cercava solo HTTP e sarebbe stato troppo restrittivo qui).
+
+Fuori scope confermato, come da conversazione: niente SSH brute (serve
+una lib client verificata, non un handshake artigianale), niente HTTP
+form-brute (basic-auth è già pieno; una form-brute serve altra roba —
+CSRF token, session cookie handling — che è un progetto a parte).
+
 ## Compilare e flashare
 
 ```
