@@ -14,6 +14,7 @@
 #include "DeauthWatchScreen.h"
 #include "OsFingerprintScreen.h"
 #include "VlanHopScreen.h"
+#include "EapIdentityScreen.h"
 #include "../UiManager.h"
 #include "../Theme.h"
 #include "../Chrome.h"
@@ -43,6 +44,7 @@ Screen* gNtlmHttp() { return &NtlmHttpScreen::instance(); }
 Screen* gGuardMode() { return &DeauthWatchScreen::instance(); }
 Screen* gOsFingerprint() { return &OsFingerprintScreen::instance(); }
 Screen* gVlanHop() { return &VlanHopScreen::instance(); }
+Screen* gEapIdentity() { return &EapIdentityScreen::instance(); }
 
 // Fase 37: per-row readiness dot for the two gated groups below -
 // "needs NETWORK SCAN" checks the host table isn't empty (a scan has
@@ -90,6 +92,7 @@ const DItem kItems[] = {
     {"GUARD MODE", gGuardMode, nullptr},
     {"OS FINGERPRINT", gOsFingerprint, nullptr},
     {"VLAN HOP", gVlanHop, nullptr},
+    {"EAP IDENTITY", gEapIdentity, nullptr},
 };
 constexpr size_t kCount = sizeof(kItems) / sizeof(kItems[0]);
 }  // namespace

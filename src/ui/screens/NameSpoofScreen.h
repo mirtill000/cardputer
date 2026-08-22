@@ -18,7 +18,7 @@ public:
 
     const char* title() const override { return "NSPF"; }
     const char* helpText() const override {
-        return "NAME SPOOF\nMENU>Ent(NSPF)\nAnswers every LLMNR/NBT-NS\nname query on the LAN, claiming\nthis device's IP. </>: duration\nENTER: start/stop\nDEL: back (stops session)";
+        return "NAME SPOOF\nMENU>Ent(NSPF)\nAnswers every LLMNR/NBT-NS\nname query claiming this IP.\n</>:duration  W:WPAD HTTP toggle\nENTER: start/stop\nDEL: back (stops session)";
     }
 
 private:
@@ -30,6 +30,7 @@ private:
 
     State _state = State::Idle;
     uint16_t _durationS = 120;
+    bool _wpadEnabled = false;
     String _log[kLogLines];
     uint8_t _logCount = 0;
 };

@@ -1,9 +1,15 @@
 #include "EapolWire.h"
 #include "Ieee80211Frame.h"
+#include <cstring>
 
 namespace {
-constexpr uint8_t kEapolTypeKey = 3;        // EAPOL Type byte: 0=EAP-Packet, 1=Start, 2=Logoff, 3=Key, 5=ASF-Alert
+constexpr uint8_t kEapolTypeEapPacket = 0;  // EAPOL Type byte: 0=EAP-Packet, 1=Start, 2=Logoff, 3=Key, 5=ASF-Alert
+constexpr uint8_t kEapolTypeKey = 3;
 constexpr uint16_t kEtherTypeEapol = 0x888E;
+
+constexpr uint8_t kEapCodeResponse = 2;  // EAP Code: 1=Request, 2=Response, 3=Success, 4=Failure
+constexpr uint8_t kEapTypeIdentity = 1;  // EAP Type: 1=Identity, 2=Notification, 4=MD5, 25=PEAP, 21=TTLS, ...
+constexpr uint16_t kMaxIdentityLen = 128;
 
 // Fixed Key Descriptor layout, offsets relative to the EAPOL body
 // (byte 0 = Version): Type(1)@1, Length(2)@2, DescriptorType(1)@4,
@@ -90,4 +96,57 @@ eapol::Classification eapol::classify(const uint8_t* p, uint16_t len) {
     }
 
     return c;
+}
+
+bool eapol::parseEapIdentity(const uint8_t* p, uint16_t len, String& identityOut, uint8_t supplicantMac[6]) {
+    identityOut = "";
+
+    ieee80211::ParsedDataFrame frame;
+    if (!ieee80211::parseDataFrame(p, len, frame)) return false;
+    if (frame.protectedFrame) return false;  // EAP is sent in the clear during 802.1X - see header
+
+    uint8_t oui[3];
+    uint16_t protocolId, payloadOffset;
+    if (!ieee80211::parseSnap(p, len, frame.payloadOffset, oui, protocolId, payloadOffset)) return false;
+
+    bool standardOui = (oui[0] == 0 && oui[1] == 0 && oui[2] == 0);
+    if (!standardOui || protocolId != kEtherTypeEapol) return false;
+
+    // EAPOL header (4 bytes): Version(1), Type(1), Length(2). We need the
+    // Type byte to confirm this carries an EAP-Packet, not an EAPOL-Key.
+    if ((uint32_t)payloadOffset + 4 > len) return false;
+    if (p[payloadOffset + 1] != kEapolTypeEapPacket) return false;
+
+    // EAP packet (relative to payloadOffset+4): Code(1), Identifier(1),
+    // Length(2), Type(1), Type-Data(...). Need at least through the EAP
+    // Type byte (payloadOffset + 4 + 5 = payloadOffset + 9).
+    uint32_t eap = (uint32_t)payloadOffset + 4;
+    if (eap + 5 > len) return false;
+    if (p[eap] != kEapCodeResponse) return false;  // only the client's Response/Identity, not the AP's Request
+    if (p[eap + 4] != kEapTypeIdentity) return false;
+
+    uint16_t eapLen = ((uint16_t)p[eap + 2] << 8) | p[eap + 3];
+    if (eapLen < 5) return false;  // header(4) + Type(1) with no room for an identity
+    uint16_t idLen = eapLen - 5;
+    if (idLen == 0) return false;
+    if (idLen > kMaxIdentityLen) idLen = kMaxIdentityLen;
+
+    uint32_t idStart = eap + 5;
+    if (idStart + idLen > len) {
+        // Capture truncated before the full identity - keep whatever
+        // bytes are actually present rather than rejecting outright.
+        if (idStart >= len) return false;
+        idLen = (uint16_t)(len - idStart);
+    }
+
+    String id;
+    for (uint16_t i = 0; i < idLen; i++) {
+        char ch = (char)p[idStart + i];
+        if (ch >= 0x20 && ch < 0x7F) id += ch;  // printable ASCII only - drops NULs/control bytes
+    }
+    if (id.isEmpty()) return false;
+
+    identityOut = id;
+    memcpy(supplicantMac, frame.srcMac, 6);
+    return true;
 }

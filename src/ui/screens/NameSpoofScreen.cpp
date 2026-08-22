@@ -35,7 +35,7 @@ void NameSpoofScreen::onKey(UiKey key, char ch) {
         case State::Idle:
             if (key == UiKey::Enter) {
                 _logCount = 0;
-                if (g_nameSpoofManager.start(_durationS)) {
+                if (g_nameSpoofManager.start(_durationS, _wpadEnabled)) {
                     _state = State::Running;
                 } else {
                     pushLog("start failed - already running?");
@@ -44,6 +44,8 @@ void NameSpoofScreen::onKey(UiKey key, char ch) {
                 if (_durationS > 30) _durationS -= 30;
             } else if (key == UiKey::Right) {
                 if (_durationS < NameSpoofManager::kMaxDurationS) _durationS += 30;
+            } else if (key == UiKey::Char && (ch == 'w' || ch == 'W')) {
+                _wpadEnabled = !_wpadEnabled;
             } else if (key == UiKey::Back) {
                 g_ui.popScreen();
             }
@@ -83,21 +85,25 @@ void NameSpoofScreen::draw(M5Canvas& gfx) {
             gfx.print(_durationS);
             gfx.print("s >");
 
+            gfx.setTextColor(_wpadEnabled ? theme::CYAN : theme::GREY, theme::BG);
+            gfx.setCursor(6, 32);
+            gfx.print("WPAD HTTP (W): ");
+            gfx.print(_wpadEnabled ? "ON" : "OFF");
+
             gfx.setTextColor(theme::AMBER, theme::BG);
             drawWrapped(gfx,
-                        "Answers EVERY LLMNR/NBT-NS name query on "
-                        "the LAN claiming this device's IP. Any host "
-                        "still relying on that fallback resolution "
-                        "will connect to YOU instead. No credential "
-                        "capture in this build - see README.",
-                        6, 36, 9, 37);
+                        "Answers every LLMNR/NBT-NS query as this IP. "
+                        "WPAD ON also serves a wpad.dat = DIRECT on "
+                        ":80 as proof the poison chain works end-to-"
+                        "end (no proxy redirect). No cred capture.",
+                        6, 46, 9, 37);
 
             gfx.setTextColor(theme::MAGENTA, theme::BG);
             gfx.setCursor(6, gfx.height() - 20);
             gfx.print("ENTER: start session");
             gfx.setTextColor(theme::GREY, theme::BG);
             gfx.setCursor(4, gfx.height() - 9);
-            gfx.print("</>:duration  DEL:back");
+            gfx.print("</>:dur W:wpad DEL:back");
             break;
         }
 
@@ -106,7 +112,11 @@ void NameSpoofScreen::draw(M5Canvas& gfx) {
             gfx.setCursor(6, 16);
             gfx.print("poisoned: ");
             gfx.print((unsigned)g_nameSpoofManager.poisonedCount());
-            gfx.print("  left: ");
+            if (g_nameSpoofManager.isWpadEnabled()) {
+                gfx.print("  WPAD: ");
+                gfx.print((unsigned)g_nameSpoofManager.wpadServedCount());
+            }
+            gfx.print("  ");
             gfx.print((unsigned)g_nameSpoofManager.secondsRemaining());
             gfx.print("s");
 

