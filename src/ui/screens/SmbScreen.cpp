@@ -43,7 +43,7 @@ void SmbScreen::onKey(UiKey key, char /*ch*/) {
 
 void SmbScreen::draw(M5Canvas& gfx) {
     gfx.fillScreen(theme::BG);
-    chrome::drawHeader(gfx, "SMB NEGOTIATE");
+    chrome::drawHeader(gfx, "SMB POSTURE");
 
     gfx.setTextColor(theme::GREEN, theme::BG);
     gfx.setCursor(6, 18);
@@ -55,42 +55,80 @@ void SmbScreen::draw(M5Canvas& gfx) {
     SmbNegotiateCheck::Result r = g_smbCheck.result();
     bool running = g_smbCheck.isRunning();
 
-    gfx.setCursor(6, 28);
-    if (r.done && r.negotiated) {
-        // Flag the two legacy/weak states in red, the rest green.
-        uint16_t modeColor = r.userLevelSecurity ? theme::GREEN : theme::RED;
-        gfx.setTextColor(modeColor, theme::BG);
-        gfx.print(r.userLevelSecurity ? "security: user-level" : "security: SHARE-LEVEL");
-        gfx.setCursor(6, 38);
-        gfx.setTextColor(r.challengeResponse ? theme::GREEN : theme::RED, theme::BG);
-        gfx.print(r.challengeResponse ? "passwords: challenge/resp" : "passwords: PLAINTEXT");
-        gfx.setCursor(6, 48);
-        gfx.setTextColor(r.signingRequired ? theme::GREEN : theme::AMBER, theme::BG);
-        gfx.print(r.signingRequired ? "signing: required"
-                                    : (r.signingEnabled ? "signing: optional" : "signing: off"));
-    } else if (r.done) {
-        gfx.setTextColor(theme::AMBER, theme::BG);
-        gfx.print(r.note.length() ? r.note : String("no SMB1 negotiate"));
-    } else {
+    if (!r.done) {
         gfx.setTextColor(theme::GREY, theme::BG);
-        gfx.print(running ? "negotiating..." : "not run yet");
+        gfx.setCursor(6, 32);
+        gfx.print(running ? "probing SMB1 + SMB2..." : "not run yet");
+    } else {
+        // Overall verdict.
+        uint16_t pc = (r.posture == SmbNegotiateCheck::Posture::Weak)   ? theme::RED
+                    : (r.posture == SmbNegotiateCheck::Posture::Fair)   ? theme::AMBER
+                    : (r.posture == SmbNegotiateCheck::Posture::Ok)     ? theme::GREEN
+                                                                        : theme::GREY;
+        const char* pl = (r.posture == SmbNegotiateCheck::Posture::Weak)   ? "WEAK"
+                       : (r.posture == SmbNegotiateCheck::Posture::Fair)   ? "FAIR"
+                       : (r.posture == SmbNegotiateCheck::Posture::Ok)     ? "OK"
+                                                                           : "?";
+        gfx.setTextColor(pc, theme::BG);
+        gfx.setCursor(6, 30);
+        gfx.print("POSTURE: ");
+        gfx.print(pl);
+
+        // SMBv1 exposure.
+        gfx.setCursor(6, 42);
+        if (r.smb1Enabled) {
+            gfx.setTextColor(theme::RED, theme::BG);
+            gfx.print("SMBv1: ENABLED (legacy)");
+        } else if (r.connected) {
+            gfx.setTextColor(theme::GREEN, theme::BG);
+            gfx.print("SMBv1: not offered");
+        } else {
+            gfx.setTextColor(theme::GREY, theme::BG);
+            gfx.print("SMBv1: n/a");
+        }
+
+        // SMB2 dialect + signing.
+        gfx.setCursor(6, 52);
+        if (r.smb2Supported) {
+            gfx.setTextColor(r.smb2SigningRequired ? theme::GREEN : theme::AMBER, theme::BG);
+            String s = String("SMB2: ") + SmbNegotiateCheck::dialectName(r.smb2Dialect) +
+                       (r.smb2SigningRequired ? " sign:req"
+                                              : (r.smb2SigningEnabled ? " sign:opt" : " sign:off"));
+            gfx.print(s);
+        } else {
+            gfx.setTextColor(theme::AMBER, theme::BG);
+            gfx.print("SMB2: none");
+        }
+
+        // Legacy SMB1 detail line - only meaningful when SMBv1 answered.
+        if (r.smb1Enabled) {
+            gfx.setCursor(6, 62);
+            gfx.setTextColor(theme::GREY, theme::BG);
+            String d = String("v1: ") + (r.userLevelSecurity ? "user" : "SHARE") + "/" +
+                       (r.challengeResponse ? "c-r" : "PLAIN") + "/" +
+                       (r.signingRequired ? "signed" : (r.signingEnabled ? "sign-opt" : "unsigned"));
+            gfx.print(d);
+        }
     }
 
     gfx.setTextColor(theme::GREY, theme::BG);
-    gfx.drawFastHLine(4, 59, gfx.width() - 8, theme::GREY);
+    gfx.drawFastHLine(4, 71, gfx.width() - 8, theme::GREY);
 
-    for (uint8_t i = 0; i < _logCount; i++) {
-        int16_t y = 62 + i * 9;
+    // Most-recent log lines (bottom of the array is newest - see pushLog).
+    uint8_t show = (_logCount < 4) ? _logCount : 4;
+    uint8_t startIdx = (uint8_t)(_logCount - show);
+    for (uint8_t i = 0; i < show; i++) {
+        int16_t y = 74 + i * 9;
         gfx.setTextColor(theme::CYAN, theme::BG);
         gfx.setCursor(6, y);
-        String line = _log[i];
+        String line = _log[startIdx + i];
         if (line.length() > 37) line = line.substring(0, 37);
         gfx.print(line);
     }
 
     gfx.setTextColor(theme::MAGENTA, theme::BG);
     gfx.setCursor(6, gfx.height() - 20);
-    gfx.print(running ? "probing..." : "ENTER: SMB negotiate");
+    gfx.print(running ? "probing..." : "ENTER: SMB posture scan");
 
     gfx.setTextColor(theme::GREY, theme::BG);
     gfx.setCursor(4, gfx.height() - 9);

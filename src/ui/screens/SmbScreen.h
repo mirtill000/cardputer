@@ -3,11 +3,11 @@
 #include "Screen.h"
 #include <IPAddress.h>
 
-// "SMB NEGOTIATE": sends one SMB1 Negotiate Protocol request to a host's
-// open SMB/NetBIOS port and shows the Security Mode flags the server
-// advertises (user-level vs share-level security, plaintext vs
-// challenge/response passwords, SMB signing). Read-only — no login, no
-// share enumeration; see scan/SmbNegotiateCheck.h for the scope note.
+// "SMB POSTURE": two read-only Negotiate exchanges (SMB1 + SMB2) against
+// a host's open SMB/NetBIOS port, showing whether SMBv1 is still enabled,
+// the modern SMB2 dialect and whether SMB2 signing is required, plus an
+// overall Weak/Fair/Ok verdict. Read-only - no login, no share
+// enumeration; see scan/SmbNegotiateCheck.h for the scope note.
 class SmbScreen : public Screen {
 public:
     static SmbScreen& instance();
@@ -21,7 +21,7 @@ public:
 
     const char* title() const override { return "SMB"; }
     const char* helpText() const override {
-        return "SMB NEGOTIATE\nMENU>NET>HOST>S(SMB)\nOne read-only Negotiate\nrequest - shows security mode\nflags, no login attempted.\nENTER: start\nDEL: back";
+        return "SMB POSTURE\nMENU>NET>HOST>S(SMB)\nSMB1+SMB2 Negotiate - shows\nSMBv1 exposure, dialect,\nsigning + Weak/Fair/Ok\nverdict. No login.\nENTER: start  DEL: back";
     }
 
 private:
