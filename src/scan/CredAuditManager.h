@@ -39,6 +39,20 @@ public:
     uint32_t attemptCount() const { return _attempts; }
     uint32_t successCount() const { return _successes; }
 
+    // Stateless single-credential attempt, exposed for the sibling
+    // offensive-credential tools (IotCredScanner, PasswordSprayManager -
+    // Fase 51) so they reuse the exact same, hardware-tested login logic
+    // for HTTP-basic/Telnet/FTP/POP3/IMAP/SMTP instead of re-deriving six
+    // protocol handshakes. Unlike attemptService() this does NOT touch
+    // the audit counters, post CredAudit log lines, or write back to the
+    // host table - it just opens a socket, tries one pair, and returns
+    // whether it was accepted. `service` is one of "http", "telnet",
+    // "ftp", "pop3", "imap", "smtp"; `port` is only used for http (the
+    // others are fixed by protocol). Safe from any task: every call is
+    // independent and owns its own WiFiClient.
+    bool tryLogin(const char* service, const IPAddress& ip, uint16_t port, const String& user,
+                  const String& pass);
+
 private:
     static void taskEntry(void* arg);
     void run();

@@ -2842,6 +2842,285 @@ Nuovi campi visibili: `WPAD HTTP (W): ON/OFF` nello stato Idle,
 contatore `WPAD: N` accanto a `poisoned:` durante l'esecuzione, e
 sommario finale "…N WPAD hit(s)" nel log di stop.
 
+### Fase 53: IOT CREDS + PASSWORD SPRAY (offensive credential tools)
+
+Due strumenti offensivi di credential-checking sopravvissuti da un
+vecchio batch WIP scartato dopo che il remote era già più avanti (vedi
+il commit annullato prima di questa fase): entrambi tentano login
+**reali** su servizi già scoperti, quindi entrambi sono gated dallo
+stesso `AppConfig::credAuditEnabled` che protegge `CREDENTIAL AUDIT` e
+`SERVICE AUDIT`. Consenso `Y` inline nella schermata (non persistito:
+ogni boot ricomincia da OFF, per design).
+
+Entrambi riusano **`CredAuditManager::tryLogin()`** (metodo pubblico
+esposto in questa fase) invece di duplicare le sei handshake protocol
+già testate — HTTP-basic, Telnet, FTP, POP3, IMAP, SMTP. Zero nuovo
+codice di rete: solo composizione sopra una primitiva già validata.
+
+- **`IotCredScanner`** (`IOT CREDS`, gated). Fingerprinta ogni host
+  discovered concatenando OUI vendor + banner di ogni porta + nome del
+  servizio, poi cerca match case-insensitive in `IotDefaultCreds`
+  (tabella breve, vendor-doc: Hikvision `admin/12345`, Ubiquiti
+  `ubnt/ubnt`, TP-Link `admin/admin`, Netgear `admin/password`, Foscam
+  `admin/<blank>`, Axis `root/pass`, ...) più una manciata di generici
+  (`admin/admin`, `admin/`, `root/root`, ...) provati su ogni device.
+  **Un solo tentativo per (device, servizio) per sweep** — è la verifica
+  che il default di fabbrica NON sia stato cambiato, non un brute-force.
+  Si ferma al primo successo per servizio. Riusa `sound::playCredAlert`
+  se trova almeno un hit — la stessa mano audio di `CREDENTIAL AUDIT`.
+- **`PasswordSprayManager`** (`PASSWORD SPRAY`, gated). L'inverso del
+  brute: **una** password (l'utente la digita nella schermata) provata
+  su MOLTI host x lista utenti breve (`kSprayUsers` + opzionale
+  `/creds/users.txt`), con `kInterAttemptDelayMs=300ms` tra tentativi e
+  **UN solo tentativo per (utente, host, servizio) per sessione** — la
+  cadenza è esplicitamente calibrata per stare sotto le soglie di
+  lockout tipiche (5-10 fallimenti/hr/account). Vede tutti i sei
+  servizi che `tryLogin` sa fare. `DEL` in modalità browsing
+  interrompe una spray in corso e riporta al text-entry per cambiare
+  password (una spray a metà con la vecchia password, mentre l'utente
+  ne digita una nuova, sarebbe estremamente sorprendente).
+
+Nessuna delle due nel `RUN ALL DISCOVERY`: `IOT CREDS` è attivo/auth
+(un one-button non ha modo di ottenere il consenso), `PASSWORD SPRAY`
+richiede in più un input testuale (la password) che un runner
+sequenziato non può fornire. Vivono nella nuova sezione
+`-- OFFENSIVE (gated) --` in fondo a `DISCOVERY`, con il puntino di
+prontezza (verde/rosso) che accende solo quando c'è almeno un servizio
+login-capable aperto tra gli host discovered (`needsAnyLoginPortReady`,
+copre i sei servizi che `tryLogin` sa gestire; l'`needsPortScanReady`
+esistente cercava solo HTTP e sarebbe stato troppo restrittivo qui).
+
+Fuori scope confermato, come da conversazione: niente SSH brute (serve
+una lib client verificata, non un handshake artigianale), niente HTTP
+form-brute (basic-auth è già pieno; una form-brute serve altra roba —
+CSRF token, session cookie handling — che è un progetto a parte).
+
+### Fase 54: primo lotto BLE — inventory, beacon/tracker, WiFi correlation
+
+Reintroduzione del Bluetooth Low Energy dopo la rimozione deliberata in
+**Fase 14** (fatta per pressione flash: il classic Arduino-ESP32 BLE
+stack aveva sforato lo slot OTA di 219,537 byte). Il primo lotto è
+**observer-only** — NimBLE-Arduino invece del classic BLE stack (~3x
+più piccolo), con central/peripheral/broadcaster **strippati via
+`build_flags`** (`CONFIG_BT_NIMBLE_ROLE_*_DISABLED`) così le code paths
+del client GATT / advertiser / servizio non vengono nemmeno linkate.
+Zero connessioni, zero pairing, zero write — questo lotto **legge
+solo gli advertising packet**.
+
+Cinque delle 10 proposte BLE della conversazione, tutte passive:
+
+- **#1 Device inventory** — `BluetoothManager` mantiene una tabella di
+  fino a 60 device con addr / addr-kind (public/random/RPA/random-static
+  classificati sui bit alti della MAC) / RSSI / TX power / name /
+  appearance / vendor / servizi advertised. Company-ID → vendor via
+  `BleCompanyIds` (tabella curata, non l'intera SIG registry).
+- **#4 Continuity / Fast Pair / Swift Pair fingerprinting** — parsing
+  del manufacturer data per **Apple 0x004C** (Handoff, AirDrop, Nearby
+  Info, Nearby Action, HomeKit link, tutti i sotto-tipi noti), **Google
+  0xFE2C service data** (Fast Pair, con model-ID prefix), **Microsoft
+  0x0006** (Swift Pair marker). Sono le firme che dicono "questo è un
+  iPhone che sta cercando handoff", "quel router Chromecast sta pubblicizzando
+  Fast Pair", ecc.
+- **#5 Beacon decoder** — **iBeacon** (Apple company ID + tag `0x02 0x15`
+  + UUID/major/minor), **AltBeacon** (any vendor + tag `0xBE 0xAC`),
+  **Eddystone** (service data UUID `0xFEAA` + frame type UID/URL/TLM/EID).
+- **#7 Unwanted-tracker detection** — **Apple FindMy** (manufacturer
+  0x004C tipo `0x12`, sotto-tipo `0x19 nearby` vs `0x00 offline
+  finding`), **Tile** (service data `0xFEED`), **Samsung SmartTag**
+  (service data `0xFD5A`, SmartThings Find). La schermata **BLE TRACKERS**
+  (raggiungibile con `T` dalla BLE SCAN) filtra solo quelli. Nota: per
+  ora una tracker detection è "il pattern è nel advertising", non
+  "questo device mi sta seguendo per 5+ minuti" — la persistenza è per
+  un lotto futuro (serve GPS o assumzione di movimento del target).
+- **#10 WiFi correlation** — `correlateWithWifi()` fa un match
+  best-effort sul vendor (BLE vendor vs WiFi vendor delle host già
+  scoperte). Best-effort per costruzione: BLE e WiFi hanno MAC su
+  interfacce separate, un join per-MAC non è possibile senza
+  assunzioni extra; il match per vendor paga la pena per device single-
+  vendor (AppleTV, printer, ecc.). Marker `W` magenta a destra nella
+  BLE SCAN.
+
+**Wiring**:
+- `platformio.ini`: aggiunta `h2zero/NimBLE-Arduino @ ^1.4.1` +
+  build_flags observer-only
+- `core/EventQueue.h`: nuovo `ScanSource::Bluetooth`
+- `main.cpp`: `g_bluetoothManager.begin()` + voce **BLE SCAN** nel
+  MAIN MENU (item 11, prima di SETTINGS)
+- `ui/ActivityStatus.cpp`: tag `BG:BLE` in header quando lo scanner
+  è attivo (marcato `isRf: false` — BT e WiFi coesistono via coex
+  layer, non conflitto)
+- 3 screen nuove: `BleScannerScreen` (inventory dashboard),
+  `BleDetailScreen` (parsing completo per un device), `BleTrackerScreen`
+  (feature #7)
+
+**Fuori scope in questo lotto** (deliberatamente per contenere il
+footprint flash — la Fase 14 documenta bene questo rischio):
+- **#2 GATT service/characteristic enumeration**
+- **#3 RPA rotation correlation** (marca gli addr RPA, ma non correla
+  device che ruotano MAC — vuole storia + fingerprint stabile)
+- **#6 Weak-pairing / GATT posture audit**
+- **#8 Known-device control-characteristic detection**
+- **#9 BLE HID / input-device detection** (parte già flaggata dalla
+  presenza del service `0x1812` nel advertising, ma non fa GATT enum)
+
+Tutte queste richiedono il ruolo **central** attivato (adesso
+disabilitato via `build_flags`); passarci sopra è un secondo lotto
+BLE a sé, da fare **dopo** una `pio run` reale che confermi che
+questo primo lotto compili nello slot OTA da 2.25 MB.
+
+**Rischio flash noto**: NimBLE observer-only pesa ~90-130KB linkata
+(molto meno del classic stack, ma comunque non gratis). Il progetto
+è cresciuto ~35 fasi dopo la Fase 14 quindi non posso predirre se
+starà — l'utente lo scoprirà al primo `pio run`. Se sfora, la
+strategia è invertibile: rimuovere `h2zero/NimBLE-Arduino` da
+`lib_deps` + i tre file di screen + `BluetoothManager` (mesh chirurgico,
+tutte le dipendenze BLE sono confinate in questi 4 file + il `begin()`
+in main + la voce di menu + il tag in ActivityStatus).
+
+### Fase 55: secondo lotto BLE — GATT walk, weak-pairing, control chars, HID, RPA correlation
+
+Le rimanenti 5 proposte BLE della conversazione. La Fase 54 aveva
+misurato 1.58 MB su 2.25 MB nel primo `pio run` reale, lasciando ~770
+KB di margine flash — abbondante per riattivare il ruolo **central**
+NimBLE (in `platformio.ini`, rimuovendo
+`CONFIG_BT_NIMBLE_ROLE_CENTRAL_DISABLED`) e aggiungere:
+
+- **#2 GATT service/characteristic enumeration** — `BleGattClient` fa
+  un walk one-shot verso un device scelto (address da
+  `BluetoothManager`): connect come central, enum servizi + caratteristiche
+  + proprietà (read/write/notify/indicate), read delle stringhe del
+  **Device Information Service** (0x180A: manufacturer/model/firmware/
+  serial/hardware). È il "banner grab" del mondo BLE. `BleGattScreen`
+  mostra i risultati.
+- **#6 Weak-pairing / GATT posture audit** — durante il walk, conta le
+  caratteristiche writable e quelle writable-senza-autenticazione
+  ("just works write endpoints"). Detection only: `BleGattClient` **non
+  scrive mai**, quel vincolo è enforced dal fatto che nessuna code path
+  chiama `ch->writeValue()`. Il chip `no-auth:N` nella `BleGattScreen`
+  è la sintesi (verde 0, ambra >0).
+- **#8 Known-device control-characteristic detection** — nuova tabella
+  `BleControlChars` (piccola, factory-doc, non enumeration di tutti gli
+  UUID del mondo) con (service, char) UUID noti per smart-home
+  actuator: Nordic UART, Xiaomi Mi (0xFE95), TP-Link Kasa (0xFE1C),
+  Tuya-family FFF0/FFF1, MagicHue FFB0/FFB1, lock family 0xFEE7. Il
+  walk confronta ogni char discovered; un match writable è il chip
+  `!CTRL:N/M` rosso nella `BleGattScreen`. **Detection only** — la
+  stessa linea di IoT Creds / Cred Audit: "il vettore è qui, verifica
+  manualmente", non si tocca fisicamente niente.
+- **#9 BLE HID detection** — già mezzo fatto in Fase 54 (parsing dei
+  service UUID nell'advertising), promosso ora a first-class:
+  `BleDevice::hidService` + contatore `hidCount()` + nuova schermata
+  `BleHidScreen` raggiungibile con `H` da BLE SCAN, che filtra solo
+  device che espongono il service 0x1812. `ENTER` su una riga apre il
+  GATT walk sul device — utile per confermare (per un keyboard BLE)
+  se il Report Map è world-readable.
+- **#3 RPA rotation correlation** — logica **offline** dentro
+  `BluetoothManager` (zero flash cost per librerie): `fingerprint()` +
+  `findRpaMatchLocked()` calcolano l'impronta stabile (companyId +
+  services + appearance + platformNote) e cercano, per ogni nuovo
+  device RPA, un predecessore RPA con stessa impronta. Se trovato,
+  `BleDevice::sameAsAddr` viene popolato con l'address della prima
+  osservazione. Best-effort per costruzione: collisioni di
+  fingerprint tra device distinti dello stesso vendor/modello
+  producono falsi positivi ("stesso device") — la stessa forma di
+  best-effort dei correlator MAC-vendor che il resto della codebase
+  già ha.
+
+**Gate**: `BleGattScreen` è dietro il consenso `credAuditEnabled`
+(stesso di CRED AUDIT / SERVICE AUDIT / IOT CREDS / SPRAY). Aprire una
+connessione GATT verso un device non-tuo non è la stessa cosa di
+leggerne l'advertising — il peer vede il connect, può loggarlo, in
+alcuni casi triggera un prompt di pairing. Consent inline `Y`, come
+gli altri.
+
+**Coesistenza col scanner**: `BleGattClient::run()` **stoppa**
+`BluetoothManager` per la durata del walk (NimBLE controller non fa
+scan + connect insieme su ESP32), poi lo riavvia. Nell'header
+compaiono `BG:GATT` (durante il walk) o `BG:BLE` (durante lo scan),
+mai entrambi insieme.
+
+**Wiring**:
+- `platformio.ini`: rimosso `CONFIG_BT_NIMBLE_ROLE_CENTRAL_DISABLED`.
+  Peripheral e broadcaster restano disabilitati (mai advertising, mai
+  GATT server), quindi le code paths di quelli restano non linkate.
+- `core/EventQueue.h`: nuovo `ScanSource::BleGatt`
+- `main.cpp`: `g_bleGattClient.begin()` dopo `g_bluetoothManager.begin()`
+- `BleScannerScreen`: nuove hotkey `H` (HID dashboard), `G` (GATT walk
+  sul device selezionato). Stat strip aggiornata con `hid:N`.
+- `BleDetailScreen`: nuovo tasto `G` per GATT walk, mostra riga
+  `same-as:` (feature #3) e riga `HID:` quando presenti.
+- `ui/ActivityStatus.cpp`: nuovo tag `BG:GATT` durante il walk.
+
+**Fuori scope** (non era nelle 10, non aggiungiamo):
+- Persistence-based tracker detection (Fase 54 già segnala tracker via
+  pattern advertising; una detection "questo tracker sta rimanendo
+  vicino a me" richiede GPS o assunzione di movimento e non è un lotto
+  BLE)
+- Scrittura su caratteristiche note (`ble_control_chars` è solo
+  detection; l'actuation è FUORI dello scope per costruzione).
+
+Se dopo `pio run` la Fase 55 sfora il footprint, il rollback è
+chirurgico anche qui: rimuovere `BleGattClient` + le 2 nuove screen +
+`BleControlChars` + i puntamenti di `BleScannerScreen`/`BleDetailScreen`
+e il `begin()` in main + riattivare `CONFIG_BT_NIMBLE_ROLE_CENTRAL_DISABLED`
+in `platformio.ini`. La logica RPA (feature #3) resta anche in caso di
+rollback — non dipende da NimBLE central.
+
+### Fase 56: HOME split WIFI/BT/TERMINAL da mockup
+
+Restyle del punto di ingresso post-splash. Il vecchio `MainMenuScreen`
+mostrava 13 voci come lista piatta; ora WiFi e BLE hanno pari dignità
+visiva. `BootScreen` transitiona a **`HomeScreen`** (non più a
+`MainMenuScreen`), che presenta il layout del mockup fornito
+dall'utente adattato a 240×135:
+
+- **Header**: `CARDPUTER ADV` (magenta) a sinistra, icona WiFi + `%`
+  batteria colorata a destra
+- **Titolo**: `NETRUNNER` a `textSize(2)` (12×16 per glyph) magenta,
+  centrato, con accenti `>` / `<` ai lati
+- **Sottotitolo/version**: `ADVANCED NETWORK TOOLKIT v1.0` in ciano
+- **Due tile principali** affiancate:
+  - **WIFI** (bordo ciano, icona Wi-Fi disegnata come archi
+    concentrici + dot)
+  - **BLUETOOTH** (bordo magenta, "runa" BT disegnata a segmenti)
+- **Tile bassa TERMINAL** a larghezza piena (bordo ciano, icona `>_`)
+- **Footer**: `STATUS: READY` (verde) a sinistra, `S:set A:about`
+  (grigio) a destra
+
+Navigazione:
+- Frecce sinistra/destra alternano WIFI ↔ BT
+- Freccia giù dal top va a TERMINAL (freccia su torna a WIFI)
+- ENTER apre la tile selezionata (evidenziata con doppio bordo)
+- `S` → SETTINGS (esistente)
+- `A` → `AboutScreen` (nuovo)
+- DEL: no-op (HOME è il fondo dello stack navigabile)
+
+Screen nuove:
+- **`HomeScreen`** — layout tile + navigazione + header/footer
+- **`BluetoothToolsMenuScreen`** — submenu dietro la tile BT con voci
+  `BLE SCAN` / `BLE HID` / `BLE TRACKERS` (bordi magenta coerenti con
+  la tile che l'ha aperta)
+- **`TerminalScreen`** — readout live in stile terminale (uptime, heap
+  free/tot, WiFi SSID+IP, BLE state, host count, storage SD/LittleFS,
+  batteria, cursore lampeggiante). Non è un REPL — un vero shell con
+  parser/history è fuori scope di questo restyle.
+- **`AboutScreen`** — versione firmware, board, MCU, flash, radio,
+  blurb sull'app + disclaimer d'uso
+
+Modifiche esistenti:
+- `BootScreen.cpp`: transiziona a `HomeScreen` invece che a
+  `MainMenuScreen`
+- `MainMenuScreen`: `title()` da `"MENU"` a `"WIFI"` per il breadcrumb;
+  header interno da `"NETRUNNER"` a `"WIFI TOOLS"`. helpText aggiornato
+  a "WIFI TOOLS".
+- `main.cpp`: array `g_menuItems` scende da 13 a 11 voci — rimosse
+  `BLE SCAN` (ora sotto BT tile) e `SETTINGS` (ora hotkey `S` da HOME)
+
+Il flusso ora è: BOOT → HOME → (WIFI tile o BT tile o TERMINAL). Da
+qualunque submenu, `DEL` torna a HOME. Tutte le hotkey pre-esistenti
+delle schermate a valle continuano a funzionare (S/T/Q/W in NETWORK
+SCAN, G/T/H in BLE SCAN, ecc.).
+
 ## Compilare e flashare
 
 ```

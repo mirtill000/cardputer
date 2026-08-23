@@ -43,6 +43,11 @@
 #include "scan/OsFingerprint.h"
 #include "scan/VlanHopProbe.h"
 #include "scan/EapIdentityHarvester.h"
+#include "scan/IotCredScanner.h"
+#include "scan/PasswordSprayManager.h"
+#include "scan/BluetoothManager.h"
+#include "scan/BleGattClient.h"
+#include "ui/screens/BleScannerScreen.h"
 #include "net/WifiManager.h"
 #include "net/CaptivePortalDetector.h"
 #include "net/TimeSync.h"
@@ -65,7 +70,11 @@
 namespace {
 BootScreen g_bootScreen;
 
-MenuItem g_menuItems[12];
+// Fase 54: MenuItem array is now the WIFI TOOLS submenu backing the WIFI
+// tile on HomeScreen. BLE SCAN was removed from here - it now lives under
+// the BLUETOOTH TOOLS tile via BluetoothToolsMenuScreen, and SETTINGS
+// moved to a HomeScreen footer hotkey. So we drop from 13 entries to 11.
+MenuItem g_menuItems[11];
 }  // namespace
 
 void setup() {
@@ -114,10 +123,11 @@ void setup() {
     // action itself, there's no earlier target-picking screen to gate
     // instead - see MainMenuScreen.h's MenuItem::offensive.
     g_menuItems[10] = {"NAME SPOOF", &NameSpoofScreen::instance(), true};
-    g_menuItems[11] = {"SETTINGS", &SettingsScreen::instance()};
-    // The discovery tools moved under NETWORK SCAN -> 'D' (see
+    // Fase 54: BLE SCAN moved under HOME -> BLUETOOTH TOOLS tile (see
+    // BluetoothToolsMenuScreen); SETTINGS moved to HOME footer hotkey.
+    // The discovery tools live under NETWORK SCAN -> 'D' (see
     // DiscoveryMenuScreen); their managers are still begin()'d below.
-    MainMenuScreen::instance().configure(g_menuItems, 12);
+    MainMenuScreen::instance().configure(g_menuItems, 11);
 
     // MainMenuScreen must already be configured by this point: once the
     // render task starts, BootScreen can transition straight to it on
@@ -158,6 +168,21 @@ void setup() {
     g_osFingerprint.begin(g_ui.scanQueue());
     g_vlanHopProbe.begin(g_ui.scanQueue());
     g_eapIdentityHarvester.begin(g_ui.scanQueue());
+    // Fase 53 - offensive credential tools, both gated by the same
+    // CredAuditManager consent (AppConfig::credAuditEnabled). They reuse
+    // CredAuditManager::tryLogin() for the protocol handshakes, so
+    // g_credAuditManager.begin() above must run first (it does).
+    g_iotCredScanner.begin(g_ui.scanQueue());
+    g_passwordSpray.begin(g_ui.scanQueue());
+    // Fase 54 - BLE scanner (observer-only). The NimBLE stack itself
+    // is only initialized when the user starts a BLE scan (see
+    // BluetoothManager::run) - this call just creates the idle task
+    // and mutex, no BT init cost until requested.
+    g_bluetoothManager.begin(g_ui.scanQueue());
+    // Fase 55 - GATT walker (uses NimBLE central role, re-enabled via
+    // platformio.ini build_flags). Same "no BT init until asked" policy:
+    // begin() only wires the mutex and outQueue.
+    g_bleGattClient.begin(g_ui.scanQueue());
 
     // Non-blocking: if a network was saved from a previous WIFI SCAN
     // run, this kicks the connection off immediately at boot instead of
