@@ -78,6 +78,7 @@ enum class ScanSource : uint8_t {
     IotCred,   // IoT default-credential sweep (IotCredScanner - Fase 51)
     Spray,     // one-password-across-many-hosts spray (PasswordSprayManager - Fase 51)
     Bluetooth, // BLE inventory + fingerprinting (BluetoothManager - Fase 52)
+    BleGatt,   // BLE GATT walker: services/chars/DIS/posture (BleGattClient - Fase 53)
 };
 
 struct ScanNotification {

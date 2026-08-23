@@ -204,9 +204,14 @@ void BluetoothManager::onAdvertisedDevice(const void* nimbleDev) {
         }
     }
 
-    // HID advertised as service UUID - vendor hint only; feature #9 audit
-    // is deferred to a later BLE lot (needs GATT client, disabled here).
-    if (hasHid && bd.platformNote.isEmpty()) bd.platformNote = "HID (input device)";
+    // HID advertised as service UUID. Fase 52 flagged this in
+    // platformNote only; Fase 53 also promotes it to a first-class
+    // BleDevice::hidService flag so the HID dashboard can filter on
+    // it without re-scanning the platformNote string.
+    if (hasHid) {
+        bd.hidService = true;
+        if (bd.platformNote.isEmpty()) bd.platformNote = "HID (input device)";
+    }
 
     // --- Feature #10: WiFi correlation by vendor match ---
     correlateWithWifi(bd);
@@ -214,6 +219,7 @@ void BluetoothManager::onAdvertisedDevice(const void* nimbleDev) {
     // --- Merge into device table ---
     bool newDevice = false;
     bool newBeacon = false, newTracker = false, newCorrelated = false;
+    bool newRpaMatch = false, newHid = false;
     if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(80)) == pdTRUE) {
         BleDevice* existing = nullptr;
         for (auto& d : _devices) {
@@ -223,6 +229,10 @@ void BluetoothManager::onAdvertisedDevice(const void* nimbleDev) {
             }
         }
         if (existing) {
+            if (bd.hidService && !existing->hidService) {
+                existing->hidService = true;
+                newHid = true;
+            }
             existing->rssi = bd.rssi;
             existing->lastSeenMs = millis();
             existing->sightings++;
@@ -250,10 +260,23 @@ void BluetoothManager::onAdvertisedDevice(const void* nimbleDev) {
             bd.firstSeenMs = millis();
             bd.lastSeenMs = bd.firstSeenMs;
             bd.sightings = 1;
+            // #3 (Fase 53): for RPA addresses, look for an existing device
+            // with the same stable fingerprint (companyId + services +
+            // appearance + platformNote) - if we find one, this is likely
+            // the same physical device that has rotated its private
+            // address (RPAs rotate ~every 15 minutes per BT Core Spec).
+            if (bd.addrKind == AddrKind::Rpa) {
+                String match = findRpaMatchLocked(bd);
+                if (match.length()) {
+                    bd.sameAsAddr = match;
+                    newRpaMatch = true;
+                }
+            }
             newDevice = true;
             newBeacon = (bd.beacon != BeaconKind::None);
             newTracker = (bd.tracker != TrackerKind::None);
             newCorrelated = bd.correlatedWifiIp.length() > 0;
+            newHid = bd.hidService;
             _devices.push_back(bd);
         }
         xSemaphoreGive(_mutex);
@@ -262,6 +285,8 @@ void BluetoothManager::onAdvertisedDevice(const void* nimbleDev) {
     if (newBeacon) _beaconCount++;
     if (newTracker) _trackerCount++;
     if (newCorrelated) _correlatedCount++;
+    if (newRpaMatch) _rpaMatchedCount++;
+    if (newHid) _hidCount++;
 
     if (newDevice) {
         String log = "BLE: " + bd.addr;
@@ -485,4 +510,68 @@ void BluetoothManager::notify(ScanEventType type, uint8_t pct) {
     n.type = type;
     n.progressPct = pct;
     xQueueSend(_outQueue, &n, 0);
+}
+
+// --- Fase 53: RPA correlation + filtered views + address lookup ---
+
+String BluetoothManager::fingerprint(const BleDevice& d) {
+    // The stable half of a BLE advertiser's identity: what a hardware
+    // vendor's firmware puts in ads regardless of which RPA it's cycling
+    // right now. Empty when there's nothing distinguishing at all - a
+    // bare RPA with no manufacturer/service/appearance data can't be
+    // correlated back to anything specific and shouldn't be silently
+    // merged with unrelated devices.
+    String fp;
+    if (d.companyId) {
+        char b[8];
+        snprintf(b, sizeof(b), "co:%04X", (unsigned)d.companyId);
+        fp += b;
+    }
+    if (d.appearance) {
+        char b[10];
+        snprintf(b, sizeof(b), "|ap:%04X", (unsigned)d.appearance);
+        fp += b;
+    }
+    if (d.services.length()) fp += "|sv:" + d.services;
+    if (d.platformNote.length()) fp += "|pn:" + d.platformNote;
+    return fp;
+}
+
+String BluetoothManager::findRpaMatchLocked(const BleDevice& fresh) const {
+    String freshFp = fingerprint(fresh);
+    if (freshFp.length() < 4) return String();  // not enough to be distinctive
+    // Prefer the earliest observed match so a chain of RPAs collapses to
+    // one "root" address - lets the UI show "= <first-seen>" consistently
+    // across a session.
+    const BleDevice* best = nullptr;
+    for (const auto& d : _devices) {
+        if (d.addr == fresh.addr) continue;
+        if (d.addrKind != AddrKind::Rpa) continue;
+        if (fingerprint(d) != freshFp) continue;
+        if (!best || d.firstSeenMs < best->firstSeenMs) best = &d;
+    }
+    return best ? best->addr : String();
+}
+
+bool BluetoothManager::getFirstHid(size_t index, BleDevice& out) const {
+    if (!_mutex || xSemaphoreTake(_mutex, pdMS_TO_TICKS(80)) != pdTRUE) return false;
+    size_t seen = 0;
+    bool ok = false;
+    for (auto it = _devices.rbegin(); it != _devices.rend(); ++it) {
+        if (!it->hidService) continue;
+        if (seen == index) { out = *it; ok = true; break; }
+        seen++;
+    }
+    xSemaphoreGive(_mutex);
+    return ok;
+}
+
+bool BluetoothManager::findByAddr(const String& addr, BleDevice& out) const {
+    if (!_mutex || xSemaphoreTake(_mutex, pdMS_TO_TICKS(80)) != pdTRUE) return false;
+    bool ok = false;
+    for (const auto& d : _devices) {
+        if (d.addr == addr) { out = d; ok = true; break; }
+    }
+    xSemaphoreGive(_mutex);
+    return ok;
 }

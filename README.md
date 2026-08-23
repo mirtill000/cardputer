@@ -2906,6 +2906,95 @@ strategia è invertibile: rimuovere `h2zero/NimBLE-Arduino` da
 tutte le dipendenze BLE sono confinate in questi 4 file + il `begin()`
 in main + la voce di menu + il tag in ActivityStatus).
 
+### Fase 53: secondo lotto BLE — GATT walk, weak-pairing, control chars, HID, RPA correlation
+
+Le rimanenti 5 proposte BLE della conversazione. La Fase 52 aveva
+misurato 1.58 MB su 2.25 MB nel primo `pio run` reale, lasciando ~770
+KB di margine flash — abbondante per riattivare il ruolo **central**
+NimBLE (in `platformio.ini`, rimuovendo
+`CONFIG_BT_NIMBLE_ROLE_CENTRAL_DISABLED`) e aggiungere:
+
+- **#2 GATT service/characteristic enumeration** — `BleGattClient` fa
+  un walk one-shot verso un device scelto (address da
+  `BluetoothManager`): connect come central, enum servizi + caratteristiche
+  + proprietà (read/write/notify/indicate), read delle stringhe del
+  **Device Information Service** (0x180A: manufacturer/model/firmware/
+  serial/hardware). È il "banner grab" del mondo BLE. `BleGattScreen`
+  mostra i risultati.
+- **#6 Weak-pairing / GATT posture audit** — durante il walk, conta le
+  caratteristiche writable e quelle writable-senza-autenticazione
+  ("just works write endpoints"). Detection only: `BleGattClient` **non
+  scrive mai**, quel vincolo è enforced dal fatto che nessuna code path
+  chiama `ch->writeValue()`. Il chip `no-auth:N` nella `BleGattScreen`
+  è la sintesi (verde 0, ambra >0).
+- **#8 Known-device control-characteristic detection** — nuova tabella
+  `BleControlChars` (piccola, factory-doc, non enumeration di tutti gli
+  UUID del mondo) con (service, char) UUID noti per smart-home
+  actuator: Nordic UART, Xiaomi Mi (0xFE95), TP-Link Kasa (0xFE1C),
+  Tuya-family FFF0/FFF1, MagicHue FFB0/FFB1, lock family 0xFEE7. Il
+  walk confronta ogni char discovered; un match writable è il chip
+  `!CTRL:N/M` rosso nella `BleGattScreen`. **Detection only** — la
+  stessa linea di IoT Creds / Cred Audit: "il vettore è qui, verifica
+  manualmente", non si tocca fisicamente niente.
+- **#9 BLE HID detection** — già mezzo fatto in Fase 52 (parsing dei
+  service UUID nell'advertising), promosso ora a first-class:
+  `BleDevice::hidService` + contatore `hidCount()` + nuova schermata
+  `BleHidScreen` raggiungibile con `H` da BLE SCAN, che filtra solo
+  device che espongono il service 0x1812. `ENTER` su una riga apre il
+  GATT walk sul device — utile per confermare (per un keyboard BLE)
+  se il Report Map è world-readable.
+- **#3 RPA rotation correlation** — logica **offline** dentro
+  `BluetoothManager` (zero flash cost per librerie): `fingerprint()` +
+  `findRpaMatchLocked()` calcolano l'impronta stabile (companyId +
+  services + appearance + platformNote) e cercano, per ogni nuovo
+  device RPA, un predecessore RPA con stessa impronta. Se trovato,
+  `BleDevice::sameAsAddr` viene popolato con l'address della prima
+  osservazione. Best-effort per costruzione: collisioni di
+  fingerprint tra device distinti dello stesso vendor/modello
+  producono falsi positivi ("stesso device") — la stessa forma di
+  best-effort dei correlator MAC-vendor che il resto della codebase
+  già ha.
+
+**Gate**: `BleGattScreen` è dietro il consenso `credAuditEnabled`
+(stesso di CRED AUDIT / SERVICE AUDIT / IOT CREDS / SPRAY). Aprire una
+connessione GATT verso un device non-tuo non è la stessa cosa di
+leggerne l'advertising — il peer vede il connect, può loggarlo, in
+alcuni casi triggera un prompt di pairing. Consent inline `Y`, come
+gli altri.
+
+**Coesistenza col scanner**: `BleGattClient::run()` **stoppa**
+`BluetoothManager` per la durata del walk (NimBLE controller non fa
+scan + connect insieme su ESP32), poi lo riavvia. Nell'header
+compaiono `BG:GATT` (durante il walk) o `BG:BLE` (durante lo scan),
+mai entrambi insieme.
+
+**Wiring**:
+- `platformio.ini`: rimosso `CONFIG_BT_NIMBLE_ROLE_CENTRAL_DISABLED`.
+  Peripheral e broadcaster restano disabilitati (mai advertising, mai
+  GATT server), quindi le code paths di quelli restano non linkate.
+- `core/EventQueue.h`: nuovo `ScanSource::BleGatt`
+- `main.cpp`: `g_bleGattClient.begin()` dopo `g_bluetoothManager.begin()`
+- `BleScannerScreen`: nuove hotkey `H` (HID dashboard), `G` (GATT walk
+  sul device selezionato). Stat strip aggiornata con `hid:N`.
+- `BleDetailScreen`: nuovo tasto `G` per GATT walk, mostra riga
+  `same-as:` (feature #3) e riga `HID:` quando presenti.
+- `ui/ActivityStatus.cpp`: nuovo tag `BG:GATT` durante il walk.
+
+**Fuori scope** (non era nelle 10, non aggiungiamo):
+- Persistence-based tracker detection (Fase 52 già segnala tracker via
+  pattern advertising; una detection "questo tracker sta rimanendo
+  vicino a me" richiede GPS o assunzione di movimento e non è un lotto
+  BLE)
+- Scrittura su caratteristiche note (`ble_control_chars` è solo
+  detection; l'actuation è FUORI dello scope per costruzione).
+
+Se dopo `pio run` la Fase 53 sfora il footprint, il rollback è
+chirurgico anche qui: rimuovere `BleGattClient` + le 2 nuove screen +
+`BleControlChars` + i puntamenti di `BleScannerScreen`/`BleDetailScreen`
+e il `begin()` in main + riattivare `CONFIG_BT_NIMBLE_ROLE_CENTRAL_DISABLED`
+in `platformio.ini`. La logica RPA (feature #3) resta anche in caso di
+rollback — non dipende da NimBLE central.
+
 ## Compilare e flashare
 
 ```

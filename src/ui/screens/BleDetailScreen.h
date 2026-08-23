@@ -19,7 +19,7 @@ public:
 
     const char* title() const override { return "BLE-DET"; }
     const char* helpText() const override {
-        return "BLE DETAIL\n\nFull parsing for one device:\naddr / vendor / continuity /\nbeacon / tracker / WiFi\ncorrelation.\nDEL: back";
+        return "BLE DETAIL\n\nFull parsing for one device.\nG: GATT walk (gated)\nDEL: back";
     }
 
 private:

@@ -1,6 +1,8 @@
 #include "BleScannerScreen.h"
 #include "BleDetailScreen.h"
 #include "BleTrackerScreen.h"
+#include "BleHidScreen.h"
+#include "BleGattScreen.h"
 #include "../UiManager.h"
 #include "../Theme.h"
 #include "../Chrome.h"
@@ -44,6 +46,14 @@ void BleScannerScreen::onKey(UiKey key, char ch) {
         if (_selected + 1 < g_bluetoothManager.deviceCount()) _selected++;
     } else if (key == UiKey::Char && (ch == 't' || ch == 'T')) {
         g_ui.pushScreen(&BleTrackerScreen::instance());
+    } else if (key == UiKey::Char && (ch == 'h' || ch == 'H')) {
+        g_ui.pushScreen(&BleHidScreen::instance());
+    } else if (key == UiKey::Char && (ch == 'g' || ch == 'G')) {
+        BluetoothManager::BleDevice d;
+        if (g_bluetoothManager.get(_selected, d)) {
+            BleGattScreen::instance().setTarget(d.addr);
+            g_ui.pushScreen(&BleGattScreen::instance());
+        }
     } else if (key == UiKey::Char && (ch == 's' || ch == 'S')) {
         if (g_bluetoothManager.isRunning()) g_bluetoothManager.stop();
         else g_bluetoothManager.start();
@@ -92,12 +102,17 @@ void BleScannerScreen::draw(M5Canvas& gfx) {
     gfx.print(" W:");
     gfx.setTextColor((g_bluetoothManager.correlatedCount() > 0) ? theme::MAGENTA : theme::GREY, theme::BG);
     gfx.print((unsigned)g_bluetoothManager.correlatedCount());
+    // Fase 53 - RPA rotation matches + HID device counters.
+    gfx.setTextColor(theme::GREY, theme::BG);
+    gfx.print(" hid:");
+    gfx.setTextColor((g_bluetoothManager.hidCount() > 0) ? theme::MAGENTA : theme::GREY, theme::BG);
+    gfx.print((unsigned)g_bluetoothManager.hidCount());
 
     drawList(gfx, 30);
 
     gfx.setTextColor(theme::GREY, theme::BG);
     gfx.setCursor(4, gfx.height() - 9);
-    gfx.print(running ? "ENTER:detail T:trk S:stop ?:help" : "ENTER:detail T:trk S:start ?:help");
+    gfx.print(running ? "ENT:det T:trk H:hid G:gatt S:stop" : "ENT:det T:trk H:hid G:gatt S:start");
 }
 
 void BleScannerScreen::drawList(M5Canvas& gfx, int16_t top) {

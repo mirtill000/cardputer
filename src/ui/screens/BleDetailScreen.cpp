@@ -1,4 +1,5 @@
 #include "BleDetailScreen.h"
+#include "BleGattScreen.h"
 #include "../UiManager.h"
 #include "../Theme.h"
 #include "../Chrome.h"
@@ -9,7 +10,14 @@ BleDetailScreen& BleDetailScreen::instance() {
     return s;
 }
 
-void BleDetailScreen::onKey(UiKey key, char /*ch*/) {
+void BleDetailScreen::onKey(UiKey key, char ch) {
+    if (key == UiKey::Char && (ch == 'g' || ch == 'G')) {
+        // Fase 53 - open the GATT walk against this device (gated
+        // inside BleGattScreen itself).
+        BleGattScreen::instance().setTarget(_addr);
+        g_ui.pushScreen(&BleGattScreen::instance());
+        return;
+    }
     if (key == UiKey::Back) g_ui.popScreen();
 }
 
@@ -87,6 +95,15 @@ void BleDetailScreen::draw(M5Canvas& gfx) {
         row(gfx, y, "wifi:", d.correlatedWifiIp, theme::MAGENTA);
         y += 9;
     }
+    // Fase 53 - RPA rotation correlation.
+    if (d.sameAsAddr.length()) {
+        row(gfx, y, "same-as:", d.sameAsAddr, theme::MAGENTA);
+        y += 9;
+    }
+    if (d.hidService) {
+        row(gfx, y, "HID:", String("yes - input device"), theme::AMBER);
+        y += 9;
+    }
     // Sightings + first/last seen (compact).
     char sb[32];
     uint32_t ageSec = (millis() - d.lastSeenMs) / 1000;
@@ -95,5 +112,5 @@ void BleDetailScreen::draw(M5Canvas& gfx) {
 
     gfx.setTextColor(theme::GREY, theme::BG);
     gfx.setCursor(4, gfx.height() - 9);
-    gfx.print("DEL:back  ?:help");
+    gfx.print("G:GATT walk  DEL:back  ?:help");
 }

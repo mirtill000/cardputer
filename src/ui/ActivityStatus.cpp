@@ -32,6 +32,7 @@
 #include "../scan/OsFingerprint.h"
 #include "../scan/VlanHopProbe.h"
 #include "../scan/BluetoothManager.h"
+#include "../scan/BleGattClient.h"
 #include <cstdio>
 #include <cstring>
 
@@ -93,6 +94,10 @@ size_t buildTaskTable(TaskEntry* out, size_t cap) {
     // above compete for. Still worth surfacing so the user knows the
     // BLE stack is up.
     add(g_bluetoothManager.isRunning(), "BLE", "BLE SCAN", false);
+    // Fase 53 - GATT walker also takes the BLE controller (it pauses
+    // the scanner for the duration of the connect). Surfacing it too
+    // lets the user see when a walk is holding the radio.
+    add(g_bleGattClient.isRunning(), "GATT", "BLE GATT WALK", false);
     return n;
 }
 }  // namespace

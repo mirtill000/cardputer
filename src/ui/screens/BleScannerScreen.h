@@ -21,7 +21,7 @@ public:
 
     const char* title() const override { return "BLE"; }
     const char* helpText() const override {
-        return "BLE SCAN\n\nPassive BLE inventory + vendor\n+ tracker + WiFi correlation.\nENTER: detail   T: trackers\nS: start/stop\nDEL: back";
+        return "BLE SCAN\n\nPassive BLE inventory + vendor\n+ tracker + WiFi correlation.\nENTER: detail   T: trackers\nH: HID devices  G: GATT walk\nS: start/stop   DEL: back";
     }
 
 private:

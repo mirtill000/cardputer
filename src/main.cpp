@@ -45,6 +45,7 @@
 #include "scan/IotCredScanner.h"
 #include "scan/PasswordSprayManager.h"
 #include "scan/BluetoothManager.h"
+#include "scan/BleGattClient.h"
 #include "ui/screens/BleScannerScreen.h"
 #include "net/WifiManager.h"
 #include "net/CaptivePortalDetector.h"
@@ -176,6 +177,10 @@ void setup() {
     // BluetoothManager::run) - this call just creates the idle task
     // and mutex, no BT init cost until requested.
     g_bluetoothManager.begin(g_ui.scanQueue());
+    // Fase 53 - GATT walker (uses NimBLE central role, re-enabled via
+    // platformio.ini build_flags). Same "no BT init until asked" policy:
+    // begin() only wires the mutex and outQueue.
+    g_bleGattClient.begin(g_ui.scanQueue());
 
     // Non-blocking: if a network was saved from a previous WIFI SCAN
     // run, this kicks the connection off immediately at boot instead of
