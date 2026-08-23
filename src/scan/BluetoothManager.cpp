@@ -3,6 +3,8 @@
 #include "ScanManager.h"
 #include "../core/Types.h"
 #include <NimBLEDevice.h>
+#include <esp_bt.h>   // esp_bt_controller_mem_release: free the Classic-BT
+                       // controller RAM we never use (Fase 60 - ~30KB back)
 #include <cstdio>
 #include <cstring>
 #include <new>       // std::bad_alloc caught below in the push_back path
@@ -87,16 +89,30 @@ static BleScanCallbacks s_scanCallbacks;
 void BluetoothManager::begin(QueueHandle_t outQueue) {
     _mutex = xSemaphoreCreateMutex();
     _outQueue = outQueue;
-    // Fase 59: pre-reserve the full capacity at boot, when the heap is
-    // freshest and least fragmented. Without this, push_back grows the
-    // vector geometrically (2, 4, 8, ..., 64) and EACH resize allocates
-    // a new contiguous block and copies every existing BleDevice into
-    // it - each copy allocates ~10 Strings for the fields. Under BLE
-    // load ilaria's hardware hit std::bad_alloc during that grow-copy
-    // path (backtrace: operator new -> _M_realloc_insert -> push_back
-    // -> onAdvertisedDevice -> NimBLE callback -> abort). Reserving up
-    // front means every push_back below is O(1) and only allocates the
-    // Strings of the new device, not a copy of the entire history.
+
+    // Fase 60: give NimBLE the heap headroom it needs.
+    //
+    // Ilaria's second BLE panic was ESP_ERR_NO_MEM inside
+    // esp_nimble_hci_init() - NimBLE couldn't find the ~30 KB of
+    // contiguous heap it needs for its BT controller state. The standard
+    // fix on ESP32 for BLE-only projects is to release the Classic-BT
+    // controller's static heap partition, which nothing here ever uses
+    // (the Cardputer's radio does BLE + WiFi, never Bluetooth Classic /
+    // BR/EDR). Freed once, permanently. Must be called before any
+    // NimBLE init - here in begin(), on the main setup task at boot,
+    // when the ESP-IDF BT controller has not been brought up yet, is
+    // the safe spot.
+    esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT);
+
+    // Fase 59: pre-reserve the full BleDevice capacity at boot, when
+    // the heap is freshest and least fragmented. Without this,
+    // push_back grows the vector geometrically (2, 4, 8, ..., 64) and
+    // EACH resize allocates a new contiguous block and copies every
+    // existing BleDevice into it - each copy allocates ~10 Strings for
+    // the fields. Under BLE load ilaria's hardware hit std::bad_alloc
+    // during that grow-copy path. Reserving up front means every
+    // push_back below is O(1) and only allocates the Strings of the
+    // new device, not a copy of the entire history.
     _devices.reserve(kMaxDevices);
     // Permanent-idle-task pattern (same shape as CdpLldpSniffer /
     // PassiveHostDiscovery): the task lives forever, start()/stop()
