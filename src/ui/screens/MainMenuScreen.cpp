@@ -43,6 +43,14 @@ void MainMenuScreen::onKey(UiKey key, char /*ch*/) {
             }
             break;
         }
+        case UiKey::Back:
+            // Fase 56: MainMenuScreen used to be the top-level screen
+            // (BootScreen transitioned directly to it), which is why DEL
+            // was a no-op here. Since Fase 56 it's the WIFI TOOLS submenu
+            // pushed on top of HomeScreen, so DEL needs to pop us back to
+            // HOME - same behavior BluetoothToolsMenuScreen already has.
+            g_ui.popScreen();
+            break;
         default:
             break;
     }
