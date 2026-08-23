@@ -114,15 +114,20 @@ public:
     // walk starting parameters (name for logging, etc.).
     bool findByAddr(const String& addr, BleDevice& out) const;
 
+    // Public only because it's the entry point from the NimBLE scan
+    // callback bridge (BleScanCallbacks in BluetoothManager.cpp) - not
+    // intended for direct calls from application code. Kept out of a
+    // friend declaration on purpose: the bridge class is a small file-
+    // local implementation detail defined in the .cpp, and hoisting it
+    // into this header just to friend it would be more coupling, not
+    // less.
+    void onAdvertisedDevice(const void* nimbleDev);
+
 private:
     static constexpr size_t kMaxDevices = 60;
 
     static void taskEntry(void* arg);
     void run();
-
-    // Called from the NimBLE callback context - keeps parsing and mutex
-    // work self-contained here so the callback can stay a thin adapter.
-    void onAdvertisedDevice(const void* nimbleDev);
 
     // Parsing helpers (kept in the .cpp so nimble types don't leak into
     // this header).

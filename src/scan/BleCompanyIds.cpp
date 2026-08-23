@@ -1,4 +1,5 @@
 #include "BleCompanyIds.h"
+#include <cstddef>  // size_t used by kCount below - not transitively pulled in through the header on gcc 8.4
 
 namespace ble_company_ids {
 
