@@ -32,8 +32,6 @@
 #include "../scan/OsFingerprint.h"
 #include "../scan/VlanHopProbe.h"
 #include "../scan/EapIdentityHarvester.h"
-#include "../scan/BluetoothManager.h"
-#include "../scan/BleGattClient.h"
 #include <cstdio>
 #include <cstring>
 
@@ -89,17 +87,9 @@ size_t buildTaskTable(TaskEntry* out, size_t cap) {
     add(g_pmkidSweepManager.isRunning(), "PSWP", "PMKID SWEEP", false);
     add(g_playbookRunner.isRunning(), "PBK", "PLAYBOOK", false);
     add(g_nameSpoofManager.isRunning(), "NSPF", "NAME SPOOF", false);
-    // Fase 52 - BLE observer. Not marked isRf: BT and WiFi share the
-    // 2.4 GHz radio via the SoC coex layer (both can run concurrently
-    // with degraded throughput), it's not the same "one promiscuous
-    // callback owns the WiFi rx path" resource the other RF entries
-    // above compete for. Still worth surfacing so the user knows the
-    // BLE stack is up.
-    add(g_bluetoothManager.isRunning(), "BLE", "BLE SCAN", false);
-    // Fase 53 - GATT walker also takes the BLE controller (it pauses
-    // the scanner for the duration of the connect). Surfacing it too
-    // lets the user see when a walk is holding the radio.
-    add(g_bleGattClient.isRunning(), "GATT", "BLE GATT WALK", false);
+    // BLE + GATT activity entries were here for the BLE lot (Fase 54/55);
+    // removed in Fase 61 rollback along with the BluetoothManager and
+    // BleGattClient managers themselves.
     return n;
 }
 }  // namespace

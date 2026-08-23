@@ -3121,6 +3121,49 @@ qualunque submenu, `DEL` torna a HOME. Tutte le hotkey pre-esistenti
 delle schermate a valle continuano a funzionare (S/T/Q/W in NETWORK
 SCAN, G/T/H in BLE SCAN, ecc.).
 
+### Fase 61: rollback completo delle funzionalità Bluetooth
+
+Dopo tre panic consecutivi in produzione sull'hardware reale — prima
+`std::bad_alloc` da `push_back` nel callback NimBLE, poi `ESP_ERR_NO_MEM`
+dentro `esp_nimble_hci_init()` anche dopo aver rilasciato lo heap del
+Classic-BT — l'utente ha chiesto di fermarsi. Meglio togliere tutto lo
+strato BLE prima di continuare a inseguire un fix ricorsivo che poteva
+esporre altri problemi ancora più a valle.
+
+Rimossi:
+- Manager: `BluetoothManager`, `BleGattClient`, `BleCompanyIds`,
+  `BleControlChars` (4 file `.h`+`.cpp` = 8 file)
+- Screen BLE: `BleScannerScreen`, `BleDetailScreen`, `BleTrackerScreen`,
+  `BleGattScreen`, `BleHidScreen` (5 * 2 = 10 file)
+- Screen introdotti solo per lo split HOME WIFI/BT: `HomeScreen`,
+  `AboutScreen`, `BluetoothToolsMenuScreen` (3 * 2 = 6 file)
+- `lib_deps`: rimosso `h2zero/NimBLE-Arduino @ ^1.4.1`
+- `build_flags`: rimossi i `CONFIG_BT_NIMBLE_ROLE_*_DISABLED`
+- `EventQueue.h`: rimossi `ScanSource::Bluetooth` e `::BleGatt`
+- `main.cpp`: rimossi include + `begin()` di BLE, ripristinato
+  `MainMenuScreen` come entry point diretto di `BootScreen` con 12 voci
+  (11 wifi + SETTINGS di nuovo tra le voci di menu)
+- `ActivityStatus.cpp`: rimossi tag `BLE` / `GATT`
+- `MainMenuScreen`: `title() "MENU"`, header `NETRUNNER` di nuovo, DEL
+  ridiventa no-op (era stato aggiunto in Fase 57 per fare pop verso HOME)
+- `BootScreen`: replaceScreen a `MainMenuScreen`
+
+**Impatto netto**: la codebase è ora un firmware WiFi-only (le fasi 51+
+"IOT CREDS + PASSWORD SPRAY" restano perché non hanno mai avuto una
+dipendenza BLE). Il file mockup HOME WIFI/BT split che l'utente aveva
+disegnato resta valido come punto di partenza per una futura re-add,
+ma il codice UI è tornato al flusso di main-menu piatto pre-Fase 54.
+
+**Cosa si mantiene per un eventuale futuro re-add**: la strategia di
+"rimozione chirurgica" documentata già in Fase 54/55 (tutte le
+dipendenze BLE confinate in file dedicati + wire minimo in 6 file
+esistenti) ha reso questo rollback un patch relativamente pulito.
+Rifare BLE nel futuro vuol dire riaggiungere gli stessi 24 file
+cancellati qui, ma con la lezione imparata: NimBLE 1.4 + arduino-esp32
+2.0.17 richiede attenzione seria alla memoria (release Classic-BT + no
+init/deinit cycle + heap headroom) e va misurato con `pio run` PRIMA di
+sviluppare la superficie utente completa.
+
 ## Compilare e flashare
 
 ```

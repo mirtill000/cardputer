@@ -43,14 +43,9 @@ void MainMenuScreen::onKey(UiKey key, char /*ch*/) {
             }
             break;
         }
-        case UiKey::Back:
-            // Fase 56: MainMenuScreen used to be the top-level screen
-            // (BootScreen transitioned directly to it), which is why DEL
-            // was a no-op here. Since Fase 56 it's the WIFI TOOLS submenu
-            // pushed on top of HomeScreen, so DEL needs to pop us back to
-            // HOME - same behavior BluetoothToolsMenuScreen already has.
-            g_ui.popScreen();
-            break;
+        // Fase 61 rollback: MainMenuScreen is again the top-level screen
+        // (no HomeScreen above it to pop back to). DEL is a no-op here,
+        // same as pre-Fase 56.
         default:
             break;
     }
@@ -58,7 +53,7 @@ void MainMenuScreen::onKey(UiKey key, char /*ch*/) {
 
 void MainMenuScreen::draw(M5Canvas& gfx) {
     gfx.fillScreen(theme::BG);
-    chrome::drawHeader(gfx, "WIFI TOOLS");
+    chrome::drawHeader(gfx, "NETRUNNER");
 
     // kRowH sized so a full window of rows never runs into the status
     // bar below: kTop + 7*kRowH = 22 + 98 = 120, status bar sits at
