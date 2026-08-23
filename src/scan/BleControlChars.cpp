@@ -1,4 +1,5 @@
 #include "BleControlChars.h"
+#include <cstddef>  // size_t for kCount - same reason as BleCompanyIds.cpp
 
 namespace ble_control_chars {
 
