@@ -5,6 +5,8 @@
 #include <NimBLEDevice.h>
 #include <cstdio>
 #include <cstring>
+#include <new>       // std::bad_alloc caught below in the push_back path
+#include <utility>   // std::move for the same push_back
 
 BluetoothManager g_bluetoothManager;
 
@@ -85,6 +87,17 @@ static BleScanCallbacks s_scanCallbacks;
 void BluetoothManager::begin(QueueHandle_t outQueue) {
     _mutex = xSemaphoreCreateMutex();
     _outQueue = outQueue;
+    // Fase 59: pre-reserve the full capacity at boot, when the heap is
+    // freshest and least fragmented. Without this, push_back grows the
+    // vector geometrically (2, 4, 8, ..., 64) and EACH resize allocates
+    // a new contiguous block and copies every existing BleDevice into
+    // it - each copy allocates ~10 Strings for the fields. Under BLE
+    // load ilaria's hardware hit std::bad_alloc during that grow-copy
+    // path (backtrace: operator new -> _M_realloc_insert -> push_back
+    // -> onAdvertisedDevice -> NimBLE callback -> abort). Reserving up
+    // front means every push_back below is O(1) and only allocates the
+    // Strings of the new device, not a copy of the entire history.
+    _devices.reserve(kMaxDevices);
     // Permanent-idle-task pattern (same shape as CdpLldpSniffer /
     // PassiveHostDiscovery): the task lives forever, start()/stop()
     // toggle the internal running flag.
@@ -297,12 +310,26 @@ void BluetoothManager::onAdvertisedDevice(const void* nimbleDev) {
                     newRpaMatch = true;
                 }
             }
-            newDevice = true;
             newBeacon = (bd.beacon != BeaconKind::None);
             newTracker = (bd.tracker != TrackerKind::None);
             newCorrelated = bd.correlatedWifiIp.length() > 0;
             newHid = bd.hidService;
-            _devices.push_back(bd);
+            // Fase 59: reserved capacity in begin() means push_back doesn't
+            // reallocate the vector. It still allocates String storage for
+            // the new BleDevice, though - if the heap is exhausted (BT +
+            // WiFi both busy) that can throw bad_alloc. Wrapping in try/
+            // catch drops the ad silently instead of aborting the whole
+            // firmware (backtrace: bad_alloc -> terminate -> abort was
+            // ilaria's crash before the reserve() up top). std::move
+            // avoids one round of String copies vs the old push_back(bd).
+            try {
+                _devices.push_back(std::move(bd));
+                newDevice = true;
+            } catch (const std::bad_alloc&) {
+                // Silently drop this advertisement - the device will
+                // reappear on the next ad it broadcasts, when the heap
+                // may be less pressured.
+            }
         }
         xSemaphoreGive(_mutex);
     }
