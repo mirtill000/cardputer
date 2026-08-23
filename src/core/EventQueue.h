@@ -75,10 +75,11 @@ enum class ScanSource : uint8_t {
     NameSpoof,
     OsFingerprint,
     VlanHop,
-    IotCred,   // IoT default-credential sweep (IotCredScanner - Fase 51)
-    Spray,     // one-password-across-many-hosts spray (PasswordSprayManager - Fase 51)
-    Bluetooth, // BLE inventory + fingerprinting (BluetoothManager - Fase 52)
-    BleGatt,   // BLE GATT walker: services/chars/DIS/posture (BleGattClient - Fase 53)
+    EapIdentity,
+    IotCred,   // IoT default-credential sweep (IotCredScanner - Fase 53)
+    Spray,     // one-password-across-many-hosts spray (PasswordSprayManager - Fase 53)
+    Bluetooth, // BLE inventory + fingerprinting (BluetoothManager - Fase 54)
+    BleGatt,   // BLE GATT walker: services/chars/DIS/posture (BleGattClient - Fase 55)
 };
 
 struct ScanNotification {

@@ -77,9 +77,13 @@ private:
     uint32_t _lastInputMs = 0;
     bool _dimmed = false;
 
-    // Low-battery one-shot alert (with hysteresis) - see run().
+    // Low-battery alert (with hysteresis) - see run(). _lastBattLevel is
+    // the level sampled on the ~5s cadence, reused by the per-frame
+    // critical-battery banner so the ADC/I2C read isn't repeated 30x/sec
+    // (-1 = no battery / unknown).
     bool _lowBattWarned = false;
     uint32_t _lastBattCheckMs = 0;
+    int _lastBattLevel = -1;
 
     // Global '?' help overlay: toggled in handleKeyEvent (unless a text
     // field owns the keyboard), drawn over the active screen, dismissed by

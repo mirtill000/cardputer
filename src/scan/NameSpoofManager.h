@@ -20,12 +20,25 @@
 // RISK / SCOPE: this proves - and logs - that a host on the network
 // accepted a forged name-resolution answer from a device it never
 // asked to be authoritative for anything. That's a real, reportable
-// pentest finding on its own. What this deliberately does NOT do: run
-// a fake SMB/HTTP server behind the poisoned name to actually harvest
-// an NTLMv2 handshake (the way Responder's downstream capture does) -
-// building a correct-enough SMB2 NEGOTIATE/SESSION_SETUP responder is
-// a large, separate piece of work and out of scope for this pass. See
-// README's "Limiti noti" for the full list of cuts.
+// pentest finding on its own.
+//
+// WPAD MODE (opt-in via startWithWpad()): closes half the scope cut
+// this class documented in its original pass. When a Windows client
+// looks up the name "wpad" (Web Proxy Auto-Discovery), NAME SPOOF's
+// LLMNR/NBT-NS answer already points it at this device — but with
+// nothing listening on HTTP the client just gets a connection-refused
+// and abandons WPAD. WPAD mode stands up a tiny TCP/80 server for the
+// duration of the session that answers ANY HTTP request with a minimal
+// wpad.dat / proxy.pac (JavaScript "return DIRECT") — deliberately
+// DIRECT, never a proxy address, so this test never redirects the
+// victim's traffic through anything. Each accepted GET is logged as
+// the real proof that the WPAD poisoning worked end-to-end (name
+// resolution + HTTP retrieval), not just half of it.
+//
+// STILL deliberately does NOT do (unchanged from the original pass):
+// stand up a fake SMB responder to capture an NTLMv2 handshake behind
+// a poisoned name, or actually proxy any victim traffic. Those are
+// separate, larger pieces of work.
 class NameSpoofManager {
 public:
     struct LogEntry {
@@ -37,13 +50,17 @@ public:
 
     // Starts poisoning for at most `durationS` seconds (hard-capped at
     // kMaxDurationS regardless of what's asked for). No-op if already
-    // running.
-    bool start(uint16_t durationS);
+    // running. `wpadEnabled` also opens a TCP/80 wpad.dat server for
+    // the duration of the session - see WPAD MODE in the class comment
+    // for what that does and doesn't do.
+    bool start(uint16_t durationS, bool wpadEnabled);
     void stop();
     bool isRunning() const { return _running; }
+    bool isWpadEnabled() const { return _wpadEnabled; }
 
     uint32_t secondsRemaining() const;
     uint32_t poisonedCount() const { return _poisoned; }
+    uint32_t wpadServedCount() const { return _wpadServed; }
 
     size_t logCount() const;
     bool getLogEntry(size_t index, LogEntry& out) const;  // most-recent-first
@@ -68,9 +85,11 @@ private:
     QueueHandle_t _outQueue = nullptr;
 
     std::atomic<bool> _running{false};
+    bool _wpadEnabled = false;
     uint32_t _startMs = 0;
     uint32_t _durationMs = 0;
     std::atomic<uint32_t> _poisoned{0};
+    std::atomic<uint32_t> _wpadServed{0};
 };
 
 extern NameSpoofManager g_nameSpoofManager;

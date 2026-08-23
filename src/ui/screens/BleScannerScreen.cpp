@@ -102,7 +102,7 @@ void BleScannerScreen::draw(M5Canvas& gfx) {
     gfx.print(" W:");
     gfx.setTextColor((g_bluetoothManager.correlatedCount() > 0) ? theme::MAGENTA : theme::GREY, theme::BG);
     gfx.print((unsigned)g_bluetoothManager.correlatedCount());
-    // Fase 53 - RPA rotation matches + HID device counters.
+    // Fase 55 - RPA rotation matches + HID device counters.
     gfx.setTextColor(theme::GREY, theme::BG);
     gfx.print(" hid:");
     gfx.setTextColor((g_bluetoothManager.hidCount() > 0) ? theme::MAGENTA : theme::GREY, theme::BG);

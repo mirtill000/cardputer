@@ -3,7 +3,7 @@
 #include "Screen.h"
 
 // "ABOUT" - firmware version, hardware target, project short blurb,
-// credits. Reached with 'A' from HomeScreen (Fase 54). Read-only.
+// credits. Reached with 'A' from HomeScreen (Fase 56). Read-only.
 class AboutScreen : public Screen {
 public:
     static AboutScreen& instance();

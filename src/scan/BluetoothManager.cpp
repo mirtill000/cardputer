@@ -204,8 +204,8 @@ void BluetoothManager::onAdvertisedDevice(const void* nimbleDev) {
         }
     }
 
-    // HID advertised as service UUID. Fase 52 flagged this in
-    // platformNote only; Fase 53 also promotes it to a first-class
+    // HID advertised as service UUID. Fase 54 flagged this in
+    // platformNote only; Fase 55 also promotes it to a first-class
     // BleDevice::hidService flag so the HID dashboard can filter on
     // it without re-scanning the platformNote string.
     if (hasHid) {
@@ -260,7 +260,7 @@ void BluetoothManager::onAdvertisedDevice(const void* nimbleDev) {
             bd.firstSeenMs = millis();
             bd.lastSeenMs = bd.firstSeenMs;
             bd.sightings = 1;
-            // #3 (Fase 53): for RPA addresses, look for an existing device
+            // #3 (Fase 55): for RPA addresses, look for an existing device
             // with the same stable fingerprint (companyId + services +
             // appearance + platformNote) - if we find one, this is likely
             // the same physical device that has rotated its private
@@ -512,7 +512,7 @@ void BluetoothManager::notify(ScanEventType type, uint8_t pct) {
     xQueueSend(_outQueue, &n, 0);
 }
 
-// --- Fase 53: RPA correlation + filtered views + address lookup ---
+// --- Fase 55: RPA correlation + filtered views + address lookup ---
 
 String BluetoothManager::fingerprint(const BleDevice& d) {
     // The stable half of a BLE advertiser's identity: what a hardware

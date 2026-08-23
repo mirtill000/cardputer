@@ -3,7 +3,7 @@
 #include "Screen.h"
 #include <cstdint>
 
-// "NETRUNNER" home screen (Fase 54): the entry point BootScreen hands off
+// "NETRUNNER" home screen (Fase 56): the entry point BootScreen hands off
 // to, replacing the old flat top-level list. Three big navigable tiles -
 // WIFI TOOLS on the left, BLUETOOTH TOOLS on the right, TERMINAL across
 // the bottom - plus footer hotkeys for SETTINGS and ABOUT. Same tile

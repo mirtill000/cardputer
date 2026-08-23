@@ -3,7 +3,7 @@
 #include "Screen.h"
 #include <cstddef>
 
-// "BLE SCAN" - inventory dashboard for the Fase 52 BluetoothManager.
+// "BLE SCAN" - inventory dashboard for the Fase 54 BluetoothManager.
 // Each row: addr / RSSI / vendor / short vendor/beacon/tracker/HID tag.
 // A "W" marker on the right edge means "vendor also seen on the WiFi
 // host table" (correlation feature #10).

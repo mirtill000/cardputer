@@ -47,7 +47,21 @@ public:
 private:
     static void taskEntry(void* arg);
     void run();
+    // Translates the current physical keyboard state into a UiKeyEvent;
+    // returns false if nothing pressed maps to a UI key. Shared by the
+    // initial-press and the auto-repeat paths in run().
+    bool decodeKey(UiKeyEvent& ev) const;
+    // True only for navigation arrows - the keys that auto-repeat while held.
+    static bool isRepeatable(const UiKeyEvent& ev);
 
     QueueHandle_t _queue = nullptr;
     std::atomic<bool> _textEntryMode{false};
+
+    // Auto-repeat state: while a repeatable (navigation) key stays held
+    // with no new change event, re-emit it after kRepeatInitialMs, then
+    // every kRepeatIntervalMs - so holding an arrow scrolls instead of
+    // needing one press per row. See run().
+    UiKeyEvent _repeatEv;
+    bool _repeatActive = false;
+    uint32_t _nextRepeatMs = 0;
 };

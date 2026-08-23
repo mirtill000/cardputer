@@ -8,7 +8,7 @@
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
 
-// One-shot GATT client walker for the Fase 53 BLE lot. Given the address
+// One-shot GATT client walker for the Fase 55 BLE lot. Given the address
 // of a BLE device already inventoried by BluetoothManager, it:
 //   #2 - connects as CENTRAL, walks services + characteristics + their
 //        properties (read/write/notify/indicate + auth requirements),

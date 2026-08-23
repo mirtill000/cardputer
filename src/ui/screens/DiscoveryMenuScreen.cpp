@@ -14,6 +14,7 @@
 #include "DeauthWatchScreen.h"
 #include "OsFingerprintScreen.h"
 #include "VlanHopScreen.h"
+#include "EapIdentityScreen.h"
 #include "IotCredScreen.h"
 #include "PasswordSprayScreen.h"
 #include "../UiManager.h"
@@ -45,6 +46,7 @@ Screen* gNtlmHttp() { return &NtlmHttpScreen::instance(); }
 Screen* gGuardMode() { return &DeauthWatchScreen::instance(); }
 Screen* gOsFingerprint() { return &OsFingerprintScreen::instance(); }
 Screen* gVlanHop() { return &VlanHopScreen::instance(); }
+Screen* gEapIdentity() { return &EapIdentityScreen::instance(); }
 Screen* gIotCred() { return &IotCredScreen::instance(); }
 Screen* gSpray() { return &PasswordSprayScreen::instance(); }
 
@@ -116,7 +118,8 @@ const DItem kItems[] = {
     {"GUARD MODE", gGuardMode, nullptr},
     {"OS FINGERPRINT", gOsFingerprint, nullptr},
     {"VLAN HOP", gVlanHop, nullptr},
-    // Fase 51 - offensive credential tools. Both attempt REAL logins and
+    {"EAP IDENTITY", gEapIdentity, nullptr},
+    // Fase 53 - offensive credential tools. Both attempt REAL logins and
     // are gated by AppConfig::credAuditEnabled (same consent as CRED
     // AUDIT / SERVICE AUDIT / IOT/OT etc). IOT CREDS wants NETWORK SCAN
     // + PORT SCAN to have found HTTP/Telnet hosts to fingerprint;

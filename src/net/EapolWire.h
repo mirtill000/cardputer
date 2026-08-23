@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Arduino.h>
 #include <cstddef>
 #include <cstdint>
 
@@ -60,5 +61,30 @@ struct Classification {
 // layer, so a frame marked protected here is either mis-detected or
 // simply unreadable either way.
 Classification classify(const uint8_t* p, uint16_t len);
+
+// EAP-Response/Identity extraction — a DIFFERENT EAPOL type from the
+// EAPOL-Key handshake classify() above (EAPOL Type 0 = EAP-Packet, not
+// Type 3 = Key). During a WPA-Enterprise (802.1X) association the very
+// first EAP exchange carries the supplicant's "outer" identity in the
+// CLEAR, before the PEAP/TTLS TLS tunnel is negotiated — a username
+// like "user@realm", "DOMAIN\user", or an anonymous placeholder
+// ("anonymous@realm") the operator chose. Reading it is the same
+// category of passive over-the-air recon as EapolWire's PMKID-presence
+// check or BeaconProbeSniffer's probe-request SSIDs: a value the client
+// broadcasts unencrypted by the ordinary operation of 802.1X, visible
+// to any receiver on the AP's channel. This is a classic, reportable
+// enterprise-WiFi audit finding (a network disclosing real usernames in
+// the clear before the tunnel), exactly what Wireshark's own EAP
+// dissector shows for free from the same bytes.
+//
+// Fills `identityOut` (the cleartext identity string, non-printable
+// bytes dropped) and `supplicantMac` (the client that sent it) and
+// returns true ONLY for a well-formed EAP-Response/Identity with a
+// non-empty identity. Everything else — EAPOL-Key frames, EAP-Request
+// (the AP asking, code 1), other EAP types, encrypted frames, truncated
+// buffers — returns false. Same fail-closed, bounds-checked style as
+// classify(); same "never verified against a real capture on hardware"
+// caveat (see header top).
+bool parseEapIdentity(const uint8_t* p, uint16_t len, String& identityOut, uint8_t supplicantMac[6]);
 
 }  // namespace eapol

@@ -7,17 +7,13 @@
 #include "../Theme.h"
 #include "../Chrome.h"
 #include "../../core/Config.h"
+#include "../../scan/PortScanManager.h"
 #include "../../storage/ConfigBackup.h"
 #include "../../storage/SdCard.h"
 #include <SD.h>
 
 namespace {
-// Under /netrunner (Fase 42) - the same shared artifact folder every
-// other report/export this firmware produces already lands in (see
-// storage/NetrunnerPaths.h), so a config backup shows up in FILE
-// MANAGER's N-jump right alongside everything else instead of sitting
-// alone at the SD root.
-constexpr const char* kBackupPath = "/netrunner/config_backup.json";
+constexpr const char* kBackupPath = "/config_backup.json";
 }  // namespace
 
 SettingsScreen& SettingsScreen::instance() {
@@ -77,6 +73,14 @@ void SettingsScreen::adjust(int direction) {
 }
 
 void SettingsScreen::onKey(UiKey key, char ch) {
+    // RESTORE is a two-key confirm (see the 'r' handler below): any key
+    // other than a second R cancels a pending confirm before doing its
+    // own thing, so an armed restore can't fire from an unrelated press.
+    if (_restoreArmed && !(key == UiKey::Char && (ch == 'r' || ch == 'R'))) {
+        _restoreArmed = false;
+        _statusLine = "restore cancelled";
+    }
+
     switch (key) {
         case UiKey::Up:
             _selected = (_selected == 0) ? (uint8_t)(kFieldCount - 1) : (uint8_t)(_selected - 1);
@@ -110,11 +114,21 @@ void SettingsScreen::onKey(UiKey key, char ch) {
                     _statusLine = ConfigBackup::backup(SD, kBackupPath) ? "backed up to SD" : "backup FAILED (see serial log)";
                 }
             } else if (ch == 'r' || ch == 'R') {
+                // Destructive: overwrites the live WiFi credentials and
+                // war-driving allowlist. Arm on the first R, act on the
+                // second; the guard at the top of onKey() disarms on any
+                // other key.
                 if (!sdcard::isReady()) {
                     _statusLine = "restore needs an SD card";
+                    _restoreArmed = false;
                 } else if (!SD.exists(kBackupPath)) {
                     _statusLine = "no backup found on SD";
+                    _restoreArmed = false;
+                } else if (!_restoreArmed) {
+                    _restoreArmed = true;
+                    _statusLine = "press R again to OVERWRITE config from SD";
                 } else {
+                    _restoreArmed = false;
                     _statusLine = ConfigBackup::restore(SD, kBackupPath) ? "restored from SD" : "restore FAILED (see serial log)";
                 }
             } else if (ch == 'f' || ch == 'F') {
@@ -172,10 +186,24 @@ void SettingsScreen::draw(M5Canvas& gfx) {
         gfx.print(valStr);
     }
 
+    uint32_t portSpan = (uint32_t)g_config.portRangeEnd - (uint32_t)g_config.portRangeStart + 1;
     if (_statusLine.length()) {
         gfx.setTextColor(theme::CYAN, theme::BG);
         gfx.setCursor(4, gfx.height() - 19);
         gfx.print(_statusLine);
+    } else if (portSpan > PortScanManager::kMaxRangeSpan) {
+        // Configured range is wider than a scan will actually probe
+        // (PortScanManager::kMaxRangeSpan) - surface the effective cap
+        // instead of capping silently once the scan starts.
+        gfx.setTextColor(theme::MAGENTA, theme::BG);
+        gfx.setCursor(4, gfx.height() - 19);
+        gfx.print(String("range caps at ") + String((unsigned)PortScanManager::kMaxRangeSpan) + " ports (+ high-ports)");
+    } else if (_selected == 3 || _selected == 4) {
+        // On a PORT row: how many ports the configured range actually
+        // probes (the curated well-known high ports are scanned on top).
+        gfx.setTextColor(theme::GREEN, theme::BG);
+        gfx.setCursor(4, gfx.height() - 19);
+        gfx.print(String("probes ") + String((unsigned)portSpan) + " ports (+ high-ports)");
     }
 
     gfx.setTextColor(theme::GREY, theme::BG);

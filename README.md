@@ -2771,7 +2771,78 @@ mostra il dettaglio completo (riga intera, non troncata), `H`/`DEL`
 torna al log. Materiale realmente sensibile — stesso livello di
 attenzione già riservato a un pcap PMKID/handshake, non un giocattolo.
 
-### Fase 51: IOT CREDS + PASSWORD SPRAY (offensive credential tools)
+### Fase 51: EAP IDENTITY — harvesting passivo di username 802.1X in chiaro
+
+Settimo dei 9 sviluppi offensive di seconda analisi proposti in chat,
+implementato su richiesta esplicita. Durante l'associazione a una rete
+WPA-Enterprise (802.1X), la primissima risposta EAP del client contiene
+l'"outer identity" — lo username scelto per l'esterno (`user@corp`,
+`DOMAIN\user`, o un placeholder anonimo `anonymous@corp`) — inviato in
+CHIARO prima ancora che parta il tunnel TLS PEAP/TTLS che protegge le
+credenziali vere. Una rete che rivela username reali nel clear-text
+prima del tunnel è un finding classico e riportabile negli audit WiFi
+aziendali, esattamente ciò che il dissector EAP di Wireshark mostra
+gratis dagli stessi byte.
+
+`net/EapolWire` guadagna `parseEapIdentity()` accanto al preesistente
+`classify()` — stesso file perché è la stessa famiglia di frame (EAPOL
+sopra 802.11), solo un EAPOL Type diverso (0 = EAP-Packet invece di 3 =
+Key). Fail-closed nello stesso stile del resto: rifiuta frame protetti,
+buffer troncati, capitalizzazioni sbagliate di Code/Type EAP, e
+riconosce solo EAP-Response/Identity (Code=2, Type=1) — mai la Request
+del server, mai altre estensioni EAP, mai niente dentro il tunnel TLS.
+
+`scan/EapIdentityHarvester` è il consumatore promiscuo (stesso schema
+di `OsFingerprint`/`PassiveHostDiscovery`): dedup su `(MAC, identity)`
+per lasciare visibile lo stesso client con outer identity diverse su
+reti diverse, log SD in `/eap/identities.csv` per sopravvivere a fine
+sessione brusco. Nuova voce `EAP IDENTITY` nel gruppo "PASSIVE
+LISTENERS" di `DISCOVERY` (`MENU>NET>D>Ent(EAP)`), `I` per il dettaglio.
+
+**Limite di canale**, non un bug: come tutti gli altri ascoltatori
+passivi non-hopper (`PassiveHostDiscovery`/`OsFingerprint`/
+`CdpLldpSniffer`), sta sul canale a cui la STA è associata. Le
+autenticazioni 802.1X sono eventi brevi e infrequenti — hopping li
+farebbe perdere di sicuro e nel frattempo dropperebbe la connessione
+STA (vedi `BeaconProbeSniffer.h`). Parcheggiare questo dispositivo sul
+canale dell'AP enterprise target è la via corretta.
+
+### Fase 52: NAME SPOOF guadagna WPAD HTTP responder
+
+Nono dei 9 sviluppi offensive di seconda analisi proposti in chat,
+implementato su richiesta esplicita. Colma metà del taglio di scope
+dichiarato esplicito in Fase 46 ("nessun server SMB/HTTP dietro il
+nome avvelenato per raccogliere davvero un handshake"): non il
+responder NTLMv2 completo, ma un piccolo server HTTP di prova che
+rende la catena "poisoning + retrieval" verificabile end-to-end invece
+di fermarsi a metà.
+
+Quando un client Windows tenta il **Web Proxy Auto-Discovery**, cerca
+il nome "wpad" via DNS/LLMNR/NBT-NS, poi scarica `wpad.dat` (o
+`proxy.pac`) via HTTP da chi ha risposto. La risposta LLMNR/NBT-NS di
+NAME SPOOF punta già il client verso questo dispositivo — ma senza
+nulla in ascolto su :80 il client riceve solo un connection-refused e
+abbandona WPAD. Con `WPAD ON` (nuovo toggle `W` in schermata idle) la
+sessione apre anche un `WiFiServer` sulla porta 80 per la sua durata,
+che risponde a QUALUNQUE GET con un `wpad.dat` minimale:
+
+```javascript
+function FindProxyForURL(url, host) { return "DIRECT"; }
+```
+
+Deliberatamente `DIRECT`, mai un proxy: questo test dimostra che il
+client ha scaricato e accettato un PAC da un nome avvelenato, SENZA
+mai redirigere il traffico della vittima da nessuna parte (redirigerlo
+richiederebbe un vero proxy dietro, tuttora fuori scope). Ogni GET
+servito viene loggato con l'IP e la request line: prova end-to-end
+che il poisoning ha funzionato per intero (risoluzione + retrieval),
+non solo la prima metà.
+
+Nuovi campi visibili: `WPAD HTTP (W): ON/OFF` nello stato Idle,
+contatore `WPAD: N` accanto a `poisoned:` durante l'esecuzione, e
+sommario finale "…N WPAD hit(s)" nel log di stop.
+
+### Fase 53: IOT CREDS + PASSWORD SPRAY (offensive credential tools)
 
 Due strumenti offensivi di credential-checking sopravvissuti da un
 vecchio batch WIP scartato dopo che il remote era già più avanti (vedi
@@ -2824,7 +2895,7 @@ una lib client verificata, non un handshake artigianale), niente HTTP
 form-brute (basic-auth è già pieno; una form-brute serve altra roba —
 CSRF token, session cookie handling — che è un progetto a parte).
 
-### Fase 52: primo lotto BLE — inventory, beacon/tracker, WiFi correlation
+### Fase 54: primo lotto BLE — inventory, beacon/tracker, WiFi correlation
 
 Reintroduzione del Bluetooth Low Energy dopo la rimozione deliberata in
 **Fase 14** (fatta per pressione flash: il classic Arduino-ESP32 BLE
@@ -2906,9 +2977,9 @@ strategia è invertibile: rimuovere `h2zero/NimBLE-Arduino` da
 tutte le dipendenze BLE sono confinate in questi 4 file + il `begin()`
 in main + la voce di menu + il tag in ActivityStatus).
 
-### Fase 53: secondo lotto BLE — GATT walk, weak-pairing, control chars, HID, RPA correlation
+### Fase 55: secondo lotto BLE — GATT walk, weak-pairing, control chars, HID, RPA correlation
 
-Le rimanenti 5 proposte BLE della conversazione. La Fase 52 aveva
+Le rimanenti 5 proposte BLE della conversazione. La Fase 54 aveva
 misurato 1.58 MB su 2.25 MB nel primo `pio run` reale, lasciando ~770
 KB di margine flash — abbondante per riattivare il ruolo **central**
 NimBLE (in `platformio.ini`, rimuovendo
@@ -2936,7 +3007,7 @@ NimBLE (in `platformio.ini`, rimuovendo
   `!CTRL:N/M` rosso nella `BleGattScreen`. **Detection only** — la
   stessa linea di IoT Creds / Cred Audit: "il vettore è qui, verifica
   manualmente", non si tocca fisicamente niente.
-- **#9 BLE HID detection** — già mezzo fatto in Fase 52 (parsing dei
+- **#9 BLE HID detection** — già mezzo fatto in Fase 54 (parsing dei
   service UUID nell'advertising), promosso ora a first-class:
   `BleDevice::hidService` + contatore `hidCount()` + nuova schermata
   `BleHidScreen` raggiungibile con `H` da BLE SCAN, che filtra solo
@@ -2981,21 +3052,21 @@ mai entrambi insieme.
 - `ui/ActivityStatus.cpp`: nuovo tag `BG:GATT` durante il walk.
 
 **Fuori scope** (non era nelle 10, non aggiungiamo):
-- Persistence-based tracker detection (Fase 52 già segnala tracker via
+- Persistence-based tracker detection (Fase 54 già segnala tracker via
   pattern advertising; una detection "questo tracker sta rimanendo
   vicino a me" richiede GPS o assunzione di movimento e non è un lotto
   BLE)
 - Scrittura su caratteristiche note (`ble_control_chars` è solo
   detection; l'actuation è FUORI dello scope per costruzione).
 
-Se dopo `pio run` la Fase 53 sfora il footprint, il rollback è
+Se dopo `pio run` la Fase 55 sfora il footprint, il rollback è
 chirurgico anche qui: rimuovere `BleGattClient` + le 2 nuove screen +
 `BleControlChars` + i puntamenti di `BleScannerScreen`/`BleDetailScreen`
 e il `begin()` in main + riattivare `CONFIG_BT_NIMBLE_ROLE_CENTRAL_DISABLED`
 in `platformio.ini`. La logica RPA (feature #3) resta anche in caso di
 rollback — non dipende da NimBLE central.
 
-### Fase 54: HOME split WIFI/BT/TERMINAL da mockup
+### Fase 56: HOME split WIFI/BT/TERMINAL da mockup
 
 Restyle del punto di ingresso post-splash. Il vecchio `MainMenuScreen`
 mostrava 13 voci come lista piatta; ora WiFi e BLE hanno pari dignità
@@ -3425,6 +3496,19 @@ originale.
       un cookie") per Cookie/Basic Auth/FTP-Telnet, in un nuovo
       `HarvestedItem` (RAM + `/mitm/harvest.csv`). `H` da MITM AUDIT
       in esecuzione apre la lista scorrevole, `I` il dettaglio completo.
+- [x] **Fase 51 — EAP IDENTITY (username 802.1X in chiaro)**: nuovo
+      `scan/EapIdentityHarvester` + `net/EapolWire::parseEapIdentity()`
+      leggono l'outer identity EAP-Response/Identity dei client
+      WPA-Enterprise, inviata in chiaro prima del tunnel PEAP/TTLS.
+      Solo ricezione, dedup su (MAC, identity), log SD in
+      `/eap/identities.csv`. Nuova voce nel gruppo passivo di
+      `DISCOVERY`. Limite di canale documentato (non hopper).
+- [x] **Fase 52 — NAME SPOOF: WPAD HTTP responder**: `startWithWpad()`
+      (opt-in via `W` da schermata idle) apre un `WiFiServer` su :80
+      per la durata della sessione, che risponde a qualunque GET con un
+      `wpad.dat = DIRECT` — prova end-to-end che il poisoning +
+      retrieval funzionano, senza mai redirigere il traffico della
+      vittima. Nuovo contatore `WPAD: N` e sommario finale nel log.
 
 ## Test plan — Fase 1
 
@@ -4835,6 +4919,55 @@ di questo firmware:
    (non fermi la sessione MITM) — solo `DEL`/`ENTER` nel log normale
    devono fermare `ArpSpoofManager`.
 
+## Test plan — Fase 51 (EAP IDENTITY: username 802.1X in chiaro)
+
+1. **Nessun frame Request registrato**: verificare che una richiesta
+   EAP-Request/Identity (Code=1) inviata dall'AP non generi mai una
+   entry — solo le Response (Code=2) contano, per non catturare i
+   prompt del server come se fossero identità del client.
+2. **Nessun frame protetto letto**: su una rete WPA2/WPA3 di test già
+   associata, verificare che il Protected Frame bit continui a
+   scartare i frame prima di `parseEapIdentity` — la lista deve
+   restare vuota anche con traffico intenso, come per gli altri
+   parser passivi.
+3. **Dedup su (MAC, identity)**: forzare un client di test a
+   riassociarsi più volte con la stessa outer identity — la lista
+   deve mostrare una sola riga con contatore che sale, non una
+   nuova riga per ogni tentativo.
+4. **Identità diverse dallo stesso MAC restano separate**: se un
+   client cambia outer identity tra due associazioni (es. anon per
+   una rete, `user@corp` per un'altra), entrambe devono comparire
+   come righe distinte.
+5. **Persistenza SD**: verificare che ogni identità NUOVA venga
+   appesa a `/eap/identities.csv` con timestamp, MAC e identity,
+   anche interrompendo la sessione senza `stop()` esplicito.
+
+## Test plan — Fase 52 (NAME SPOOF: WPAD HTTP responder)
+
+1. **Toggle W da idle**: `W` accende/spegne il flag WPAD e la label
+   "WPAD HTTP (W): ON/OFF" cambia colore (ciano vs grigio); il flag
+   deve persistere se si esce e si rientra nella schermata idle.
+2. **Nessun server :80 con WPAD OFF**: avviare NAME SPOOF con WPAD
+   OFF e verificare da un altro host sulla LAN che `curl
+   http://<ip-cardputer>/wpad.dat` restituisca connection-refused —
+   il flag OFF non deve mai aprire la porta 80.
+3. **`wpad.dat = DIRECT` con WPAD ON**: con WPAD ON attivo, `curl
+   http://<ip-cardputer>/wpad.dat` deve rispondere HTTP/1.0 200 OK,
+   Content-Type: `application/x-ns-proxy-autoconfig`, body `function
+   FindProxyForURL(url, host) { return "DIRECT"; }`.
+4. **Contatore WPAD sale**: ogni GET servito deve incrementare il
+   contatore visibile ("WPAD: N" accanto a "poisoned:") e produrre
+   una riga di log "WPAD served: <ip>".
+5. **Chain end-to-end con Windows**: da un Windows di test con WPAD
+   abilitato (Impostazioni proxy > Rileva automaticamente), forzare
+   una nuova sessione WPAD (cambio profilo di rete) — deve comparire
+   sia una entry LLMNR/NBT-NS per "wpad" sia almeno una entry WPAD
+   nel log.
+6. **Cleanup su stop**: al termine della sessione (`stop`/`ENTER`/
+   scadenza durata), verificare che il server :80 non risponda più —
+   `wpadServer.stop()` deve chiudere il socket, non lasciarlo a fare
+   listen dopo che la sessione è finita.
+
 ## Limiti noti e tagli di scope deliberati
 
 Riepilogo di quanto già menzionato nelle sezioni sopra, in un unico
@@ -5271,12 +5404,15 @@ posto:
   `ntlm-auth`).
 - **`NAME SPOOF`: nessuna cattura di credenziali, solo prova del
   poisoning** (Fase 46): a differenza di Responder, non serve un finto
-  server SMB/HTTP dietro il nome avvelenato per ricevere e loggare
+  server SMB dietro il nome avvelenato per ricevere e loggare
   l'handshake NTLMv2 del client — costruire un responder SMB2
-  NEGOTIATE/SESSION_SETUP corretto (e un mini server HTTP per WPAD.dat)
-  è un pezzo di lavoro grande, a sé stante, fuori scope per questa
-  fase. Il valore qui è dimostrare — e loggare — che un host ha
-  accettato la risposta forgiata, non craccare nulla a valle.
+  NEGOTIATE/SESSION_SETUP corretto è un pezzo di lavoro grande, a sé
+  stante, fuori scope. Il valore qui è dimostrare — e loggare — che un
+  host ha accettato la risposta forgiata, non craccare nulla a valle.
+  **AGGIORNAMENTO Fase 52**: il mini server HTTP per WPAD.dat che era
+  incluso in questo taglio di scope è stato invece implementato (vedi
+  "Fase 52" sopra), ma resta DIRECT/proof-of-concept — nessun proxy
+  reale dietro, nessuna cattura di traffico o hash.
 - **`NAME SPOOF`: risponde a TUTTE le query, non solo a una lista
   scelta** (Fase 46): a differenza di `DnsSpoofList` (usato da MITM
   AUDIT, con una lista di massimo 5 host scelti uno per uno), qui non
@@ -5376,3 +5512,43 @@ posto:
   stringhe (raro) produrrebbe un falso positivo; un header con
   capitalizzazione diversa (es. `cookie:` minuscolo, valido per HTTP)
   non verrebbe riconosciuto — nessun controllo case-insensitive.
+- **`EAP IDENTITY`: solo outer identity, mai nulla dentro il tunnel
+  TLS** (Fase 51): il taglio di scope più importante di questa fase e
+  la ragione per cui la feature è fattibile onestamente — la vera
+  password/hash NTLM/certificato viaggia dentro PEAP/TTLS, cifrato,
+  non catturabile senza compromettere il tunnel (che qui non si tenta
+  mai). L'outer identity è comunque il finding: reti che lasciano il
+  vero username nell'outer invece di usarne uno anonimo
+  (`anonymous@corp`) leakano l'identità dell'account in chiaro anche
+  con il tunnel perfettamente sano.
+- **`EAP IDENTITY`: solo sul canale della STA, non hopper** (Fase 51):
+  come `PassiveHostDiscovery`/`OsFingerprint`/`CdpLldpSniffer`, resta
+  sul canale a cui questo dispositivo è associato. Una lista vuota su
+  una rete enterprise nota di solito significa semplicemente che
+  nessun client ha fatto una nuova associazione 802.1X sul canale
+  giusto durante l'ascolto, non che il parser non funzioni. Per
+  aumentare le probabilità: parcheggiare la STA di questo dispositivo
+  sullo stesso canale dell'AP enterprise target prima di partire.
+- **`NAME SPOOF` WPAD mode: risposta uguale per ogni URL** (Fase 52):
+  il server :80 non parsa la request line — risponde `wpad.dat =
+  DIRECT` a qualunque `GET /` altrettanto che a `GET /wpad.dat`,
+  `/proxy.pac`, o path random. Semplifica il codice (nessun matching
+  di path) senza ridurre la qualità del proof-of-concept: quello che
+  vogliamo dimostrare è che il client ha SCARICATO il PAC dal nostro
+  IP, non che abbiamo servito routing HTTP corretto. Se questo torna
+  utile in futuro (es. servire un `wpad.dat` diverso per client
+  diverso in base a header), è il primo posto da estendere.
+- **`NAME SPOOF` WPAD mode: risposta DIRECT, mai un proxy reale**
+  (Fase 52): scelta deliberata, non tecnica — servire un vero proxy
+  richiede far girare un proxy dietro, cosa fuori scope per lo stesso
+  motivo per cui `ArpSpoofManager` non fa relay dei pacchetti
+  intercettati (vedi RISK block di quel file). Un test onesto: prova
+  che il PAC è stato accettato, non redirige nulla di reale.
+- **`NAME SPOOF` WPAD mode: `WiFiServer::begin()` non ha ritorno
+  esplicito** (Fase 52): il codice logga "WPAD HTTP server up on :80"
+  in modo ottimistico, ma un fallimento di bind (raro sul port 80 con
+  una STA appena connessa, ma non impossibile) si manifesterebbe
+  invece come `accept()` che non ritorna mai un client. Diagnosi
+  pratica: se WPAD è ON, il contatore resta 0 per una sessione lunga,
+  e un `nc -v <ip> 80` da un altro host rifiuta la connessione — il
+  bind non è avvenuto.

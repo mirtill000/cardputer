@@ -10,7 +10,7 @@ struct Entry {
 
 // Bluetooth SIG assigned numbers — see
 // https://www.bluetooth.com/specifications/assigned-numbers/
-// Curated for consumer-LAN visibility; keep short (Fase 52).
+// Curated for consumer-LAN visibility; keep short (Fase 54).
 constexpr Entry kEntries[] = {
     {0x0006, "Microsoft"},
     {0x000F, "Broadcom"},

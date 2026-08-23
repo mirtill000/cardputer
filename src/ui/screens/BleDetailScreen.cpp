@@ -12,7 +12,7 @@ BleDetailScreen& BleDetailScreen::instance() {
 
 void BleDetailScreen::onKey(UiKey key, char ch) {
     if (key == UiKey::Char && (ch == 'g' || ch == 'G')) {
-        // Fase 53 - open the GATT walk against this device (gated
+        // Fase 55 - open the GATT walk against this device (gated
         // inside BleGattScreen itself).
         BleGattScreen::instance().setTarget(_addr);
         g_ui.pushScreen(&BleGattScreen::instance());
@@ -95,7 +95,7 @@ void BleDetailScreen::draw(M5Canvas& gfx) {
         row(gfx, y, "wifi:", d.correlatedWifiIp, theme::MAGENTA);
         y += 9;
     }
-    // Fase 53 - RPA rotation correlation.
+    // Fase 55 - RPA rotation correlation.
     if (d.sameAsAddr.length()) {
         row(gfx, y, "same-as:", d.sameAsAddr, theme::MAGENTA);
         y += 9;

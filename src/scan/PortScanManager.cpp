@@ -20,6 +20,14 @@ void PortScanManager::startScan(const IPAddress& target, uint16_t portStart, uin
     if (_running) return;
     if (portEnd < portStart) return;
 
+    // See kMaxRangeSpan in PortScanManager.h: bound the span before
+    // allocating _portList so a pathological range can't exhaust internal
+    // SRAM mid-scan. The SETTINGS screen warns when a configured range
+    // exceeds this, so the cap here is no longer a silent surprise.
+    if ((uint32_t)portEnd - (uint32_t)portStart + 1 > kMaxRangeSpan) {
+        portEnd = (uint16_t)((uint32_t)portStart + kMaxRangeSpan - 1);
+    }
+
     _portList.clear();
     _portList.reserve((size_t)(portEnd - portStart + 1) + kWellKnownHighPortsCount);
     for (uint32_t p = portStart; p <= portEnd; p++) _portList.push_back((uint16_t)p);
@@ -55,7 +63,18 @@ void PortScanManager::startScan(const IPAddress& target, uint16_t portStart, uin
 
     for (uint8_t i = 0; i < workerCount; i++) {
         auto* args = new WorkerArgs{this, i, workerCount};
-        xTaskCreatePinnedToCore(&PortScanManager::workerTaskEntry, "portscanw", 6144, args, 1, nullptr, 0);
+        if (xTaskCreatePinnedToCore(&PortScanManager::workerTaskEntry, "portscanw", 6144, args, 1, nullptr, 0) !=
+            pdPASS) {
+            // Task never created (out of memory): reclaim its args (the
+            // entry point that normally deletes them never runs) and
+            // account for the worker that will never call
+            // onWorkerFinished() itself - identical to ScanManager's
+            // handling. If this was the last outstanding worker,
+            // onWorkerFinished() finalizes the scan so it never hangs
+            // "running" with no task behind it.
+            delete args;
+            onWorkerFinished();
+        }
     }
 }
 

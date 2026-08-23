@@ -42,18 +42,34 @@ void HttpPathBruteforcer::begin(QueueHandle_t outQueue) {
 }
 
 void HttpPathBruteforcer::start(const IPAddress& target, uint16_t port) {
-    if (_running) return;
+    if (_running) {
+        // Already probing - tell the user instead of silently doing nothing.
+        ScanNotification busy;
+        busy.source = ScanSource::HttpBrute;
+        busy.type = ScanEventType::LogLine;
+        busy.setText("path brute already running");
+        if (_outQueue) xQueueSend(_outQueue, &busy, 0);
+        return;
+    }
     _target = target;
     _port = port;
     _tried = 0;
-    if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+    if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
         _hits.clear();
         xSemaphoreGive(_mutex);
     }
 
     _running = true;
     notify(ScanEventType::ScanStarted);
-    xTaskCreatePinnedToCore(&HttpPathBruteforcer::taskEntry, "httpbrute", 4096, this, 1, nullptr, 0);
+    if (xTaskCreatePinnedToCore(&HttpPathBruteforcer::taskEntry, "httpbrute", 4096, this, 1, nullptr, 0) != pdPASS) {
+        _running = false;
+        ScanNotification fail;
+        fail.source = ScanSource::HttpBrute;
+        fail.type = ScanEventType::LogLine;
+        fail.setText("failed to start path brute task");
+        if (_outQueue) xQueueSend(_outQueue, &fail, 0);
+        notify(ScanEventType::ScanFinished, 100);
+    }
 }
 
 void HttpPathBruteforcer::taskEntry(void* arg) {
@@ -100,7 +116,7 @@ void HttpPathBruteforcer::logHit(const String& path, uint16_t status) {
     Hit h;
     h.path = path;
     h.status = status;
-    if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+    if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
         _hits.push_back(h);
         xSemaphoreGive(_mutex);
     }

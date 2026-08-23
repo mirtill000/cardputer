@@ -79,6 +79,12 @@ void SentinelManager::run() {
             for (uint8_t i = 0; i < kDrainPerTick && _captureQueue && xQueueReceive(_captureQueue, &frame, 0) == pdTRUE;
                  i++) {
                 _capturedFrames++;
+                // Deauth/disassoc flood detection runs here, on the
+                // sentinel task, rather than in the promiscuous RX
+                // callback that captured the frame - it takes _mutex and
+                // can raise a blocking alert tone, neither safe in the
+                // driver callback (see onCapturedFrame).
+                checkDeauthFlood(frame.data, frame.capturedLen);
                 if (_pcapFile) {
                     pcap::writeRecord(_pcapFile, frame.data, frame.capturedLen, frame.originalLen);
                     _currentFileBytes += 16u + frame.capturedLen;  // 16 = pcap per-record header size
@@ -156,11 +162,13 @@ void SentinelManager::promiscuousRxTrampoline(void* buf, wifi_promiscuous_pkt_ty
 void SentinelManager::onCapturedFrame(const uint8_t* p, uint16_t len) {
     if (len == 0) return;
 
-    // Folded-in GUARD MODE logic - see class comment on why this isn't
-    // a separate promiscuous session sharing (and fighting over) the
-    // same callback slot.
-    checkDeauthFlood(p, len);
-
+    // This runs in the WiFi driver's promiscuous RX callback, so it must
+    // stay strictly non-blocking: just copy the frame into the queue and
+    // return. Deauth/disassoc flood detection (checkDeauthFlood) used to
+    // run inline here, but it takes _mutex and, on a detected flood,
+    // plays a ~460ms blocking alert tone - neither is safe in the driver
+    // callback. It now runs on the sentinel task instead, over these same
+    // frames as they're drained from _captureQueue (see run()).
     if (!_captureQueue) return;
     CapturedFrame frame;
     frame.originalLen = len;

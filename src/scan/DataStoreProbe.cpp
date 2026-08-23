@@ -46,15 +46,23 @@ void DataStoreProbe::begin(QueueHandle_t outQueue) {
 }
 
 bool DataStoreProbe::start() {
-    if (_running) return false;
-    if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+    if (_running) {
+        notify("datastore sweep already running");
+        return false;
+    }
+    if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
         _findings.clear();
         xSemaphoreGive(_mutex);
     }
     _progressPct = 0;
     _running = true;
     notify(ScanEventType::ScanStarted);
-    xTaskCreatePinnedToCore(&DataStoreProbe::taskEntry, "datastore", 6144, this, 1, nullptr, 0);
+    if (xTaskCreatePinnedToCore(&DataStoreProbe::taskEntry, "datastore", 6144, this, 1, nullptr, 0) != pdPASS) {
+        // Task never started (out of memory) - clear the running flag.
+        _running = false;
+        notify(ScanEventType::ScanFinished, 100);
+        return false;
+    }
     return true;
 }
 
@@ -79,6 +87,7 @@ void DataStoreProbe::run() {
     }
 
     for (size_t i = 0; i < targets.size() && _running; i++) {
+        notify("probing " + targets[i].toString());
         probeHost(targets[i]);
         _progressPct = (uint8_t)(((i + 1) * 100) / targets.size());
         notify(ScanEventType::ScanProgress, _progressPct);
@@ -204,7 +213,7 @@ void DataStoreProbe::probeHost(const IPAddress& ip) {
 }
 
 void DataStoreProbe::addFinding(const IPAddress& ip, const char* store, const String& detail, bool noAuth) {
-    if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+    if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
         if (_findings.size() < kMaxFindings) _findings.push_back({ip, String(store), detail, noAuth});
         xSemaphoreGive(_mutex);
     }

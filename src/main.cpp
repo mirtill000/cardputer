@@ -42,6 +42,7 @@
 #include "ui/screens/NameSpoofScreen.h"
 #include "scan/OsFingerprint.h"
 #include "scan/VlanHopProbe.h"
+#include "scan/EapIdentityHarvester.h"
 #include "scan/IotCredScanner.h"
 #include "scan/PasswordSprayManager.h"
 #include "scan/BluetoothManager.h"
@@ -166,18 +167,19 @@ void setup() {
     g_nameSpoofManager.begin(g_ui.scanQueue());
     g_osFingerprint.begin(g_ui.scanQueue());
     g_vlanHopProbe.begin(g_ui.scanQueue());
-    // Fase 51 - offensive credential tools, both gated by the same
+    g_eapIdentityHarvester.begin(g_ui.scanQueue());
+    // Fase 53 - offensive credential tools, both gated by the same
     // CredAuditManager consent (AppConfig::credAuditEnabled). They reuse
     // CredAuditManager::tryLogin() for the protocol handshakes, so
     // g_credAuditManager.begin() above must run first (it does).
     g_iotCredScanner.begin(g_ui.scanQueue());
     g_passwordSpray.begin(g_ui.scanQueue());
-    // Fase 52 - BLE scanner (observer-only). The NimBLE stack itself
+    // Fase 54 - BLE scanner (observer-only). The NimBLE stack itself
     // is only initialized when the user starts a BLE scan (see
     // BluetoothManager::run) - this call just creates the idle task
     // and mutex, no BT init cost until requested.
     g_bluetoothManager.begin(g_ui.scanQueue());
-    // Fase 53 - GATT walker (uses NimBLE central role, re-enabled via
+    // Fase 55 - GATT walker (uses NimBLE central role, re-enabled via
     // platformio.ini build_flags). Same "no BT init until asked" policy:
     // begin() only wires the mutex and outQueue.
     g_bleGattClient.begin(g_ui.scanQueue());

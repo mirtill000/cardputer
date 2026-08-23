@@ -11,7 +11,7 @@
 // ONLY - BleGattClient NEVER writes to these characteristics, because
 // writing could physically actuate something (unlock a door, toggle a
 // plug, turn on a heater). Same line the IoT default-credentials tool
-// draws (Fase 51): "known vector present, verify manually" is the whole
+// draws (Fase 53): "known vector present, verify manually" is the whole
 // finding.
 //
 // The kind (SmartLock/SmartPlug/SmartBulb/SmartBand) is used only for

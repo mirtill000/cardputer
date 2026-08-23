@@ -2,7 +2,7 @@
 
 #include "Screen.h"
 
-// "TERMINAL" - the third HomeScreen tile (Fase 54). Not a shell (this
+// "TERMINAL" - the third HomeScreen tile (Fase 56). Not a shell (this
 // isn't Linux, there's nothing on the other end of a `>` prompt to
 // evaluate arbitrary commands), but a compact device-status readout in
 // a monospace terminal look: uptime, RAM/heap, active WiFi + IP + SSID,

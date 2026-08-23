@@ -171,10 +171,12 @@ private:
     mutable SemaphoreHandle_t _mutex = nullptr;
     std::vector<String> _knownMacs;    // baseline (loaded once) + session-confirmed - sentinel task only, no mutex needed
     std::vector<TrackedHost> _tracked;  // presence tracking for DeviceGone - sentinel task only, no mutex needed
-    // Touched from TWO task contexts (the promiscuous RX callback via
-    // checkDeauthFlood(), and the sentinel task itself via
-    // rollFloodWindow()) - unlike _knownMacs/_tracked above, this DOES
-    // need _mutex.
+    // Now touched only from the sentinel task: checkDeauthFlood() moved
+    // off the promiscuous RX callback onto the frame-drain loop in run()
+    // (blocking work isn't safe in that callback), joining
+    // rollFloodWindow() there. The _mutex takes around this member are
+    // kept defensively but are no longer load-bearing - it's no longer
+    // shared across task contexts the way _events (read by the UI) is.
     std::vector<FloodBssid> _floodBssids;
     std::vector<Event> _events;  // read by the UI too - mutex-protected
     QueueHandle_t _outQueue = nullptr;
