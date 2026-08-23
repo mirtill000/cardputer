@@ -69,7 +69,11 @@
 namespace {
 BootScreen g_bootScreen;
 
-MenuItem g_menuItems[13];
+// Fase 54: MenuItem array is now the WIFI TOOLS submenu backing the WIFI
+// tile on HomeScreen. BLE SCAN was removed from here - it now lives under
+// the BLUETOOTH TOOLS tile via BluetoothToolsMenuScreen, and SETTINGS
+// moved to a HomeScreen footer hotkey. So we drop from 13 entries to 11.
+MenuItem g_menuItems[11];
 }  // namespace
 
 void setup() {
@@ -118,15 +122,11 @@ void setup() {
     // action itself, there's no earlier target-picking screen to gate
     // instead - see MainMenuScreen.h's MenuItem::offensive.
     g_menuItems[10] = {"NAME SPOOF", &NameSpoofScreen::instance(), true};
-    // Fase 52 - BLE inventory + tracker + WiFi correlation (first BLE
-    // lot after Fase 14 removed BLE for flash pressure; NimBLE now
-    // configured OBSERVER-only via platformio.ini build_flags to keep
-    // the reintroduction footprint minimal). See BluetoothManager.h.
-    g_menuItems[11] = {"BLE SCAN", &BleScannerScreen::instance()};
-    g_menuItems[12] = {"SETTINGS", &SettingsScreen::instance()};
-    // The discovery tools moved under NETWORK SCAN -> 'D' (see
+    // Fase 54: BLE SCAN moved under HOME -> BLUETOOTH TOOLS tile (see
+    // BluetoothToolsMenuScreen); SETTINGS moved to HOME footer hotkey.
+    // The discovery tools live under NETWORK SCAN -> 'D' (see
     // DiscoveryMenuScreen); their managers are still begin()'d below.
-    MainMenuScreen::instance().configure(g_menuItems, 13);
+    MainMenuScreen::instance().configure(g_menuItems, 11);
 
     // MainMenuScreen must already be configured by this point: once the
     // render task starts, BootScreen can transition straight to it on

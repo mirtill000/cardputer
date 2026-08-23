@@ -2995,6 +2995,61 @@ e il `begin()` in main + riattivare `CONFIG_BT_NIMBLE_ROLE_CENTRAL_DISABLED`
 in `platformio.ini`. La logica RPA (feature #3) resta anche in caso di
 rollback — non dipende da NimBLE central.
 
+### Fase 54: HOME split WIFI/BT/TERMINAL da mockup
+
+Restyle del punto di ingresso post-splash. Il vecchio `MainMenuScreen`
+mostrava 13 voci come lista piatta; ora WiFi e BLE hanno pari dignità
+visiva. `BootScreen` transitiona a **`HomeScreen`** (non più a
+`MainMenuScreen`), che presenta il layout del mockup fornito
+dall'utente adattato a 240×135:
+
+- **Header**: `CARDPUTER ADV` (magenta) a sinistra, icona WiFi + `%`
+  batteria colorata a destra
+- **Titolo**: `NETRUNNER` a `textSize(2)` (12×16 per glyph) magenta,
+  centrato, con accenti `>` / `<` ai lati
+- **Sottotitolo/version**: `ADVANCED NETWORK TOOLKIT v1.0` in ciano
+- **Due tile principali** affiancate:
+  - **WIFI** (bordo ciano, icona Wi-Fi disegnata come archi
+    concentrici + dot)
+  - **BLUETOOTH** (bordo magenta, "runa" BT disegnata a segmenti)
+- **Tile bassa TERMINAL** a larghezza piena (bordo ciano, icona `>_`)
+- **Footer**: `STATUS: READY` (verde) a sinistra, `S:set A:about`
+  (grigio) a destra
+
+Navigazione:
+- Frecce sinistra/destra alternano WIFI ↔ BT
+- Freccia giù dal top va a TERMINAL (freccia su torna a WIFI)
+- ENTER apre la tile selezionata (evidenziata con doppio bordo)
+- `S` → SETTINGS (esistente)
+- `A` → `AboutScreen` (nuovo)
+- DEL: no-op (HOME è il fondo dello stack navigabile)
+
+Screen nuove:
+- **`HomeScreen`** — layout tile + navigazione + header/footer
+- **`BluetoothToolsMenuScreen`** — submenu dietro la tile BT con voci
+  `BLE SCAN` / `BLE HID` / `BLE TRACKERS` (bordi magenta coerenti con
+  la tile che l'ha aperta)
+- **`TerminalScreen`** — readout live in stile terminale (uptime, heap
+  free/tot, WiFi SSID+IP, BLE state, host count, storage SD/LittleFS,
+  batteria, cursore lampeggiante). Non è un REPL — un vero shell con
+  parser/history è fuori scope di questo restyle.
+- **`AboutScreen`** — versione firmware, board, MCU, flash, radio,
+  blurb sull'app + disclaimer d'uso
+
+Modifiche esistenti:
+- `BootScreen.cpp`: transiziona a `HomeScreen` invece che a
+  `MainMenuScreen`
+- `MainMenuScreen`: `title()` da `"MENU"` a `"WIFI"` per il breadcrumb;
+  header interno da `"NETRUNNER"` a `"WIFI TOOLS"`. helpText aggiornato
+  a "WIFI TOOLS".
+- `main.cpp`: array `g_menuItems` scende da 13 a 11 voci — rimosse
+  `BLE SCAN` (ora sotto BT tile) e `SETTINGS` (ora hotkey `S` da HOME)
+
+Il flusso ora è: BOOT → HOME → (WIFI tile o BT tile o TERMINAL). Da
+qualunque submenu, `DEL` torna a HOME. Tutte le hotkey pre-esistenti
+delle schermate a valle continuano a funzionare (S/T/Q/W in NETWORK
+SCAN, G/T/H in BLE SCAN, ecc.).
+
 ## Compilare e flashare
 
 ```

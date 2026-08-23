@@ -26,9 +26,9 @@ public:
     void onKey(UiKey key, char ch) override;
     void draw(M5Canvas& gfx) override;
 
-    const char* title() const override { return "MENU"; }
+    const char* title() const override { return "WIFI"; }
     const char* helpText() const override {
-        return "MAIN MENU\n\nArrows: move selection\nENTER: open highlighted tool\n\nOther screens list their own\npath, e.g. NET>D>Ent(BCN).";
+        return "WIFI TOOLS\n\nAll WiFi-side tools in one\nplace. Arrows: move selection\nENTER: open highlighted tool\nDEL: back to HOME";
     }
 
 private:

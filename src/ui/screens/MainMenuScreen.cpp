@@ -50,7 +50,7 @@ void MainMenuScreen::onKey(UiKey key, char /*ch*/) {
 
 void MainMenuScreen::draw(M5Canvas& gfx) {
     gfx.fillScreen(theme::BG);
-    chrome::drawHeader(gfx, "NETRUNNER");
+    chrome::drawHeader(gfx, "WIFI TOOLS");
 
     // kRowH sized so a full window of rows never runs into the status
     // bar below: kTop + 7*kRowH = 22 + 98 = 120, status bar sits at
