@@ -31,6 +31,7 @@
 #include "../scan/NameSpoofManager.h"
 #include "../scan/OsFingerprint.h"
 #include "../scan/VlanHopProbe.h"
+#include "../scan/BluetoothManager.h"
 #include <cstdio>
 #include <cstring>
 
@@ -85,6 +86,13 @@ size_t buildTaskTable(TaskEntry* out, size_t cap) {
     add(g_pmkidSweepManager.isRunning(), "PSWP", "PMKID SWEEP", false);
     add(g_playbookRunner.isRunning(), "PBK", "PLAYBOOK", false);
     add(g_nameSpoofManager.isRunning(), "NSPF", "NAME SPOOF", false);
+    // Fase 52 - BLE observer. Not marked isRf: BT and WiFi share the
+    // 2.4 GHz radio via the SoC coex layer (both can run concurrently
+    // with degraded throughput), it's not the same "one promiscuous
+    // callback owns the WiFi rx path" resource the other RF entries
+    // above compete for. Still worth surfacing so the user knows the
+    // BLE stack is up.
+    add(g_bluetoothManager.isRunning(), "BLE", "BLE SCAN", false);
     return n;
 }
 }  // namespace

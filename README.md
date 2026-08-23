@@ -2824,6 +2824,88 @@ una lib client verificata, non un handshake artigianale), niente HTTP
 form-brute (basic-auth è già pieno; una form-brute serve altra roba —
 CSRF token, session cookie handling — che è un progetto a parte).
 
+### Fase 52: primo lotto BLE — inventory, beacon/tracker, WiFi correlation
+
+Reintroduzione del Bluetooth Low Energy dopo la rimozione deliberata in
+**Fase 14** (fatta per pressione flash: il classic Arduino-ESP32 BLE
+stack aveva sforato lo slot OTA di 219,537 byte). Il primo lotto è
+**observer-only** — NimBLE-Arduino invece del classic BLE stack (~3x
+più piccolo), con central/peripheral/broadcaster **strippati via
+`build_flags`** (`CONFIG_BT_NIMBLE_ROLE_*_DISABLED`) così le code paths
+del client GATT / advertiser / servizio non vengono nemmeno linkate.
+Zero connessioni, zero pairing, zero write — questo lotto **legge
+solo gli advertising packet**.
+
+Cinque delle 10 proposte BLE della conversazione, tutte passive:
+
+- **#1 Device inventory** — `BluetoothManager` mantiene una tabella di
+  fino a 60 device con addr / addr-kind (public/random/RPA/random-static
+  classificati sui bit alti della MAC) / RSSI / TX power / name /
+  appearance / vendor / servizi advertised. Company-ID → vendor via
+  `BleCompanyIds` (tabella curata, non l'intera SIG registry).
+- **#4 Continuity / Fast Pair / Swift Pair fingerprinting** — parsing
+  del manufacturer data per **Apple 0x004C** (Handoff, AirDrop, Nearby
+  Info, Nearby Action, HomeKit link, tutti i sotto-tipi noti), **Google
+  0xFE2C service data** (Fast Pair, con model-ID prefix), **Microsoft
+  0x0006** (Swift Pair marker). Sono le firme che dicono "questo è un
+  iPhone che sta cercando handoff", "quel router Chromecast sta pubblicizzando
+  Fast Pair", ecc.
+- **#5 Beacon decoder** — **iBeacon** (Apple company ID + tag `0x02 0x15`
+  + UUID/major/minor), **AltBeacon** (any vendor + tag `0xBE 0xAC`),
+  **Eddystone** (service data UUID `0xFEAA` + frame type UID/URL/TLM/EID).
+- **#7 Unwanted-tracker detection** — **Apple FindMy** (manufacturer
+  0x004C tipo `0x12`, sotto-tipo `0x19 nearby` vs `0x00 offline
+  finding`), **Tile** (service data `0xFEED`), **Samsung SmartTag**
+  (service data `0xFD5A`, SmartThings Find). La schermata **BLE TRACKERS**
+  (raggiungibile con `T` dalla BLE SCAN) filtra solo quelli. Nota: per
+  ora una tracker detection è "il pattern è nel advertising", non
+  "questo device mi sta seguendo per 5+ minuti" — la persistenza è per
+  un lotto futuro (serve GPS o assumzione di movimento del target).
+- **#10 WiFi correlation** — `correlateWithWifi()` fa un match
+  best-effort sul vendor (BLE vendor vs WiFi vendor delle host già
+  scoperte). Best-effort per costruzione: BLE e WiFi hanno MAC su
+  interfacce separate, un join per-MAC non è possibile senza
+  assunzioni extra; il match per vendor paga la pena per device single-
+  vendor (AppleTV, printer, ecc.). Marker `W` magenta a destra nella
+  BLE SCAN.
+
+**Wiring**:
+- `platformio.ini`: aggiunta `h2zero/NimBLE-Arduino @ ^1.4.1` +
+  build_flags observer-only
+- `core/EventQueue.h`: nuovo `ScanSource::Bluetooth`
+- `main.cpp`: `g_bluetoothManager.begin()` + voce **BLE SCAN** nel
+  MAIN MENU (item 11, prima di SETTINGS)
+- `ui/ActivityStatus.cpp`: tag `BG:BLE` in header quando lo scanner
+  è attivo (marcato `isRf: false` — BT e WiFi coesistono via coex
+  layer, non conflitto)
+- 3 screen nuove: `BleScannerScreen` (inventory dashboard),
+  `BleDetailScreen` (parsing completo per un device), `BleTrackerScreen`
+  (feature #7)
+
+**Fuori scope in questo lotto** (deliberatamente per contenere il
+footprint flash — la Fase 14 documenta bene questo rischio):
+- **#2 GATT service/characteristic enumeration**
+- **#3 RPA rotation correlation** (marca gli addr RPA, ma non correla
+  device che ruotano MAC — vuole storia + fingerprint stabile)
+- **#6 Weak-pairing / GATT posture audit**
+- **#8 Known-device control-characteristic detection**
+- **#9 BLE HID / input-device detection** (parte già flaggata dalla
+  presenza del service `0x1812` nel advertising, ma non fa GATT enum)
+
+Tutte queste richiedono il ruolo **central** attivato (adesso
+disabilitato via `build_flags`); passarci sopra è un secondo lotto
+BLE a sé, da fare **dopo** una `pio run` reale che confermi che
+questo primo lotto compili nello slot OTA da 2.25 MB.
+
+**Rischio flash noto**: NimBLE observer-only pesa ~90-130KB linkata
+(molto meno del classic stack, ma comunque non gratis). Il progetto
+è cresciuto ~35 fasi dopo la Fase 14 quindi non posso predirre se
+starà — l'utente lo scoprirà al primo `pio run`. Se sfora, la
+strategia è invertibile: rimuovere `h2zero/NimBLE-Arduino` da
+`lib_deps` + i tre file di screen + `BluetoothManager` (mesh chirurgico,
+tutte le dipendenze BLE sono confinate in questi 4 file + il `begin()`
+in main + la voce di menu + il tag in ActivityStatus).
+
 ## Compilare e flashare
 
 ```

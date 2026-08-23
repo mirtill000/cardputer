@@ -44,6 +44,8 @@
 #include "scan/VlanHopProbe.h"
 #include "scan/IotCredScanner.h"
 #include "scan/PasswordSprayManager.h"
+#include "scan/BluetoothManager.h"
+#include "ui/screens/BleScannerScreen.h"
 #include "net/WifiManager.h"
 #include "net/CaptivePortalDetector.h"
 #include "net/TimeSync.h"
@@ -66,7 +68,7 @@
 namespace {
 BootScreen g_bootScreen;
 
-MenuItem g_menuItems[12];
+MenuItem g_menuItems[13];
 }  // namespace
 
 void setup() {
@@ -115,10 +117,15 @@ void setup() {
     // action itself, there's no earlier target-picking screen to gate
     // instead - see MainMenuScreen.h's MenuItem::offensive.
     g_menuItems[10] = {"NAME SPOOF", &NameSpoofScreen::instance(), true};
-    g_menuItems[11] = {"SETTINGS", &SettingsScreen::instance()};
+    // Fase 52 - BLE inventory + tracker + WiFi correlation (first BLE
+    // lot after Fase 14 removed BLE for flash pressure; NimBLE now
+    // configured OBSERVER-only via platformio.ini build_flags to keep
+    // the reintroduction footprint minimal). See BluetoothManager.h.
+    g_menuItems[11] = {"BLE SCAN", &BleScannerScreen::instance()};
+    g_menuItems[12] = {"SETTINGS", &SettingsScreen::instance()};
     // The discovery tools moved under NETWORK SCAN -> 'D' (see
     // DiscoveryMenuScreen); their managers are still begin()'d below.
-    MainMenuScreen::instance().configure(g_menuItems, 12);
+    MainMenuScreen::instance().configure(g_menuItems, 13);
 
     // MainMenuScreen must already be configured by this point: once the
     // render task starts, BootScreen can transition straight to it on
@@ -164,6 +171,11 @@ void setup() {
     // g_credAuditManager.begin() above must run first (it does).
     g_iotCredScanner.begin(g_ui.scanQueue());
     g_passwordSpray.begin(g_ui.scanQueue());
+    // Fase 52 - BLE scanner (observer-only). The NimBLE stack itself
+    // is only initialized when the user starts a BLE scan (see
+    // BluetoothManager::run) - this call just creates the idle task
+    // and mutex, no BT init cost until requested.
+    g_bluetoothManager.begin(g_ui.scanQueue());
 
     // Non-blocking: if a network was saved from a previous WIFI SCAN
     // run, this kicks the connection off immediately at boot instead of
