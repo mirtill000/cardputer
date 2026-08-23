@@ -1,7 +1,6 @@
 #include "HomeScreen.h"
 #include "MainMenuScreen.h"
 #include "BluetoothToolsMenuScreen.h"
-#include "TerminalScreen.h"
 #include "AboutScreen.h"
 #include "SettingsScreen.h"
 #include "../UiManager.h"
@@ -21,23 +20,14 @@ void HomeScreen::onEnter() {
 void HomeScreen::onKey(UiKey key, char ch) {
     switch (key) {
         case UiKey::Left:
-            if (_selected == Tile::Bluetooth) _selected = Tile::Wifi;
-            else if (_selected == Tile::Terminal) _selected = Tile::Wifi;
+            _selected = Tile::Wifi;
             break;
         case UiKey::Right:
-            if (_selected == Tile::Wifi) _selected = Tile::Bluetooth;
-            else if (_selected == Tile::Terminal) _selected = Tile::Bluetooth;
-            break;
-        case UiKey::Down:
-            _selected = Tile::Terminal;
-            break;
-        case UiKey::Up:
-            if (_selected == Tile::Terminal) _selected = Tile::Wifi;
+            _selected = Tile::Bluetooth;
             break;
         case UiKey::Enter:
-            if (_selected == Tile::Wifi)      g_ui.pushScreen(&MainMenuScreen::instance());
-            else if (_selected == Tile::Bluetooth) g_ui.pushScreen(&BluetoothToolsMenuScreen::instance());
-            else                                    g_ui.pushScreen(&TerminalScreen::instance());
+            if (_selected == Tile::Wifi) g_ui.pushScreen(&MainMenuScreen::instance());
+            else                          g_ui.pushScreen(&BluetoothToolsMenuScreen::instance());
             break;
         case UiKey::Char:
             if (ch == 's' || ch == 'S') g_ui.pushScreen(&SettingsScreen::instance());
@@ -121,14 +111,6 @@ void HomeScreen::drawBtIcon(M5Canvas& gfx, int16_t cx, int16_t cy, uint16_t colo
     gfx.drawLine(x0 - 4, mid + 3, right, mid + 3, color);  // faint bot bar
 }
 
-void HomeScreen::drawTerminalIcon(M5Canvas& gfx, int16_t x, int16_t y, uint16_t color) {
-    // A little ">_" prompt in a boxed frame - 14x10.
-    gfx.drawRect(x, y, 14, 10, color);
-    gfx.setTextColor(color, theme::BG);
-    gfx.setCursor(x + 3, y + 1);
-    gfx.print(">_");
-}
-
 void HomeScreen::drawTile(M5Canvas& gfx, int16_t x, int16_t y, int16_t w, int16_t h,
                           const char* label, uint16_t frameColor, bool selected, uint8_t iconKind) {
     // Rounded-look frame: double outline when selected, single otherwise.
@@ -151,29 +133,17 @@ void HomeScreen::drawTile(M5Canvas& gfx, int16_t x, int16_t y, int16_t w, int16_
     switch (iconKind) {
         case 0: drawWifiIcon(gfx, iconX, iconY, frameColor); break;
         case 1: drawBtIcon(gfx, iconX, iconY, frameColor); break;
-        case 2: drawTerminalIcon(gfx, x + 6, y + (h - 10) / 2, frameColor); break;
         default: break;
     }
 
-    // Label + chevron.
+    // Vertical stack: icon at top, label near bottom.
     int16_t textLen = (int16_t)strlen(label) * theme::GLYPH_W;
     gfx.setTextColor(selected ? theme::CYAN : frameColor, theme::BG);
-    if (iconKind == 2) {
-        // Terminal tile: label + subtitle horizontal beside the icon.
-        gfx.setCursor(x + 24, y + 3);
-        gfx.print(label);
-        gfx.setTextColor(theme::GREY, theme::BG);
-        gfx.setCursor(x + 24, y + 12);
-        gfx.print("command line");
-    } else {
-        // Vertical stack: icon at top, label near bottom.
-        int16_t labelX = x + (w - textLen) / 2 - 6;  // leave room for chevron on right
-        int16_t labelY = y + h - 12;
-        gfx.setCursor(labelX, labelY);
-        gfx.print(label);
-    }
+    int16_t labelX = x + (w - textLen) / 2 - 6;  // leave room for chevron on right
+    int16_t labelY = y + h - 12;
+    gfx.setCursor(labelX, labelY);
+    gfx.print(label);
     // Right-side chevron ">".
-    gfx.setTextColor(selected ? theme::CYAN : frameColor, theme::BG);
     gfx.setCursor(x + w - 8, y + h - 12);
     gfx.print(">");
 }
@@ -208,11 +178,13 @@ void HomeScreen::draw(M5Canvas& gfx) {
     gfx.print(kSub);
 
     // --- Tiles ---
-    // Layout: two side-by-side tiles across the middle band, one wide
-    // TERMINAL tile below them. Leave space at top for header+title (~48px)
-    // and at bottom for the footer (~11px).
+    // Layout: two side-by-side tiles filling the middle band. Fase 57
+    // removed the TERMINAL tile (the user found it made the screen too
+    // busy), so the WIFI/BT tiles get the freed vertical space and read
+    // as the two primary actions. Leave space at top for header+title
+    // (~48px) and at bottom for the footer (~11px).
     int16_t bandTop = 52;
-    int16_t bandH = 46;
+    int16_t bandH = 65;
     int16_t tileGap = 4;
     int16_t tileW = (gfx.width() - 12 - tileGap) / 2;  // 4px side margins + gap
 
@@ -220,8 +192,6 @@ void HomeScreen::draw(M5Canvas& gfx) {
              _selected == Tile::Wifi, /*iconKind=*/0);
     drawTile(gfx, 4 + tileW + tileGap, bandTop, tileW, bandH, "BT", theme::MAGENTA,
              _selected == Tile::Bluetooth, /*iconKind=*/1);
-    drawTile(gfx, 4, bandTop + bandH + 3, gfx.width() - 8, 20, "TERMINAL", theme::CYAN,
-             _selected == Tile::Terminal, /*iconKind=*/2);
 
     // Footer: STATUS on the left, [SETTINGS] [ABOUT] on the right.
     int16_t footerY = gfx.height() - 9;
