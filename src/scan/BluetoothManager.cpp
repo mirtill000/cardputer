@@ -87,9 +87,17 @@ void BluetoothManager::begin(QueueHandle_t outQueue) {
     _outQueue = outQueue;
     // Permanent-idle-task pattern (same shape as CdpLldpSniffer /
     // PassiveHostDiscovery): the task lives forever, start()/stop()
-    // toggle the internal running flag; the NimBLE stack itself is only
-    // brought up on start() and torn down on stop().
-    xTaskCreatePinnedToCore(&BluetoothManager::taskEntry, "blescan", 4096, this, 1, nullptr, 0);
+    // toggle the internal running flag.
+    //
+    // Stack: 8192 (was 4096 in Fase 54, crashed on ilaria's hardware).
+    // The task itself doesn't need it, but the NimBLE scan callback -
+    // BleScanCallbacks::onResult -> onAdvertisedDevice - runs on the
+    // NimBLE host task, and the parsing chain (Apple Continuity, iBeacon,
+    // beacons, trackers, service data walk) allocates a lot of Strings.
+    // The scan callback stack IS this task's stack in some NimBLE
+    // configurations; oversizing here is a cheap way to give the callback
+    // slack without touching NimBLE config.
+    xTaskCreatePinnedToCore(&BluetoothManager::taskEntry, "blescan", 8192, this, 1, nullptr, 0);
 }
 
 void BluetoothManager::start() { _running = true; }
@@ -100,38 +108,51 @@ void BluetoothManager::taskEntry(void* arg) {
 }
 
 void BluetoothManager::run() {
+    // Fase 58: NimBLE is init'd ONCE (lazily on the first start()) and
+    // never deinit'd. Cycling init/deinit(true) on NimBLE-Arduino 1.4.1 +
+    // arduino-esp32 2.0.17 is a well-documented panic path (see
+    // h2zero/NimBLE-Arduino issues) - the internal host task state gets
+    // trashed on re-init and the second start() panics inside the BT
+    // controller. The RAM cost of leaving NimBLE up while idle (~30 KB
+    // of BSS - what Fase 14 was worried about) is a fair trade for a
+    // BLE SCAN screen that actually opens twice in a row without a
+    // reboot.
     for (;;) {
-        if (!_running) {
-            // Tear the stack down when we stop scanning - Fase 14's whole
-            // problem was BLE flash/RAM footprint; keeping NimBLE up
-            // while idle wastes ~30KB of BSS for no reason.
-            if (_initialized) {
-                NimBLEDevice::getScan()->stop();
-                NimBLEDevice::deinit(true);
-                _initialized = false;
-                notify("BLE scanner off");
+        if (_running) {
+            if (!_initialized) {
+                _beaconCount = 0;
+                _trackerCount = 0;
+                _correlatedCount = 0;
+                _rpaMatchedCount = 0;
+                _hidCount = 0;
+                NimBLEDevice::init("");
+                // Very low TX - we never advertise, keeping the radio quiet
+                // reduces BLE/WiFi coex contention when both are up.
+                NimBLEDevice::setPower(ESP_PWR_LVL_N12);
+                NimBLEScan* scan = NimBLEDevice::getScan();
+                scan->setAdvertisedDeviceCallbacks(&s_scanCallbacks, /*wantDuplicates=*/true);
+                scan->setActiveScan(false);   // passive scan - no SCAN_REQ
+                scan->setInterval(160);        // 100ms in 0.625ms slots
+                scan->setWindow(160);
+                _initialized = true;
+                notify("BLE stack up");
             }
-            vTaskDelay(pdMS_TO_TICKS(500));
-            continue;
-        }
-
-        if (!_initialized) {
-            // Reset counters so the header stats reflect this session,
-            // not the previous one. Devices themselves are kept (see the
-            // war-driving AP list: cross-session persistence is useful).
-            _beaconCount = 0;
-            _trackerCount = 0;
-            _correlatedCount = 0;
-            NimBLEDevice::init("");
-            NimBLEDevice::setPower(ESP_PWR_LVL_N12);  // very low TX - we don't advertise, this is future-proofing
             NimBLEScan* scan = NimBLEDevice::getScan();
-            scan->setAdvertisedDeviceCallbacks(&s_scanCallbacks, /*wantDuplicates=*/true);
-            scan->setActiveScan(false);   // no SCAN_REQ - stay passive
-            scan->setInterval(160);        // 100ms in 0.625ms slots
-            scan->setWindow(160);          // 100% duty cycle scan (same as interval)
-            scan->start(0, nullptr, /*is_continue=*/false);  // continuous
-            _initialized = true;
-            notify("BLE scanner on");
+            if (!scan->isScanning()) {
+                scan->start(0, nullptr, /*is_continue=*/false);  // continuous
+                notify("BLE scanner on");
+            }
+        } else {
+            // On stop: pause the scanner but leave the NimBLE stack up.
+            // Re-entering BLE SCAN just calls scan->start() again on the
+            // same live stack - no re-init, no panic.
+            if (_initialized) {
+                NimBLEScan* scan = NimBLEDevice::getScan();
+                if (scan->isScanning()) {
+                    scan->stop();
+                    notify("BLE scanner off");
+                }
+            }
         }
 
         vTaskDelay(pdMS_TO_TICKS(500));
@@ -213,8 +234,12 @@ void BluetoothManager::onAdvertisedDevice(const void* nimbleDev) {
         if (bd.platformNote.isEmpty()) bd.platformNote = "HID (input device)";
     }
 
-    // --- Feature #10: WiFi correlation by vendor match ---
-    correlateWithWifi(bd);
+    // Feature #10 WiFi correlation used to run here in the NimBLE callback
+    // context. Fase 58 moved it out - grabbing g_scanManager's mutex from
+    // the BT host task caused panics on real hardware (short callback
+    // stack + external mutex take is a classic ESP32 crash pattern).
+    // Now it's lazy: get()/getFirstXxx() enrich each row on read, in the
+    // UI task's context where mutex taking is safe.
 
     // --- Merge into device table ---
     bool newDevice = false;
@@ -474,6 +499,12 @@ bool BluetoothManager::get(size_t index, BleDevice& out) const {
     bool ok = index < _devices.size();
     if (ok) out = _devices[_devices.size() - 1 - index];  // most-recently-seen first
     xSemaphoreGive(_mutex);
+    // Fase 58: WiFi correlation (feature #10) moved here from the NimBLE
+    // scan callback. Done AFTER releasing our own mutex - correlateWithWifi
+    // takes ScanManager's mutex, so nesting is out of order. The trade-off
+    // is we re-do the vendor match every time the UI reads a row (~30/s in
+    // the worst case), but it's a linear scan over ~5-50 hosts, cheap.
+    if (ok && out.correlatedWifiIp.isEmpty()) const_cast<BluetoothManager*>(this)->correlateWithWifi(out);
     return ok;
 }
 
@@ -491,6 +522,7 @@ bool BluetoothManager::getFirstTracker(size_t index, BleDevice& out) const {
         seen++;
     }
     xSemaphoreGive(_mutex);
+    if (ok && out.correlatedWifiIp.isEmpty()) const_cast<BluetoothManager*>(this)->correlateWithWifi(out);
     return ok;
 }
 
@@ -563,6 +595,7 @@ bool BluetoothManager::getFirstHid(size_t index, BleDevice& out) const {
         seen++;
     }
     xSemaphoreGive(_mutex);
+    if (ok && out.correlatedWifiIp.isEmpty()) const_cast<BluetoothManager*>(this)->correlateWithWifi(out);
     return ok;
 }
 
@@ -573,5 +606,6 @@ bool BluetoothManager::findByAddr(const String& addr, BleDevice& out) const {
         if (d.addr == addr) { out = d; ok = true; break; }
     }
     xSemaphoreGive(_mutex);
+    if (ok && out.correlatedWifiIp.isEmpty()) const_cast<BluetoothManager*>(this)->correlateWithWifi(out);
     return ok;
 }
