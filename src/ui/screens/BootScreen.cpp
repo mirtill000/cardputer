@@ -1,5 +1,5 @@
 #include "BootScreen.h"
-#include "HomeScreen.h"
+#include "MainMenuScreen.h"
 #include "../UiManager.h"
 #include "../Theme.h"
 #include "../Chrome.h"
@@ -59,7 +59,7 @@ void BootScreen::onExit() {
 void BootScreen::onKey(UiKey key, char /*ch*/) {
     if (!_promptShown) return;  // ignore input until the boot sequence has finished
     if (key == UiKey::Enter || key == UiKey::Back) {
-        g_ui.replaceScreen(&HomeScreen::instance());
+        g_ui.replaceScreen(&MainMenuScreen::instance());
     }
 }
 
