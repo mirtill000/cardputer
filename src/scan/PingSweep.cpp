@@ -1,12 +1,14 @@
 #include "PingSweep.h"
+#include "ArpResolver.h"
 #include <WiFi.h>
 
 namespace {
 // Common enough to catch most live hosts (web UI, HTTPS, SSH, SMB)
 // without paying the worst-case timeout for many ports per dead host.
 // Kept short on purpose: PingSweep::probe's worst case (a genuinely
-// unreachable IP) costs kProbePortCount * timeoutMs, and that cost is
-// paid for every dead address in the subnet.
+// unreachable IP) used to cost kProbePortCount * timeoutMs, paid for
+// every dead address in the subnet - see the ARP short-circuit below
+// for why that worst case is now ~1x instead.
 constexpr uint16_t kProbePorts[] = {80, 443, 22, 445};
 constexpr size_t kProbePortCount = sizeof(kProbePorts) / sizeof(kProbePorts[0]);
 }  // namespace
@@ -26,6 +28,20 @@ bool PingSweep::probe(const IPAddress& ip, uint16_t timeoutMs) {
         bool ok = client.connect(ip, kProbePorts[i], timeoutMs);
         client.stop();
         if (ok) return true;
+
+        // connect() above had to ARP-resolve ip to even send the SYN, so
+        // after the first miss, a still-empty ARP entry means nothing on
+        // the LAN answered that resolution at all - almost always "no
+        // host at this address", not "host up but this port closed/
+        // filtered" (a live host that merely refuses/ignores a port
+        // still answers ARP). Bailing out here instead of trying the
+        // remaining kProbePortCount-1 ports turns the worst case for a
+        // dead address - the overwhelming majority of any real subnet -
+        // from kProbePortCount*timeoutMs down to ~1*timeoutMs.
+        if (i == 0) {
+            uint8_t mac[6];
+            if (!ArpResolver::lookupMac(ip, mac)) return false;
+        }
     }
     return false;
 }

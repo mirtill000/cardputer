@@ -4,6 +4,7 @@
 #include "../Chrome.h"
 #include "../../core/Types.h"
 #include "../../scan/OsFingerprint.h"
+#include "../../net/WifiManager.h"
 
 OsFingerprintScreen& OsFingerprintScreen::instance() {
     static OsFingerprintScreen s;
@@ -60,13 +61,28 @@ void OsFingerprintScreen::draw(M5Canvas& gfx) {
     gfx.fillScreen(theme::BG);
     chrome::drawHeader(gfx, "OS FINGERPRINT");
 
-    gfx.setTextColor(_running ? theme::CYAN : theme::GREEN, theme::BG);
-    gfx.setCursor(6, 18);
-    gfx.print("seen: ");
-    gfx.print((unsigned)g_osFingerprint.count());
-    gfx.print(_running ? "  [listening]" : "");
+    // The Protected Frame bit makes WPA2/3 data payloads opaque to this
+    // promiscuous sniffer no matter whose traffic it is (see
+    // WifiManager::isCurrentNetworkOpen()'s comment) - flagging that up
+    // front here instead of leaving the user staring at a silently empty
+    // "seen: 0" on their almost certainly encrypted home/office network,
+    // which is the far more common case than an open one.
+    bool networkOpen = g_wifi.isCurrentNetworkOpen();
+    if (!networkOpen) {
+        gfx.setTextColor(theme::RED, theme::BG);
+        gfx.setCursor(6, 18);
+        gfx.print("network is WPA-encrypted:");
+        gfx.setCursor(6, 27);
+        gfx.print("passive sniff sees nothing");
+    } else {
+        gfx.setTextColor(_running ? theme::CYAN : theme::GREEN, theme::BG);
+        gfx.setCursor(6, 18);
+        gfx.print("seen: ");
+        gfx.print((unsigned)g_osFingerprint.count());
+        gfx.print(_running ? "  [listening]" : "");
+    }
 
-    drawHosts(gfx, 30);
+    drawHosts(gfx, 38, networkOpen);
 
     gfx.setTextColor(theme::MAGENTA, theme::BG);
     gfx.setCursor(6, gfx.height() - 20);
@@ -77,10 +93,13 @@ void OsFingerprintScreen::draw(M5Canvas& gfx) {
     gfx.print("I:detail  DEL:back  (open nets only)");
 }
 
-void OsFingerprintScreen::drawHosts(M5Canvas& gfx, int16_t top) {
+void OsFingerprintScreen::drawHosts(M5Canvas& gfx, int16_t top, bool networkOpen) {
     size_t count = g_osFingerprint.count();
     if (count == 0) {
-        chrome::drawEmptyState(gfx, "no SYN-ACK seen yet", _running ? "listening..." : "press ENTER to start");
+        const char* hint = !networkOpen        ? "connect to an open network"
+                            : _running          ? "listening..."
+                                                 : "press ENTER to start";
+        chrome::drawEmptyState(gfx, "no SYN-ACK seen yet", hint);
         return;
     }
 

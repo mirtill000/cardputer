@@ -2,6 +2,7 @@
 #include "IpUtil.h"
 #include <Preferences.h>
 #include <WiFi.h>
+#include <esp_wifi.h>
 
 WifiManager g_wifi;
 
@@ -171,6 +172,21 @@ bool WifiManager::connectFailed() const {
 
 String WifiManager::currentSsid() const { return WiFi.SSID(); }
 uint8_t WifiManager::currentChannel() const { return isConnected() ? (uint8_t)WiFi.channel() : 0; }
+
+bool WifiManager::isCurrentNetworkOpen() const {
+    if (!isConnected()) return false;
+    // WiFi.encryptionType() only works on a beginScan() result index, not
+    // the live association - esp_wifi_sta_get_ap_info() is the one call
+    // that reports the authmode of the AP we're actually joined to right
+    // now. On failure (should only happen if called while not associated,
+    // already excluded above), assume encrypted - the callers of this are
+    // "can I expect promiscuous sniffing to see anything" checks, and
+    // treating an unknown state as "you won't see anything" is the safe
+    // direction to be wrong in.
+    wifi_ap_record_t info;
+    if (esp_wifi_sta_get_ap_info(&info) != ESP_OK) return false;
+    return info.authmode == WIFI_AUTH_OPEN;
+}
 IPAddress WifiManager::localIP() const { return WiFi.localIP(); }
 IPAddress WifiManager::subnetMask() const { return WiFi.subnetMask(); }
 IPAddress WifiManager::gatewayIP() const { return WiFi.gatewayIP(); }

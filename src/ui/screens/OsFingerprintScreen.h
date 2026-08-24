@@ -23,7 +23,7 @@ public:
     }
 
 private:
-    void drawHosts(M5Canvas& gfx, int16_t top);
+    void drawHosts(M5Canvas& gfx, int16_t top, bool networkOpen);
 
     bool _running = false;
     size_t _selected = 0;

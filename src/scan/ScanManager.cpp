@@ -200,7 +200,15 @@ void ScanManager::mergeMdnsService(const IPAddress& ip, const String& type, cons
         // Adopt the instance name as this host's hostname only if it
         // doesn't have one yet - never overwrites a name NBNS/mDNS
         // reverse-PTR already found during discovery (see probeHost()).
-        if (h.hostname.isEmpty() && instance.length()) h.hostname = instance;
+        // mDNS instance names ("iPhone-di-Mario", "Living Room Speaker")
+        // are often far more descriptive than what probeHost() had to
+        // work with, so re-run the classifier now that it exists - this
+        // is the only path that can turn an Unknown/Mobile/Computer guess
+        // from the original probe into something better after the fact.
+        if (h.hostname.isEmpty() && instance.length()) {
+            h.hostname = instance;
+            DeviceClassifier::classify(h, h.ip == _gateway);
+        }
 
         break;
     }
