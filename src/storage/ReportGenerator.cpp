@@ -1,9 +1,13 @@
 #include "ReportGenerator.h"
 #include "../core/Types.h"
+#include "../core/Finding.h"
+#include "../core/Session.h"
 #include "../scan/ScanManager.h"
+#include "../scan/FindingStore.h"
 #include "../net/WifiManager.h"
 #include "../net/TimeSync.h"
 #include <cstdio>
+#include <vector>
 
 namespace {
 
@@ -39,20 +43,6 @@ const char* riskClass(RiskLevel r) {
         case RiskLevel::Critical: return "crit";
         default: return "ok";
     }
-}
-
-bool hostHasService(const HostInfo& h, const char* svc) {
-    for (const auto& p : h.ports) {
-        if (p.service == svc) return true;
-    }
-    return false;
-}
-
-bool hostHasPort(const HostInfo& h, uint16_t port) {
-    for (const auto& p : h.ports) {
-        if (p.port == port) return true;
-    }
-    return false;
 }
 
 // The inline stylesheet - dark cyberpunk palette matching the device UI
@@ -124,7 +114,9 @@ bool ReportGenerator::generate(fs::FS& fs, const char* path) {
     htmlEscape(f, g_wifi.networkAddress().toString());
     f.print("</code> &nbsp; gateway: <code>");
     htmlEscape(f, g_wifi.gatewayIP().toString());
-    f.print("</code><br>generated: ");
+    f.print("</code><br>session: <code>#");
+    f.print(g_session.id());
+    f.print("</code> &nbsp; generated: ");
     htmlEscape(f, ts);
     f.print("</p>");
 
@@ -144,61 +136,35 @@ bool ReportGenerator::generate(fs::FS& fs, const char* path) {
     card(credVulnCount, "cred-vulnerable");
     f.print("</div>");
 
-    // --- Attack surface / kill chain: the interesting stuff first. A
-    // host can raise several findings; each is one line, most-severe
-    // category first (creds -> plaintext svc -> known-vuln banner ->
-    // exposed SMB). Purely descriptive - it points at what an attacker
-    // would look at, it doesn't do anything. ---
+    // --- Attack surface / kill chain: the interesting stuff first,
+    // most-severe first. This is now exactly FindingStore's unified
+    // rollup — the SAME list THREATS shows on-device and the JSON export
+    // emits — so the report finally includes the standing-detector
+    // findings (rogue DHCP, deauth floods, WPS-unlocked APs, no-auth
+    // IoT/OT, SENTINEL new/gone devices, PMKID captures, plus anything a
+    // module pushed) it used to omit, not just the host-table ones.
+    // Purely descriptive - it points at what an attacker would look at,
+    // it doesn't do anything. ---
     f.print("<h2>ATTACK SURFACE</h2>");
-    bool anyFinding = false;
 
-    for (size_t i = 0; i < n; i++) {
-        if (!g_scanManager.getHost(i, h) || !h.alive) continue;
-        if (!h.credVulnerable) continue;
-        anyFinding = true;
-        f.print("<div class=\"finding\"><span class=\"who\">");
-        htmlEscape(f, h.ip.toString());
-        f.print("</span> &mdash; default/weak credentials accepted");
-        if (h.credNote.length()) { f.print(": "); htmlEscape(f, h.credNote); }
+    std::vector<Finding> findings;
+    g_findings.buildRollup(findings);
+
+    for (const auto& fd : findings) {
+        // Critical findings get the loud "finding" class; Warning/info
+        // the softer "finding warn" — same red/amber split the page's CSS
+        // already defined for the old per-host findings.
+        const char* cls = (fd.severity == RiskLevel::Critical) ? "finding" : "finding warn";
+        f.print("<div class=\"");
+        f.print(cls);
+        f.print("\"><span class=\"who\">");
+        htmlEscape(f, fd.hostIsSet() ? fd.host.toString() : String(findingCategoryLabel(fd.category)));
+        f.print("</span> &mdash; ");
+        htmlEscape(f, fd.detail.length() ? fd.detail : fd.title);
         f.print("</div>");
     }
-    for (size_t i = 0; i < n; i++) {
-        if (!g_scanManager.getHost(i, h) || !h.alive) continue;
-        bool telnet = hostHasService(h, "telnet") || hostHasPort(h, 23);
-        bool ftp = hostHasService(h, "ftp") || hostHasPort(h, 21);
-        if (!telnet && !ftp) continue;
-        anyFinding = true;
-        f.print("<div class=\"finding warn\"><span class=\"who\">");
-        htmlEscape(f, h.ip.toString());
-        f.print("</span> &mdash; plaintext service exposed (");
-        if (telnet) f.print("telnet");
-        if (telnet && ftp) f.print(", ");
-        if (ftp) f.print("ftp");
-        f.print(") &mdash; credentials travel unencrypted</div>");
-    }
-    for (size_t i = 0; i < n; i++) {
-        if (!g_scanManager.getHost(i, h) || !h.alive) continue;
-        if (!h.vulnNote.length()) continue;
-        anyFinding = true;
-        f.print("<div class=\"finding\"><span class=\"who\">");
-        htmlEscape(f, h.ip.toString());
-        f.print("</span> &mdash; banner matched known-vulnerable signature: ");
-        htmlEscape(f, h.vulnNote);
-        f.print("</div>");
-    }
-    for (size_t i = 0; i < n; i++) {
-        if (!g_scanManager.getHost(i, h) || !h.alive) continue;
-        bool smb = hostHasService(h, "smb") || hostHasService(h, "netbios-ssn") ||
-                   hostHasPort(h, 445) || hostHasPort(h, 139);
-        if (!smb) continue;
-        anyFinding = true;
-        f.print("<div class=\"finding warn\"><span class=\"who\">");
-        htmlEscape(f, h.ip.toString());
-        f.print("</span> &mdash; SMB/NetBIOS exposed &mdash; check share ACLs and signing "
-                "(on-device: host detail &rarr; S)</div>");
-    }
 
-    if (!anyFinding) {
+    if (findings.empty()) {
         f.print("<p class=\"muted\">No standout findings flagged. This does not mean the "
                 "network is secure &mdash; it means nothing matched the heuristics above. "
                 "Run port scans and credential audits on individual hosts for depth.</p>");

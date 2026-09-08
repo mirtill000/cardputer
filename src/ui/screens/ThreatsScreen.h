@@ -3,21 +3,16 @@
 #include "Screen.h"
 #include <cstddef>
 
-// "THREATS": a single live view that aggregates the standout findings
-// scattered across the other modules — default-credential hits and
-// known-vulnerable banners (from ScanManager's host table), plaintext
-// services (telnet/ftp), suspicious rogue-DHCP servers (from
-// RogueDhcpDetector), APs with WPS enabled and unlocked (from
-// BeaconProbeSniffer), deauth/disassoc floods in progress (from
-// DeauthWatcher/GUARD MODE and separately from SENTINEL MODE's own
-// folded-in detector), new/gone devices on a SENTINEL MODE-watched
-// network, unauthenticated MQTT/Modbus/CoAP/BACnet/DNP3 endpoints (from
-// IotOtProbe/IOT/OT SWEEP), and a status note when PMKID SWEEP has
-// captured at least one PMKID this session. Read-only; it re-derives the
-// list from the live
-// data on every draw, so it reflects whatever the background scanners
-// have found so far. It's the on-device counterpart to the report's
-// ATTACK SURFACE section.
+// "THREATS": the on-device view of the app's unified finding rollup.
+// It renders exactly what FindingStore::buildRollup() returns (see
+// scan/FindingStore.h) — the SAME list the HTML report's ATTACK SURFACE
+// section and the JSON export now emit, so all three agree. That rollup
+// merges default-credential hits and known-vulnerable banners and
+// plaintext services (from ScanManager's host table), suspicious rogue
+// DHCP, WPS-unlocked APs, deauth floods (GUARD + SENTINEL), new/gone
+// devices, unauthenticated MQTT/Modbus/CoAP/BACnet/DNP3 endpoints, a
+// PMKID-sweep status note, and anything any module pushed via
+// FindingStore::add(). Read-only; rebuilt from live data every draw.
 class ThreatsScreen : public Screen {
 public:
     static ThreatsScreen& instance();

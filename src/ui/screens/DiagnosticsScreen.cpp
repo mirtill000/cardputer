@@ -94,7 +94,5 @@ void DiagnosticsScreen::draw(M5Canvas& gfx) {
     String rtcVal = !rtc ? "absent" : (rtcLow ? "present, battery LOW" : "present");
     statusRow(gfx, 100, "RTC:", rtcVal, rtc && !rtcLow);
 
-    gfx.setTextColor(theme::GREY, theme::BG);
-    gfx.setCursor(4, gfx.height() - 9);
-    gfx.print("S:speaker  ?:help  DEL:back");
+    chrome::drawFooter(gfx, "S:speaker  ?:help  DEL:back");
 }

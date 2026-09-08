@@ -143,7 +143,5 @@ void CapturesScreen::draw(M5Canvas& gfx) {
                                    (first + kMaxRows) < _entries.size());
     }
 
-    gfx.setTextColor(theme::GREY, theme::BG);
-    gfx.setCursor(4, gfx.height() - 9);
-    gfx.print(_entries.empty() ? "DEL:back" : "I:detail X:del DEL:back");
+    chrome::drawFooter(gfx, _entries.empty() ? "DEL:back" : "I:detail X:del DEL:back");
 }

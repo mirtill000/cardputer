@@ -5,7 +5,9 @@
 #include "MdnsReverseResolver.h"
 #include "OuiDatabase.h"
 #include "PingSweep.h"
+#include "FindingStore.h"
 #include "../core/Config.h"
+#include "../core/Session.h"
 #include "../net/IpUtil.h"
 #include "../net/WifiManager.h"
 #include <cstring>
@@ -57,6 +59,15 @@ void ScanManager::startDiscoveryScan() {
     _progressPct = 0;
     _scanGeneration++;
     _running = true;
+
+    // Tie this run into an assessment session. A genuinely new session
+    // (first scan after boot, or a different target than last time)
+    // clears the previous session's pushed findings so the rollup starts
+    // fresh; a rescan of the same network — including SENTINEL's periodic
+    // internal scans — keeps accumulating into the current session. The
+    // host-table-derived half of the rollup follows this scan's results
+    // regardless (this repopulates _hosts above).
+    if (g_session.beginNew(g_wifi.currentSsid())) g_findings.clear();
 
     notify(ScanEventType::ScanStarted);
 

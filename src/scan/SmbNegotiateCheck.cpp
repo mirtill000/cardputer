@@ -1,4 +1,5 @@
 #include "SmbNegotiateCheck.h"
+#include "../net/NetTimeouts.h"
 #include <WiFiClient.h>
 #include <cstring>
 
@@ -6,8 +7,8 @@ SmbNegotiateCheck g_smbCheck;
 
 namespace {
 
-constexpr uint16_t kConnectTimeoutMs = 3000;
-constexpr uint16_t kReadTimeoutMs = 3000;
+constexpr uint16_t kConnectTimeoutMs = nettimeout::kSmbMs;
+constexpr uint16_t kReadTimeoutMs = nettimeout::kSmbMs;
 
 // Appends a "\x02<dialect>\0" entry to buf and returns the new length.
 size_t appendDialect(uint8_t* buf, size_t n, const char* dialect) {

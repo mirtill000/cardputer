@@ -22,7 +22,5 @@ void PlaceholderScreen::draw(M5Canvas& gfx) {
     gfx.setTextColor(theme::GREEN, theme::BG);
     drawWrapped(gfx, _description, 6, 26, 10, 37);
 
-    gfx.setTextColor(theme::GREY, theme::BG);
-    gfx.setCursor(4, gfx.height() - 9);
-    gfx.print("DEL:back");
+    chrome::drawFooter(gfx, "DEL:back");
 }

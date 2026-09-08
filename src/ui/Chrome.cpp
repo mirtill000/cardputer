@@ -181,6 +181,57 @@ void chrome::drawAlertHeader(M5Canvas& gfx, const char* title) {
     gfx.drawFastHLine(4, 15, gfx.width() - 8, theme::GREY);
 }
 
+namespace {
+// Linear interpolate between two RGB565 colors (t in 0..255). Used only
+// by the accent rule; kept local since nothing else needs it.
+uint16_t lerp565(uint16_t a, uint16_t b, uint8_t t) {
+    int ar = (a >> 11) & 0x1F, ag = (a >> 5) & 0x3F, ab = a & 0x1F;
+    int br = (b >> 11) & 0x1F, bg = (b >> 5) & 0x3F, bb = b & 0x1F;
+    int r = ar + (br - ar) * t / 255;
+    int g = ag + (bg - ag) * t / 255;
+    int bl = ab + (bb - ab) * t / 255;
+    return (uint16_t)((r << 11) | (g << 5) | bl);
+}
+}  // namespace
+
+void chrome::drawAccentRule(M5Canvas& gfx, int16_t y) {
+    // A single thin cyan->magenta rule spanning the usable width, drawn as
+    // a handful of colored segments (no per-pixel loop). Gives every
+    // screen a hint of the boot screen's neon identity along the bottom.
+    const int16_t x0 = 4;
+    const int16_t x1 = gfx.width() - 4;
+    const int16_t w = x1 - x0;
+    if (w <= 0) return;
+    constexpr int kSeg = 8;
+    for (int i = 0; i < kSeg; i++) {
+        int16_t sx = x0 + (int16_t)(w * i / kSeg);
+        int16_t ex = x0 + (int16_t)(w * (i + 1) / kSeg);
+        uint8_t t = (uint8_t)(255 * i / (kSeg - 1));
+        gfx.drawFastHLine(sx, y, ex - sx, lerp565(theme::CYAN, theme::MAGENTA, t));
+    }
+}
+
+void chrome::drawFooter(M5Canvas& gfx, const char* hints) {
+    // Standard footer: the shared accent rule, then the key-hint line at
+    // one fixed baseline (height()-9, the offset ~80% of screens already
+    // used) in the standard grey. Truncated, never wrapped.
+    drawAccentRule(gfx, gfx.height() - 13);
+    if (!hints || !hints[0]) return;
+    gfx.setTextColor(theme::GREY, theme::BG);
+    gfx.setCursor(4, gfx.height() - 9);
+    // Truncate to what fits so a long hint can't spill past the right edge.
+    int maxChars = (gfx.width() - 8) / theme::GLYPH_W;
+    if ((int)strlen(hints) <= maxChars) {
+        gfx.print(hints);
+    } else {
+        char buf[64];
+        int n = maxChars < (int)sizeof(buf) - 1 ? maxChars : (int)sizeof(buf) - 1;
+        memcpy(buf, hints, n);
+        buf[n] = '\0';
+        gfx.print(buf);
+    }
+}
+
 void chrome::drawScrollMarkers(M5Canvas& gfx, int16_t top, int16_t bottom, bool moreAbove, bool moreBelow) {
     // Right-margin corner markers, same position/color MainMenuScreen's
     // own (now-shared) convention already established. setTextColor's
@@ -289,5 +340,16 @@ void chrome::drawHeader(M5Canvas& gfx, const char* title) {
     // when enough is running at once that the compact tag alone is easy
     // to miss (Fase 37) — see activity::draw's own doc comment.
     uint16_t separatorColor = activity::draw(gfx, (int16_t)(x - 4), 4);
-    gfx.drawFastHLine(4, 15, gfx.width() - 8, separatorColor);
+    // Visual identity (Fase harmonization): in the common case — no
+    // elevated background activity, so activity::draw asked for the plain
+    // grey line — render the separator as the shared cyan->magenta accent
+    // instead, so every screen carries a hint of the boot screen's neon
+    // identity from this one shared point. An amber/red separator is a
+    // real activity/conflict signal and still wins: only the grey default
+    // is replaced.
+    if (separatorColor == theme::GREY) {
+        chrome::drawAccentRule(gfx, 15);
+    } else {
+        gfx.drawFastHLine(4, 15, gfx.width() - 8, separatorColor);
+    }
 }

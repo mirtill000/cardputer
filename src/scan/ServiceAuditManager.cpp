@@ -2,6 +2,7 @@
 #include "ScanManager.h"
 #include "Base64.h"
 #include "../core/Types.h"
+#include "../net/NetTimeouts.h"
 #include <WiFiClient.h>
 #include <mbedtls/md.h>
 #include <cstring>
@@ -10,8 +11,8 @@ ServiceAuditManager g_serviceAuditManager;
 
 namespace {
 
-constexpr uint16_t kConnectTimeoutMs = 2500;
-constexpr uint16_t kReadTimeoutMs = 2500;
+constexpr uint16_t kConnectTimeoutMs = nettimeout::kInteractiveAuthMs;
+constexpr uint16_t kReadTimeoutMs = nettimeout::kInteractiveAuthMs;
 constexpr uint16_t kAttemptDelayMs = 150;  // polite rate-limit between tries
 
 // ---- small helpers ----------------------------------------------------

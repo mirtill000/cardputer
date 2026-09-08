@@ -11,6 +11,7 @@
 #include "ui/screens/SettingsScreen.h"
 #include "scan/OuiDatabase.h"
 #include "scan/PortServiceDb.h"
+#include "scan/FindingStore.h"
 #include "scan/ScanManager.h"
 #include "scan/PortScanManager.h"
 #include "scan/CredAuditManager.h"
@@ -99,6 +100,10 @@ void setup() {
     sdcard::begin();  // no-op-ish if no card is inserted - see SdCard.cpp
     g_ouiDb.begin();
     g_portServiceDb.begin();
+    // Unified finding rollup (THREATS / HTML report / JSON export all read
+    // it - see scan/FindingStore.h). Just creates its mutex; safe to call
+    // before the scan managers, and must precede any add()/buildRollup().
+    g_findings.begin();
 
     // PORT SCANNER and CREDENTIAL AUDIT are NOT top-level menu entries:
     // both are per-host actions reached from HOST DETAIL (TAB for a port

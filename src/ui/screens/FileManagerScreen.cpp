@@ -143,7 +143,5 @@ void FileManagerScreen::draw(M5Canvas& gfx) {
                                    (first + kMaxRows) < _entries.size());
     }
 
-    gfx.setTextColor(theme::GREY, theme::BG);
-    gfx.setCursor(4, gfx.height() - 9);
-    gfx.print("ENTER:opendir X:del N/H:jump DEL:up");
+    chrome::drawFooter(gfx, "ENTER:opendir X:del N/H:jump DEL:up");
 }

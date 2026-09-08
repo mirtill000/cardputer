@@ -83,6 +83,26 @@ void drawEmptyState(M5Canvas& gfx, const char* title, const char* hint);
 // consent screens share one definition.
 void drawAlertHeader(M5Canvas& gfx, const char* title);
 
+// Shared key-hint footer. Every screen used to hand-roll its own
+// `gfx.setCursor(x, height()-N); gfx.print("...DEL:back")` line, at four
+// different y-offsets (height()-9/-19/-20/-30) — the one row that tells
+// the user what the keys do, and it drifted screen to screen. This draws
+// that line at a single fixed baseline in the standard grey, and paints
+// the shared bottom accent rule (see below) just above it, so the footer
+// is pixel-identical everywhere. `hints` is the raw hint string a screen
+// already builds (e.g. "I:detail  ENTER:start  DEL:back"); pass whatever
+// keys apply — only the position/color/accent are standardized, not the
+// wording. Truncated to the screen width rather than wrapped.
+void drawFooter(M5Canvas& gfx, const char* hints);
+
+// The single thin cyan-to-magenta accent rule that gives every screen a
+// touch of the boot screen's neon identity (until now only BootScreen's
+// skyline/grid carried it; the tool screens were bare). drawFooter draws
+// it automatically just above the hint line; screens with no footer can
+// call it directly. `y` is the rule's baseline. Cheap: one gradientish
+// fast-hline built from a few colored segments, no per-pixel work.
+void drawAccentRule(M5Canvas& gfx, int16_t y);
+
 // --- Shared scroll-position indicator (Fase 31 UX pass) ---
 
 // Small ^/v markers in the right margin showing whether a scrolling
