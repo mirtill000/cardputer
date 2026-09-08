@@ -4,6 +4,7 @@
 #include <atomic>
 #include <vector>
 #include "../core/EventQueue.h"
+#include "../net/NetTimeouts.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
@@ -67,8 +68,8 @@ public:
 
 private:
     static constexpr size_t kMaxFindings = 40;
-    static constexpr uint16_t kConnectTimeoutMs = 700;
-    static constexpr uint16_t kReadTimeoutMs = 700;
+    static constexpr uint16_t kConnectTimeoutMs = nettimeout::kQuickProbeMs;
+    static constexpr uint16_t kReadTimeoutMs = nettimeout::kQuickProbeMs;
 
     static void taskEntry(void* arg);
     void run();

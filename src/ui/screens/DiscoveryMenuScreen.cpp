@@ -220,7 +220,5 @@ void DiscoveryMenuScreen::draw(M5Canvas& gfx) {
 
     chrome::drawScrollMarkers(gfx, kTop, kTop + (int16_t)kMaxRows * kRowH, first > 0, (first + kMaxRows) < kCount);
 
-    gfx.setTextColor(theme::GREY, theme::BG);
-    gfx.setCursor(4, gfx.height() - 9);
-    gfx.print("ENTER:open  DEL:back");
+    chrome::drawFooter(gfx, "ENTER:open  DEL:back");
 }

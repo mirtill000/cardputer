@@ -96,6 +96,15 @@ public:
     // 0 when not connected (2.4GHz channels are 1-13, never 0) - used by
     // ChannelScanScreen to mark "your own AP's channel" on the chart.
     uint8_t currentChannel() const;
+    // False if not connected. Several passive promiscuous-sniffing tools
+    // (OS FINGERPRINT, LAN TOPOLOGY, PASSIVE HOSTS, ROGUE DHCP, VLAN HOP)
+    // can only ever read frames on an unencrypted BSS - the 802.11
+    // Protected Frame bit makes WPA2/3 data payloads opaque to this
+    // firmware regardless of whose traffic it is. Screens use this to
+    // warn the user up front instead of leaving them staring at a
+    // silently empty result list on their (almost certainly encrypted)
+    // home/office network.
+    bool isCurrentNetworkOpen() const;
 
     IPAddress localIP() const;
     IPAddress subnetMask() const;
