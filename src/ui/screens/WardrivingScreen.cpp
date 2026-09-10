@@ -10,12 +10,39 @@
 #include "../Theme.h"
 #include "../Chrome.h"
 #include "../TextWrap.h"
+#include "../../net/GnssReceiver.h"
 #include "../../core/Config.h"
 #include "../../scan/WardrivingManager.h"
 #include <cstdio>
 
 namespace {
 constexpr size_t kMaxAllowlistLen = 32;
+
+// One-line GNSS status for the WAR DRIVING view (Cap LoRa-1262). Tells
+// "no cap" apart from "cap present, still acquiring" apart from a live
+// fix, and shows the coordinates being stamped into wardrive.csv so the
+// user can see geotagging is actually working.
+void drawGnssStrip(M5Canvas& gfx, int16_t y) {
+    gfx.setTextColor(theme::GREY, theme::BG);
+    gfx.setCursor(6, y);
+    gfx.print("GPS ");
+    if (!g_gnss.present()) {
+        gfx.setTextColor(theme::GREY, theme::BG);
+        gfx.print("no cap");
+        return;
+    }
+    GnssReceiver::Fix fix = g_gnss.current();
+    if (fix.valid) {
+        char buf[40];
+        snprintf(buf, sizeof(buf), "%.5f,%.5f sat%u", fix.lat, fix.lon, (unsigned)fix.satellites);
+        gfx.setTextColor(theme::GREEN, theme::BG);
+        gfx.print(buf);
+    } else {
+        gfx.setTextColor(theme::AMBER, theme::BG);
+        gfx.print("acquiring... sat");
+        gfx.print((unsigned)fix.satellites);
+    }
+}
 }  // namespace
 
 WardrivingScreen& WardrivingScreen::instance() {
@@ -271,7 +298,8 @@ void WardrivingScreen::draw(M5Canvas& gfx) {
     switch (_state) {
         case State::Idle: {
             drawStatusStrip(gfx, /*recording=*/false);
-            drawSightings(gfx, 56);
+            drawGnssStrip(gfx, 56);
+            drawSightings(gfx, 66);
             gfx.setTextColor(theme::GREY, theme::BG);
             gfx.setCursor(4, gfx.height() - 9);
             gfx.print("TAB:loc A:al C:cn O:offensive-menu");
@@ -280,7 +308,8 @@ void WardrivingScreen::draw(M5Canvas& gfx) {
 
         case State::Running: {
             drawStatusStrip(gfx, /*recording=*/true);
-            drawSightings(gfx, 56);
+            drawGnssStrip(gfx, 56);
+            drawSightings(gfx, 66);
             gfx.setTextColor(theme::GREY, theme::BG);
             gfx.setCursor(4, gfx.height() - 9);
             gfx.print("ENTER:stop A:allowlist DEL:back(bg)");
@@ -416,8 +445,9 @@ void WardrivingScreen::drawStatusStrip(M5Canvas& gfx, bool recording) {
     gfx.setTextColor(theme::CYAN, theme::BG);
     gfx.print(t);
 
-    // Four real-metric stat boxes (no GPS/SPEED on this hardware — see
-    // README "Limiti noti"): APs seen, open, discovered, evil-twin.
+    // Four real-metric stat boxes: APs seen, open, discovered, evil-twin.
+    // (GPS is now available via the Cap LoRa-1262 and shown on its own
+    // status line below this strip - see drawGnssStrip.)
     struct Box {
         const char* label;
         uint32_t value;
