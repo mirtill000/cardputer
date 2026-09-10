@@ -98,7 +98,20 @@ void WardrivingManager::begin(QueueHandle_t outQueue) {
     xTaskCreatePinnedToCore(&WardrivingManager::taskEntry, "wardrive", 8192, this, 1, nullptr, 0);
 }
 
-void WardrivingManager::start() { _running = true; }
+void WardrivingManager::start() {
+    if (_running) return;  // already running: keep the current session's file
+    // Name this session's CSV by its start time:
+    // /netrunner/wardrive/YYYYMMDD-HHMMSS-wardrive.csv. Uses the real
+    // (NTP/RTC) clock when available, else an uptime fallback — same
+    // convention as netrunner::reportBase (see storage/NetrunnerPaths.h).
+    // The folder is created lazily on the first write in logSighting().
+    String stamp = TimeSync::isSynced() ? TimeSync::nowFilenameString() : ("uptime-" + String(millis() / 1000));
+    if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+        _sessionCsvPath = "/netrunner/wardrive/" + stamp + "-wardrive.csv";
+        xSemaphoreGive(_mutex);
+    }
+    _running = true;
+}
 void WardrivingManager::stop() { _running = false; }
 
 void WardrivingManager::taskEntry(void* arg) {
@@ -285,17 +298,25 @@ void WardrivingManager::runScanCycle() {
 
 void WardrivingManager::logSighting(const ApSighting& ap) {
     fs::FS& fs = sdcard::exportFs();
-    // Continuous, ever-growing (append mode, never truncated) sighting
-    // log across the device's whole lifetime, not a per-run report -
-    // unlike everything netrunner::reportBase() builds, this is one
-    // single file, not one per scan/excursion. Still lives under
-    // /netrunner (Fase 29 - previously its own /wardrive/ namespace) so
-    // every artifact a user would want to pull off the card lands in one
-    // shared folder.
-    fs.mkdir("/netrunner");
 
-    bool isNewFile = !fs.exists("/netrunner/wardrive.csv");
-    File f = fs.open("/netrunner/wardrive.csv", "a");
+    // One CSV per wardrive session, under /netrunner/wardrive/, named by
+    // the session's start time (YYYYMMDD-HHMMSS-wardrive.csv, set in
+    // start()). This replaces the earlier single lifetime-append
+    // /netrunner/wardrive.csv: each outing is now its own file, so a
+    // run's rows - including the GNSS geotag columns - stay grouped
+    // together instead of interleaving across every session ever run.
+    String path;
+    if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+        path = _sessionCsvPath;
+        xSemaphoreGive(_mutex);
+    }
+    if (path.isEmpty()) return;  // no active session path (shouldn't happen while running)
+
+    fs.mkdir("/netrunner");
+    fs.mkdir("/netrunner/wardrive");
+
+    bool isNewFile = !fs.exists(path.c_str());
+    File f = fs.open(path.c_str(), "a");
     if (!f) return;
     if (isNewFile)
         f.println("time,ssid,bssid,rssi,channel,encryption,vendor,open,allowlisted,suspicious,lat,lon,alt_m,sats");
