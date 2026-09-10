@@ -115,6 +115,13 @@ private:
     std::vector<ApSighting> _sightings;
     QueueHandle_t _outQueue = nullptr;
 
+    // Destination CSV for the CURRENT wardrive session: one file per run,
+    // /netrunner/wardrive/YYYYMMDD-HHMMSS-wardrive.csv, its name fixed at
+    // the session's start time (set in start(), consumed by logSighting).
+    // Empty while not running. Guarded by _mutex (written on the UI task
+    // in start(), read on the scan task in logSighting).
+    String _sessionCsvPath;
+
     std::atomic<bool> _running{false};
     std::atomic<uint32_t> _openCount{0};
     std::atomic<uint32_t> _discoveredCount{0};

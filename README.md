@@ -5608,12 +5608,21 @@ Il WAR DRIVING ora **geotagga** ogni AP visto quando è collegato il cap
 **M5Stack Cap LoRa-1262** (prodotto U214) — un modulo con radio LoRa
 SX1262 *più* un ricevitore GNSS ATGM336H. Finora il log del war driving
 salvava tutto tranne la cosa che un vero wardrive vuole: *dove* è stato
-visto ogni AP. Con il cap collegato, ogni riga di `/netrunner/wardrive.csv`
-guadagna quattro colonne — `lat,lon,alt_m,sats` — con la posizione al
-momento in cui l'AP è stato visto la prima volta (formato importabile in
-strumenti stile WiGLE). Senza fix (o senza cap) le colonne di coordinate
-restano vuote e il resto del log è invariato: un wardrive senza GPS
-continua a funzionare esattamente come prima.
+visto ogni AP. Ogni riga guadagna quattro colonne — `lat,lon,alt_m,sats` —
+con la posizione al momento in cui l'AP è stato visto la prima volta
+(formato importabile in strumenti stile WiGLE). Senza fix (o senza cap)
+le colonne di coordinate restano vuote e il resto del log è invariato: un
+wardrive senza GPS continua a funzionare esattamente come prima.
+
+**Un file CSV per sessione.** Il log non è più un unico
+`/netrunner/wardrive.csv` che cresce all'infinito: ogni sessione di WAR
+DRIVING (da quando si preme ENTER a quando si ferma) scrive il proprio
+file sotto **`/netrunner/wardrive/`**, col nome
+**`YYYYMMDD-HHMMSS-wardrive.csv`** — timestamp fissato all'avvio della
+sessione (orario reale NTP/RTC se disponibile, altrimenti `uptime-<sec>`).
+Così ogni "uscita" è un artefatto a sé, e le righe di una sessione — con
+le loro coordinate GNSS — restano raggruppate invece di mescolarsi con
+tutte le sessioni precedenti.
 
 ### Cosa è stato aggiunto
 
@@ -5632,8 +5641,9 @@ continua a funzionare esattamente come prima.
   resta muta, `present()` e `current().valid` restano `false`, come già
   fanno SD/RTC quando assenti.
 - **`WardrivingManager`** — ogni nuova sighting viene marcata con il fix
-  GNSS del momento (`lat/lon/altitudeM/satellites`), e `wardrive.csv`
-  guadagna le quattro colonne geotag.
+  GNSS del momento (`lat/lon/altitudeM/satellites`), e il CSV di sessione
+  (`/netrunner/wardrive/YYYYMMDD-HHMMSS-wardrive.csv`, nome fissato in
+  `start()`) guadagna le quattro colonne geotag.
 - **`WardrivingScreen`** — una riga di stato GPS (`no cap` / `acquiring…`
   / `<lat>,<lon> satN`) sotto la status strip, così si vede a colpo
   d'occhio se il geotag sta funzionando.
@@ -5645,11 +5655,11 @@ continua a funzionare esattamente come prima.
   `net/CapLoRa1262.h`, ma trasmettere/ricevere LoRa (telemetria del log,
   survey RF LoRa/Meshtastic) è un lavoro a parte: serve una libreria
   radio e una verifica del budget flash. Chiedere se serve.
-- **`wardrive.csv` esistente**: l'header con le nuove colonne viene
-  scritto solo quando il file non esiste ancora. Un `wardrive.csv` già
-  presente da run precedenti continuerà ad accumulare righe con le
-  colonne in più sotto il vecchio header — per un header pulito basta
-  rimuovere/rinominare il vecchio file sulla SD.
+- **Vecchio `/netrunner/wardrive.csv`**: non è più scritto né toccato —
+  i nuovi log vivono sotto `/netrunner/wardrive/`. Un eventuale
+  `wardrive.csv` monolitico da versioni precedenti resta sulla SD così
+  com'è (nessuna migrazione automatica); si può archiviare o cancellare
+  a mano.
 - **Non verificato su hardware reale**: in questo ambiente non c'è il
   toolchain ESP32 né il cap fisico. La piedinatura è quella pubblicata
   da M5Stack ma va confermata al primo flash; se il GNSS non riceve,
