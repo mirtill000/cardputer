@@ -5139,9 +5139,15 @@ posto:
   (Fase 13): scelta deliberata (vedi sopra), ma significa che
   `/config_backup.json` va trattato con la stessa cura della SD stessa
   — chiunque possa leggere quel file ha le tue password WiFi salvate.
-- **LoRa/GPS**: non presenti di serie sul Cardputer ADV (confermato
-  nella ricerca hardware iniziale di questo progetto), quindi non
-  affrontati.
+- **LoRa/GPS**: non presenti *di serie* sul Cardputer ADV. Il **GPS/GNSS
+  è ora supportato** collegando il cap **M5Stack Cap LoRa-1262** (SX1262
+  LoRa + ATGM336H GNSS), usato dal WAR DRIVING per il geotag — vedi la
+  sezione "Fase 64" sotto. Senza il cap collegato il comportamento è
+  quello di sempre (nessuna coordinata, tutto il resto invariato). La
+  parte **LoRa (SX1262) del cap non è ancora usata** da alcun modulo: i
+  pin sono già mappati in `net/CapLoRa1262.h` per un futuro uso, ma
+  aggiungere il LoRa richiede una libreria radio (es. RadioLib) e una
+  verifica del budget flash/OTA (vedi `partitions.csv`).
 - **ARP MITM: nessun relay/forwarding del traffico intercettato**
   (Fase 16): scelta deliberata, non un limite tecnico rimandato — vedi
   la sezione "Fase 16" sopra per il ragionamento completo. Sulla pratica
@@ -5595,3 +5601,57 @@ posto:
   pratica: se WPAD è ON, il contatore resta 0 per una sessione lunga,
   e un `nc -v <ip> 80` da un altro host rifiuta la connessione — il
   bind non è avvenuto.
+
+## Fase 64: GPS/GNSS wardriving con il cap M5Stack Cap LoRa-1262
+
+Il WAR DRIVING ora **geotagga** ogni AP visto quando è collegato il cap
+**M5Stack Cap LoRa-1262** (prodotto U214) — un modulo con radio LoRa
+SX1262 *più* un ricevitore GNSS ATGM336H. Finora il log del war driving
+salvava tutto tranne la cosa che un vero wardrive vuole: *dove* è stato
+visto ogni AP. Con il cap collegato, ogni riga di `/netrunner/wardrive.csv`
+guadagna quattro colonne — `lat,lon,alt_m,sats` — con la posizione al
+momento in cui l'AP è stato visto la prima volta (formato importabile in
+strumenti stile WiGLE). Senza fix (o senza cap) le colonne di coordinate
+restano vuote e il resto del log è invariato: un wardrive senza GPS
+continua a funzionare esattamente come prima.
+
+### Cosa è stato aggiunto
+
+- **`net/CapLoRa1262.h`** — un solo posto con tutta la piedinatura del
+  cap sul Cardputer ADV: GNSS su UART (`RX=G15`, `TX=G13`, 9600 baud,
+  NMEA-0183) e SX1262 su SPI (`NSS=G5`, `MOSI=G14`, `MISO=G39`,
+  `SCK=G40`, `DIO1=G4`, `RST=G3`, `BUSY=G6`). Valori dalla documentazione
+  M5Stack/rivenditori; se una revisione futura li rimappa, si cambia solo
+  qui.
+- **`net/GnssReceiver.{h,cpp}`** — driver GNSS autonomo: apre la UART del
+  cap in un task dedicato e fa il parsing **solo** delle due frasi NMEA
+  che servono (RMC per posizione+validità, GGA per quota+satelliti),
+  ignorando il resto. **Nessuna libreria esterna** (niente TinyGPS++):
+  parser minimale scritto a mano per non toccare il budget flash/OTA
+  (vedi `partitions.csv`). Degrada in modo sicuro se non c'è cap: `RX`
+  resta muta, `present()` e `current().valid` restano `false`, come già
+  fanno SD/RTC quando assenti.
+- **`WardrivingManager`** — ogni nuova sighting viene marcata con il fix
+  GNSS del momento (`lat/lon/altitudeM/satellites`), e `wardrive.csv`
+  guadagna le quattro colonne geotag.
+- **`WardrivingScreen`** — una riga di stato GPS (`no cap` / `acquiring…`
+  / `<lat>,<lon> satN`) sotto la status strip, così si vede a colpo
+  d'occhio se il geotag sta funzionando.
+
+### Limiti / scelte
+
+- **Solo la parte GNSS del cap è usata.** La radio **LoRa (SX1262) non è
+  ancora cablata** ad alcuna funzione — i pin sono pronti in
+  `net/CapLoRa1262.h`, ma trasmettere/ricevere LoRa (telemetria del log,
+  survey RF LoRa/Meshtastic) è un lavoro a parte: serve una libreria
+  radio e una verifica del budget flash. Chiedere se serve.
+- **`wardrive.csv` esistente**: l'header con le nuove colonne viene
+  scritto solo quando il file non esiste ancora. Un `wardrive.csv` già
+  presente da run precedenti continuerà ad accumulare righe con le
+  colonne in più sotto il vecchio header — per un header pulito basta
+  rimuovere/rinominare il vecchio file sulla SD.
+- **Non verificato su hardware reale**: in questo ambiente non c'è il
+  toolchain ESP32 né il cap fisico. La piedinatura è quella pubblicata
+  da M5Stack ma va confermata al primo flash; se il GNSS non riceve,
+  il primo sospetto sono i pin UART in `net/CapLoRa1262.h` (ed è l'unico
+  punto da correggere).

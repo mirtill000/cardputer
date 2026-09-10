@@ -61,6 +61,17 @@ public:
         // order alone can't tell that apart.
         bool suspicious = false;
         String suspiciousNote;
+
+        // GNSS geotag: where this AP was first seen, from the Cap
+        // LoRa-1262's GNSS receiver (net/GnssReceiver.h) if one is
+        // attached and has a fix at that moment. hasFix==false leaves
+        // lat/lon meaningless (and the CSV columns blank) — a wardrive
+        // with no GPS still logs everything, just without coordinates.
+        bool hasFix = false;
+        double lat = 0.0;
+        double lon = 0.0;
+        double altitudeM = 0.0;
+        uint8_t satellites = 0;
     };
 
     void begin(QueueHandle_t outQueue);

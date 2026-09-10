@@ -5,6 +5,7 @@
 #include "../core/Config.h"
 #include "../net/TimeSync.h"
 #include "../net/WifiManager.h"
+#include "../net/GnssReceiver.h"
 #include "../storage/ResultStore.h"
 #include "../storage/SdCard.h"
 #include "../storage/NetrunnerPaths.h"
@@ -180,6 +181,18 @@ void WardrivingManager::runScanCycle() {
                 rec.firstSeenMs = millis();
                 rec.lastSeenMs = rec.firstSeenMs;
 
+                // Geotag the sighting with the GNSS fix at the moment it
+                // was first seen (Cap LoRa-1262). No cap / no fix yet just
+                // leaves hasFix=false and the CSV coordinates blank.
+                GnssReceiver::Fix fix = g_gnss.current();
+                if (fix.valid) {
+                    rec.hasFix = true;
+                    rec.lat = fix.lat;
+                    rec.lon = fix.lon;
+                    rec.altitudeM = fix.altitudeM;
+                    rec.satellites = fix.satellites;
+                }
+
                 uint8_t macBytes[6];
                 if (parseMac(r.bssid, macBytes)) g_ouiDb.lookup(macBytes, rec.vendor);
 
@@ -284,7 +297,8 @@ void WardrivingManager::logSighting(const ApSighting& ap) {
     bool isNewFile = !fs.exists("/netrunner/wardrive.csv");
     File f = fs.open("/netrunner/wardrive.csv", "a");
     if (!f) return;
-    if (isNewFile) f.println("time,ssid,bssid,rssi,channel,encryption,vendor,open,allowlisted,suspicious");
+    if (isNewFile)
+        f.println("time,ssid,bssid,rssi,channel,encryption,vendor,open,allowlisted,suspicious,lat,lon,alt_m,sats");
 
     String t = TimeSync::isSynced() ? TimeSync::nowString() : ("uptime:" + String(millis() / 1000));
 
@@ -308,6 +322,21 @@ void WardrivingManager::logSighting(const ApSighting& ap) {
     row += (ap.allowlisted ? "1" : "0");
     row += ',';
     row += (ap.suspicious ? "1" : "0");
+    row += ',';
+    // Geotag columns: blank lat/lon/alt when there was no GNSS fix at the
+    // moment this AP was first seen, so downstream tools (WiGLE-style
+    // importers, spreadsheets) treat them as missing rather than 0,0.
+    if (ap.hasFix) {
+        row += String(ap.lat, 6);
+        row += ',';
+        row += String(ap.lon, 6);
+        row += ',';
+        row += String(ap.altitudeM, 1);
+    } else {
+        row += ",,";  // empty lat, lon, alt
+    }
+    row += ',';
+    row += String(ap.satellites);
 
     f.println(row);
     f.close();

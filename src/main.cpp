@@ -49,6 +49,7 @@
 #include "net/WifiManager.h"
 #include "net/CaptivePortalDetector.h"
 #include "net/TimeSync.h"
+#include "net/GnssReceiver.h"
 #include "storage/SdCard.h"
 #include "ui/screens/ScanHistoryScreen.h"
 #include "ui/screens/WardrivingScreen.h"
@@ -177,6 +178,11 @@ void setup() {
     // g_credAuditManager.begin() above must run first (it does).
     g_iotCredScanner.begin(g_ui.scanQueue());
     g_passwordSpray.begin(g_ui.scanQueue());
+
+    // GNSS receiver on the M5Stack Cap LoRa-1262 (UART NMEA). Starts its
+    // own reader task; no-op if no cap is attached. WAR DRIVING geotags
+    // each sighting from its fix - see scan/WardrivingManager.cpp.
+    g_gnss.begin();
     // BluetoothManager + BleGattClient begin() calls were here for the
     // BLE lot (Fase 54/55); removed in Fase 61 rollback.
 
