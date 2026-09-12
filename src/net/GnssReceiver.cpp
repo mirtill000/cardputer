@@ -28,13 +28,16 @@ bool nmeaToDegrees(const char* field, char hemi, double& out) {
 
 void GnssReceiver::begin() {
     _mutex = xSemaphoreCreateMutex();
-    // Opens UART1 on the cap's GNSS pins. Harmless if no cap is attached —
-    // the RX line just stays idle and nothing is ever parsed.
-    gnssSerial.begin(caplora::kGnssBaud, SERIAL_8N1, caplora::kGnssRxPin, caplora::kGnssTxPin);
+    // The UART is opened inside run() (not here) so the reader task can
+    // auto-probe which of the two documented pins actually carries the
+    // NMEA stream - see run(). Harmless if no cap is attached: the RX line
+    // just stays idle, no bytes are ever read, present() stays false.
     xTaskCreatePinnedToCore(&GnssReceiver::taskEntry, "gnss", 4096, this, 1, nullptr, 0);
 }
 
 bool GnssReceiver::present() const { return _sawData; }
+uint32_t GnssReceiver::rxBytes() const { return _rxBytes; }
+int GnssReceiver::activeRxPin() const { return _activeRx; }
 
 GnssReceiver::Fix GnssReceiver::current() const {
     Fix out;
@@ -48,11 +51,28 @@ GnssReceiver::Fix GnssReceiver::current() const {
 void GnssReceiver::taskEntry(void* arg) { static_cast<GnssReceiver*>(arg)->run(); }
 
 void GnssReceiver::run() {
+    // Auto-probe the RX pin. The published Cap LoRa-1262 pin-out lists two
+    // UART pins; which one is the module's TX (the one we must read) is the
+    // easiest thing to get wrong, and reading the wrong pin looks exactly
+    // like "no cap". So: start on one, and if no byte has EVER arrived
+    // after kProbeMs, switch to the other and keep alternating until data
+    // shows up. Once any byte is read (_rxBytes > 0) the pin is locked in.
+    // TX is left unassigned (-1): this firmware only reads NMEA, never
+    // configures the module, so we never drive a cap pin as output.
+    const int candidates[2] = {caplora::kGnssRxPin, caplora::kGnssTxPin};
+    constexpr uint32_t kProbeMs = 3000;
+    int idx = 0;
+
+    gnssSerial.begin(caplora::kGnssBaud, SERIAL_8N1, candidates[idx], -1);
+    _activeRx = candidates[idx];
+    uint32_t probeStart = millis();
+
     char line[128];
     size_t len = 0;
     for (;;) {
         while (gnssSerial.available() > 0) {
             char c = (char)gnssSerial.read();
+            _rxBytes++;
             if (c == '\n' || c == '\r') {
                 if (len > 0) {
                     line[len] = '\0';
@@ -65,6 +85,17 @@ void GnssReceiver::run() {
                 len = 0;  // oversized/garbled line: drop it, resync on the next newline
             }
         }
+
+        // Still nothing on this pin after the probe window: try the other.
+        if (_rxBytes == 0 && (millis() - probeStart) > kProbeMs) {
+            idx ^= 1;
+            gnssSerial.end();
+            gnssSerial.begin(caplora::kGnssBaud, SERIAL_8N1, candidates[idx], -1);
+            _activeRx = candidates[idx];
+            probeStart = millis();
+            len = 0;
+        }
+
         vTaskDelay(pdMS_TO_TICKS(20));
     }
 }

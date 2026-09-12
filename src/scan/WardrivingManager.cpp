@@ -148,6 +148,14 @@ void WardrivingManager::runScanCycle() {
 
     if (count < 0) return;  // failed or timed out this cycle - try again next time
 
+    // Read the GNSS fix ONCE per cycle, before taking _mutex below: this
+    // lock (GnssReceiver's) must never be acquired while holding
+    // WardrivingManager's _mutex, or a slow GNSS task could stall the
+    // whole sighting table (and with it the UI's getSighting/count calls).
+    // A cycle runs every ~15s, so this is effectively the fix "at sighting
+    // time" for any AP first seen this cycle.
+    GnssReceiver::Fix gnssFix = g_gnss.current();
+
     ApSighting toDiscover;
     bool haveToDiscover = false;
 
@@ -194,16 +202,15 @@ void WardrivingManager::runScanCycle() {
                 rec.firstSeenMs = millis();
                 rec.lastSeenMs = rec.firstSeenMs;
 
-                // Geotag the sighting with the GNSS fix at the moment it
-                // was first seen (Cap LoRa-1262). No cap / no fix yet just
+                // Geotag the sighting with this cycle's GNSS fix (read
+                // above, outside this lock). No cap / no fix yet just
                 // leaves hasFix=false and the CSV coordinates blank.
-                GnssReceiver::Fix fix = g_gnss.current();
-                if (fix.valid) {
+                if (gnssFix.valid) {
                     rec.hasFix = true;
-                    rec.lat = fix.lat;
-                    rec.lon = fix.lon;
-                    rec.altitudeM = fix.altitudeM;
-                    rec.satellites = fix.satellites;
+                    rec.lat = gnssFix.lat;
+                    rec.lon = gnssFix.lon;
+                    rec.altitudeM = gnssFix.altitudeM;
+                    rec.satellites = gnssFix.satellites;
                 }
 
                 uint8_t macBytes[6];

@@ -15,11 +15,16 @@
 namespace caplora {
 
 // --- GNSS (ATGM336H) : UART, standard NMEA-0183 @ 9600 baud ---------
-// Pin names are from the Cardputer-ADV (host MCU) perspective: the MCU's
-// RX receives the module's NMEA stream. TX is only needed to send the
-// module configuration commands, which this firmware does not do.
-constexpr int      kGnssRxPin = 15;   // MCU RX  <- module TX (NMEA in)
-constexpr int      kGnssTxPin = 13;   // MCU TX  -> module RX
+// These are the two UART pins the published pin-out assigns to the cap.
+// Which one is actually the MCU's RX (the module's TX, the line we read)
+// is the easy thing to get wrong, and the docs source could not be
+// verified first-hand here — so GnssReceiver auto-probes BOTH: it reads
+// on one and, if no bytes arrive, switches to the other until NMEA shows
+// up (see GnssReceiver::run()). So a swap between these two never has to
+// be fixed by editing this file. TX to the module is never driven (this
+// firmware only reads NMEA, never configures the module).
+constexpr int      kGnssRxPin = 15;   // first RX candidate
+constexpr int      kGnssTxPin = 13;   // second RX candidate (also the MCU TX pin, unused)
 constexpr uint32_t kGnssBaud  = 9600;
 constexpr int      kGnssUartNum = 1;  // ESP32-S3 UART1 (UART0 is the USB/serial log)
 

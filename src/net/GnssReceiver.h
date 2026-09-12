@@ -39,6 +39,21 @@ public:
     // still acquiring satellites".
     bool present() const;
 
+    // Raw bytes read off the UART so far, before any parsing. The key
+    // diagnostic when present() is false: 0 means nothing is arriving on
+    // the RX pin at all (wrong pin / cap absent / not powered), whereas a
+    // growing count with present() still false means bytes arrive but
+    // aren't valid NMEA (wrong baud, or a non-NMEA stream).
+    uint32_t rxBytes() const;
+
+    // Which GPIO the reader is currently listening on. The two documented
+    // Cap LoRa-1262 UART pins are auto-probed (see CapLoRa1262.h): the
+    // driver starts on one and, if no bytes arrive, switches to the other,
+    // so an RX/TX mix-up in the published pin-out fixes itself instead of
+    // silently reading a dead pin forever. Exposed so the UI can show
+    // which pin ended up carrying the data.
+    int activeRxPin() const;
+
     // A snapshot of the latest fix. .valid is false until the first
     // position lock; the lat/lon are meaningless while invalid.
     Fix current() const;
@@ -52,6 +67,8 @@ private:
     mutable SemaphoreHandle_t _mutex = nullptr;
     Fix _fix;
     volatile bool _sawData = false;
+    volatile uint32_t _rxBytes = 0;
+    volatile int _activeRx = -1;
 };
 
 extern GnssReceiver g_gnss;
