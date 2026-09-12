@@ -39,6 +39,13 @@ public:
     // still acquiring satellites".
     bool present() const;
 
+    // Raw bytes read off the UART so far, before any parsing. The key
+    // diagnostic when present() is false: 0 means nothing is arriving on
+    // the RX pin at all (cap absent / not powered / module not emitting),
+    // whereas a growing count with present() still false means bytes
+    // arrive but aren't valid NMEA (wrong baud, or a non-NMEA stream).
+    uint32_t rxBytes() const;
+
     // A snapshot of the latest fix. .valid is false until the first
     // position lock; the lat/lon are meaningless while invalid.
     Fix current() const;
@@ -52,6 +59,7 @@ private:
     mutable SemaphoreHandle_t _mutex = nullptr;
     Fix _fix;
     volatile bool _sawData = false;
+    volatile uint32_t _rxBytes = 0;
 };
 
 extern GnssReceiver g_gnss;

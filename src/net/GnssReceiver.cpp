@@ -28,13 +28,15 @@ bool nmeaToDegrees(const char* field, char hemi, double& out) {
 
 void GnssReceiver::begin() {
     _mutex = xSemaphoreCreateMutex();
-    // Opens UART1 on the cap's GNSS pins. Harmless if no cap is attached —
-    // the RX line just stays idle and nothing is ever parsed.
-    gnssSerial.begin(caplora::kGnssBaud, SERIAL_8N1, caplora::kGnssRxPin, caplora::kGnssTxPin);
+    // The UART is opened inside run() (not here) so the reader task can
+    // auto-probe which of the two documented pins actually carries the
+    // NMEA stream - see run(). Harmless if no cap is attached: the RX line
+    // just stays idle, no bytes are ever read, present() stays false.
     xTaskCreatePinnedToCore(&GnssReceiver::taskEntry, "gnss", 4096, this, 1, nullptr, 0);
 }
 
 bool GnssReceiver::present() const { return _sawData; }
+uint32_t GnssReceiver::rxBytes() const { return _rxBytes; }
 
 GnssReceiver::Fix GnssReceiver::current() const {
     Fix out;
@@ -48,11 +50,18 @@ GnssReceiver::Fix GnssReceiver::current() const {
 void GnssReceiver::taskEntry(void* arg) { static_cast<GnssReceiver*>(arg)->run(); }
 
 void GnssReceiver::run() {
+    // Open the UART on the cap's confirmed GNSS pins (official M5Stack pin
+    // map, see CapLoRa1262.h): read NMEA on MCU-RX = G15. Opened here on
+    // the task rather than in begin() so a UART init stall can never block
+    // boot. No cap / silent module just means available() stays 0 forever.
+    gnssSerial.begin(caplora::kGnssBaud, SERIAL_8N1, caplora::kGnssRxPin, caplora::kGnssTxPin);
+
     char line[128];
     size_t len = 0;
     for (;;) {
         while (gnssSerial.available() > 0) {
             char c = (char)gnssSerial.read();
+            _rxBytes++;
             if (c == '\n' || c == '\r') {
                 if (len > 0) {
                     line[len] = '\0';

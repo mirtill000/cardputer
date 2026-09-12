@@ -26,21 +26,34 @@ void drawGnssStrip(M5Canvas& gfx, int16_t y) {
     gfx.setTextColor(theme::GREY, theme::BG);
     gfx.setCursor(6, y);
     gfx.print("GPS ");
-    if (!g_gnss.present()) {
-        gfx.setTextColor(theme::GREY, theme::BG);
-        gfx.print("no cap");
-        return;
-    }
+
     GnssReceiver::Fix fix = g_gnss.current();
+    uint32_t rx = g_gnss.rxBytes();
+
     if (fix.valid) {
-        char buf[40];
+        // Locked fix: show the coordinates being written to the CSV.
+        char buf[44];
         snprintf(buf, sizeof(buf), "%.5f,%.5f sat%u", fix.lat, fix.lon, (unsigned)fix.satellites);
         gfx.setTextColor(theme::GREEN, theme::BG);
         gfx.print(buf);
-    } else {
+    } else if (g_gnss.present()) {
+        // Valid NMEA seen, just no position lock yet - normal cold start,
+        // needs open sky. sat0 here is expected until satellites are found.
         gfx.setTextColor(theme::AMBER, theme::BG);
-        gfx.print("acquiring... sat");
+        gfx.print("acquiring sat");
         gfx.print((unsigned)fix.satellites);
+    } else if (rx > 0) {
+        // Bytes arriving but nothing parses as NMEA - wrong baud or a
+        // non-NMEA stream. Show the raw count so it's diagnosable.
+        char buf[32];
+        snprintf(buf, sizeof(buf), "rx%luB no NMEA", (unsigned long)rx);
+        gfx.setTextColor(theme::RED, theme::BG);
+        gfx.print(buf);
+    } else {
+        // No bytes at all on G15: cap absent/unpowered or module not
+        // emitting (the pins are the confirmed official ones).
+        gfx.setTextColor(theme::GREY, theme::BG);
+        gfx.print("no data (G15)");
     }
 }
 }  // namespace
