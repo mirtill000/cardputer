@@ -37,7 +37,6 @@ void GnssReceiver::begin() {
 
 bool GnssReceiver::present() const { return _sawData; }
 uint32_t GnssReceiver::rxBytes() const { return _rxBytes; }
-int GnssReceiver::activeRxPin() const { return _activeRx; }
 
 GnssReceiver::Fix GnssReceiver::current() const {
     Fix out;
@@ -51,21 +50,11 @@ GnssReceiver::Fix GnssReceiver::current() const {
 void GnssReceiver::taskEntry(void* arg) { static_cast<GnssReceiver*>(arg)->run(); }
 
 void GnssReceiver::run() {
-    // Auto-probe the RX pin. The published Cap LoRa-1262 pin-out lists two
-    // UART pins; which one is the module's TX (the one we must read) is the
-    // easiest thing to get wrong, and reading the wrong pin looks exactly
-    // like "no cap". So: start on one, and if no byte has EVER arrived
-    // after kProbeMs, switch to the other and keep alternating until data
-    // shows up. Once any byte is read (_rxBytes > 0) the pin is locked in.
-    // TX is left unassigned (-1): this firmware only reads NMEA, never
-    // configures the module, so we never drive a cap pin as output.
-    const int candidates[2] = {caplora::kGnssRxPin, caplora::kGnssTxPin};
-    constexpr uint32_t kProbeMs = 3000;
-    int idx = 0;
-
-    gnssSerial.begin(caplora::kGnssBaud, SERIAL_8N1, candidates[idx], -1);
-    _activeRx = candidates[idx];
-    uint32_t probeStart = millis();
+    // Open the UART on the cap's confirmed GNSS pins (official M5Stack pin
+    // map, see CapLoRa1262.h): read NMEA on MCU-RX = G15. Opened here on
+    // the task rather than in begin() so a UART init stall can never block
+    // boot. No cap / silent module just means available() stays 0 forever.
+    gnssSerial.begin(caplora::kGnssBaud, SERIAL_8N1, caplora::kGnssRxPin, caplora::kGnssTxPin);
 
     char line[128];
     size_t len = 0;
@@ -85,17 +74,6 @@ void GnssReceiver::run() {
                 len = 0;  // oversized/garbled line: drop it, resync on the next newline
             }
         }
-
-        // Still nothing on this pin after the probe window: try the other.
-        if (_rxBytes == 0 && (millis() - probeStart) > kProbeMs) {
-            idx ^= 1;
-            gnssSerial.end();
-            gnssSerial.begin(caplora::kGnssBaud, SERIAL_8N1, candidates[idx], -1);
-            _activeRx = candidates[idx];
-            probeStart = millis();
-            len = 0;
-        }
-
         vTaskDelay(pdMS_TO_TICKS(20));
     }
 }
