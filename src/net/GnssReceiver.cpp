@@ -1,5 +1,6 @@
 #include "GnssReceiver.h"
 #include "CapLoRa1262.h"
+#include "TimeSync.h"
 
 #include <HardwareSerial.h>
 #include <cstdlib>
@@ -9,6 +10,17 @@ GnssReceiver g_gnss;
 
 namespace {
 HardwareSerial gnssSerial(caplora::kGnssUartNum);
+
+// Two ASCII digits -> int (used for the NMEA time/date fields).
+int digits2(const char* s) { return (s[0] - '0') * 10 + (s[1] - '0'); }
+
+// True if the first n chars of s are all ASCII digits.
+bool allDigits(const char* s, size_t n) {
+    for (size_t i = 0; i < n; i++) {
+        if (s[i] < '0' || s[i] > '9') return false;
+    }
+    return true;
+}
 
 // NMEA latitude/longitude come as ddmm.mmmm (lat) or dddmm.mmmm (lon)
 // plus a hemisphere char. Convert to signed decimal degrees. Returns
@@ -170,6 +182,22 @@ void GnssReceiver::handleSentence(char* s) {
                 _fix.lastFixMs = millis();
             }
             xSemaphoreGive(_mutex);
+        }
+
+        // GPS as a wall-clock source (outside the lock). With an active fix
+        // the RMC carries exact UTC: time in field 1 (hhmmss[.sss]) and date
+        // in field 9 (ddmmyy). Hand them to TimeSync, which adopts them only
+        // if the clock isn't already real (NTP/RTC/earlier GPS win) - so
+        // wardrive timestamps become real UTC even fully offline.
+        if (active && nf >= 10) {
+            const char* t = fields[1];
+            const char* d = fields[9];
+            if (strlen(t) >= 6 && strlen(d) >= 6 && allDigits(t, 6) && allDigits(d, 6)) {
+                int hh = digits2(t), mm = digits2(t + 2), ss = digits2(t + 4);
+                int day = digits2(d), mon = digits2(d + 2), yy = digits2(d + 4);
+                TimeSync::provideExternalUtc((uint16_t)(2000 + yy), (uint8_t)mon, (uint8_t)day, (uint8_t)hh,
+                                             (uint8_t)mm, (uint8_t)ss);
+            }
         }
     } else if (strcmp(typ, "GGA") == 0 && nf >= 10) {
         // $..GGA,time,lat,N/S,lon,E/W,fixQual,numSat,HDOP,alt,M,...
