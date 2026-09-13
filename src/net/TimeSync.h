@@ -68,6 +68,23 @@ bool rtcBatteryLow();
 // happened this session, or NTP hasn't synced yet.
 void syncRtcIfNeeded();
 
+// Offer an external UTC wall-clock reading as a time source. Today the
+// only caller is the GNSS receiver on the Cap LoRa-1262 (net/GnssReceiver):
+// once the GPS has a fix, its RMC sentence carries exact UTC date+time,
+// which is the ideal clock source when there's no WiFi (no NTP) and no
+// battery-backed RTC — the typical field-wardriving case.
+//
+// Adopts the value ONLY if the system clock isn't already at real time:
+// NTP, the RTC seed, or an earlier GPS reading take precedence and are
+// never overwritten, so this is safe to call on every valid GPS sentence
+// (~1 Hz) — it's a cheap no-op the moment isSynced() is true. Once it does
+// set the clock, isSynced() reads true and the periodic RTC writeback
+// (syncRtcIfNeeded) persists the GPS time to an attached RTC on its own.
+// All fields are UTC; an implausible value (before kSyncedCutoff) is
+// ignored.
+void provideExternalUtc(uint16_t year, uint8_t month, uint8_t day, uint8_t hour, uint8_t minute,
+                        uint8_t second);
+
 // "YYYY-MM-DD HH:MM:SS" (UTC), or "" if not synced yet.
 String nowString();
 

@@ -5714,3 +5714,26 @@ nuovo AP viene aggiunto al CSV di sessione con `open("a")` → `println` →
 crash del firmware perde al massimo la riga in corso di scrittura, non la
 sessione. (La scrittura avviene fuori dal mutex, così l'I/O su SD non
 blocca la tabella né la UI.)
+
+## Fase 66: il GPS come sorgente di data/ora (offline)
+
+Finora l'orologio si sincronizzava solo via **NTP** (con WiFi) o da un
+**RTC a batteria** esterno sulla Grove. Il cap LoRa-1262, una volta
+agganciato un fix, fornisce **UTC esatti (data + ora)** nella frase NMEA
+RMC — la sorgente ideale quando si è sul campo **senza WiFi e senza RTC**,
+lo scenario tipico del wardriving.
+
+- `net/GnssReceiver` ora legge dall'RMC anche l'ora (campo 1, `hhmmss`) e
+  la data (campo 9, `ddmmyy`) quando il fix è attivo, e le passa a
+  `TimeSync::provideExternalUtc()`.
+- `TimeSync` adotta l'ora esterna **solo se l'orologio non è già reale**:
+  NTP, il seed RTC o un fix GPS precedente hanno la precedenza e non
+  vengono sovrascritti. Appena il GPS imposta l'orologio, `isSynced()`
+  diventa vero e il writeback periodico (`syncRtcIfNeeded`) salva l'ora
+  GPS anche sull'RTC, se collegato — stesso percorso già usato da NTP.
+
+Effetto: i timestamp del wardrive (nome file `/netrunner/wardrive/
+YYYYMMDD-HHMMSS-wardrive.csv` e colonna `time`) diventano **UTC reali
+anche completamente offline**, non più `uptime-<sec>`, non appena il GPS
+aggancia. Priorità sorgenti: NTP / RTC / GPS (la prima che fornisce
+un'ora reale vince; le altre restano disponibili e coerenti, tutto UTC).

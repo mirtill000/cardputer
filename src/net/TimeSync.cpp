@@ -1,6 +1,7 @@
 #include "TimeSync.h"
 #include <M5Unified.h>
 #include <time.h>
+#include <sys/time.h>
 
 namespace {
 // 2020-09-13 00:00:00 UTC - comfortably before this project existed, so
@@ -25,6 +26,19 @@ constexpr uint32_t kRtcWriteIntervalMs = 1800000;  // then every 30 min
 
 uint32_t g_syncedSinceMs = 0;   // millis() when isSynced() first went true this boot; 0 = not yet
 uint32_t g_lastRtcWriteMs = 0;  // 0 = never written this session
+
+// UTC calendar date/time -> Unix epoch seconds, with no dependency on the
+// process timezone (unlike mktime). Howard Hinnant's days_from_civil.
+// Used only by provideExternalUtc() below.
+time_t civilToEpochUtc(int y, unsigned m, unsigned d, unsigned hh, unsigned mm, unsigned ss) {
+    y -= (m <= 2);
+    const int era = (y >= 0 ? y : y - 399) / 400;
+    const unsigned yoe = (unsigned)(y - era * 400);
+    const unsigned doy = (153u * (m + (m > 2 ? -3u : 9u)) + 2u) / 5u + d - 1u;
+    const unsigned doe = yoe * 365u + yoe / 4u - yoe / 100u + doy;
+    const long long days = (long long)era * 146097 + (long long)doe - 719468;
+    return (time_t)(days * 86400LL + (long long)hh * 3600 + (long long)mm * 60 + (long long)ss);
+}
 }  // namespace
 
 void TimeSync::begin(const char* server) {
@@ -68,6 +82,25 @@ bool TimeSync::rtcAvailable() {
 
 bool TimeSync::rtcBatteryLow() {
     return rtcAvailable() && M5.Rtc.getVoltLow();
+}
+
+void TimeSync::provideExternalUtc(uint16_t year, uint8_t month, uint8_t day, uint8_t hour, uint8_t minute,
+                                  uint8_t second) {
+    // Precedence: never overwrite a clock already at real time (NTP / RTC
+    // seed / an earlier GPS reading). Safe to call ~1 Hz from the GPS task.
+    if (isSynced()) return;
+    if (month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59 || second > 60) return;
+
+    time_t epoch = civilToEpochUtc(year, month, day, hour, minute, second);
+    if (epoch < kSyncedCutoff) return;  // implausible (before this project existed) - ignore
+
+    struct timeval tv;
+    tv.tv_sec = epoch;
+    tv.tv_usec = 0;
+    settimeofday(&tv, nullptr);
+    // Not writing the RTC here: once the clock is real, syncRtcIfNeeded()
+    // (called periodically from the UI task) persists it to an attached RTC
+    // on its own, same path NTP already uses.
 }
 
 void TimeSync::syncRtcIfNeeded() {
