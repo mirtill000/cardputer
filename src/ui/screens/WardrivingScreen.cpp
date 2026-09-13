@@ -43,11 +43,11 @@ void drawGnssStrip(M5Canvas& gfx, int16_t y) {
         gfx.print("acquiring sat");
         gfx.print((unsigned)fix.satellites);
     } else if (rx > 0) {
-        // Bytes arriving but nothing parses as NMEA - wrong baud or a
-        // non-NMEA stream. Show the raw count so it's diagnosable.
-        char buf[32];
-        snprintf(buf, sizeof(buf), "rx%luB no NMEA", (unsigned long)rx);
-        gfx.setTextColor(theme::RED, theme::BG);
+        // Bytes arriving but nothing parses as NMEA - the baud auto-probe
+        // is still hunting (or a non-NMEA stream). Show the baud it's on.
+        char buf[36];
+        snprintf(buf, sizeof(buf), "rx%luB no NMEA @%lu", (unsigned long)rx, (unsigned long)g_gnss.activeBaud());
+        gfx.setTextColor(theme::AMBER, theme::BG);
         gfx.print(buf);
     } else {
         // No bytes at all on G15: cap absent/unpowered or module not

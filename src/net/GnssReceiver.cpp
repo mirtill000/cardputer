@@ -28,15 +28,24 @@ bool nmeaToDegrees(const char* field, char hemi, double& out) {
 
 void GnssReceiver::begin() {
     _mutex = xSemaphoreCreateMutex();
+
+    // Cap bring-up, matching the known-good Evil-M5Project init for this
+    // cap on the Cardputer-ADV: drive the LoRa SX1262's NSS (G5) HIGH so
+    // the radio sits deselected on the shared SPI bus. Harmless when no
+    // cap is present (just drives a spare GPIO high); done here because
+    // this driver is the only consumer of the cap today.
+    pinMode(caplora::kLoraNssPin, OUTPUT);
+    digitalWrite(caplora::kLoraNssPin, HIGH);
+
     // The UART is opened inside run() (not here) so the reader task can
-    // auto-probe which of the two documented pins actually carries the
-    // NMEA stream - see run(). Harmless if no cap is attached: the RX line
-    // just stays idle, no bytes are ever read, present() stays false.
+    // auto-probe the baud - see run(). Harmless if no cap is attached: the
+    // RX line just stays idle, no bytes are read, present() stays false.
     xTaskCreatePinnedToCore(&GnssReceiver::taskEntry, "gnss", 4096, this, 1, nullptr, 0);
 }
 
 bool GnssReceiver::present() const { return _sawData; }
 uint32_t GnssReceiver::rxBytes() const { return _rxBytes; }
+uint32_t GnssReceiver::activeBaud() const { return _activeBaud; }
 
 GnssReceiver::Fix GnssReceiver::current() const {
     Fix out;
@@ -51,10 +60,19 @@ void GnssReceiver::taskEntry(void* arg) { static_cast<GnssReceiver*>(arg)->run()
 
 void GnssReceiver::run() {
     // Open the UART on the cap's confirmed GNSS pins (official M5Stack pin
-    // map, see CapLoRa1262.h): read NMEA on MCU-RX = G15. Opened here on
-    // the task rather than in begin() so a UART init stall can never block
-    // boot. No cap / silent module just means available() stays 0 forever.
-    gnssSerial.begin(caplora::kGnssBaud, SERIAL_8N1, caplora::kGnssRxPin, caplora::kGnssTxPin);
+    // map: MCU-RX = G15) and auto-probe the baud. The M5 cap ships at
+    // 115200 (per the known-good Evil-M5Project), but some modules are set
+    // to 9600/19200, so start at 115200 and, until a valid NMEA sentence
+    // is seen, rotate through the candidates every kProbeMs. Once _sawData
+    // is true the baud is locked. Opened here on the task (not begin()) so
+    // a UART init stall can never block boot.
+    const uint32_t bauds[3] = {caplora::kGnssBaud, 9600, 19200};  // primary from CapLoRa1262.h, then fallbacks
+    constexpr uint32_t kProbeMs = 4000;
+    int bi = 0;
+
+    _activeBaud = bauds[bi];
+    gnssSerial.begin(bauds[bi], SERIAL_8N1, caplora::kGnssRxPin, caplora::kGnssTxPin);
+    uint32_t probeStart = millis();
 
     char line[128];
     size_t len = 0;
@@ -74,6 +92,18 @@ void GnssReceiver::run() {
                 len = 0;  // oversized/garbled line: drop it, resync on the next newline
             }
         }
+
+        // No valid NMEA yet after the probe window: try the next baud.
+        // Stops as soon as a checksum-valid sentence has been seen.
+        if (!_sawData && (millis() - probeStart) > kProbeMs) {
+            bi = (bi + 1) % 3;
+            gnssSerial.end();
+            gnssSerial.begin(bauds[bi], SERIAL_8N1, caplora::kGnssRxPin, caplora::kGnssTxPin);
+            _activeBaud = bauds[bi];
+            probeStart = millis();
+            len = 0;
+        }
+
         vTaskDelay(pdMS_TO_TICKS(20));
     }
 }
