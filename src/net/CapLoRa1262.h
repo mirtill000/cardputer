@@ -11,15 +11,24 @@
 // for Cardputer-Adv, confirmed Sept 2026), not an inference.
 namespace caplora {
 
-// --- GNSS (ATGM336H) : UART, standard NMEA-0183 @ 9600 baud ---------
+// --- GNSS (ATGM336H) : UART NMEA-0183 ------------------------------
 // The doc labels the pins from the MODULE's side: "GPS-TX" is the GNSS
 // module's transmit line (the NMEA stream), on Cardputer G15; "GPS-RX"
 // is the module's receive line, on G13. So from the MCU's side the RX
 // pin — the one we must read NMEA on — is G15, and the MCU TX is G13.
+//
+// UART port and baud match the known-good Evil-M5Project firmware for
+// this exact cap on the Cardputer-ADV (github.com/7h30th3r0n3/
+// Evil-M5Project, Evil-Cardputer): it opens the GNSS on HardwareSerial(2)
+// (UART2) at 115200, NOT UART1/9600 — the M5 cap's ATGM336H streams at
+// 115200 out of the box, so reading at 9600 yields only framing garbage
+// (looks exactly like "no cap"). GnssReceiver still auto-probes the baud
+// (115200 -> 9600 -> 19200) so a differently-configured module also works
+// — same set that firmware exposes as a manual selector.
 constexpr int      kGnssRxPin = 15;   // MCU RX  <- module "GPS-TX"  (NMEA in)  [doc: G15]
 constexpr int      kGnssTxPin = 13;   // MCU TX  -> module "GPS-RX"             [doc: G13]
-constexpr uint32_t kGnssBaud  = 9600;
-constexpr int      kGnssUartNum = 1;  // ESP32-S3 UART1 (UART0 is the USB/serial log)
+constexpr uint32_t kGnssBaud  = 115200;  // primary; see auto-probe in GnssReceiver::run()
+constexpr int      kGnssUartNum = 2;  // ESP32-S3 UART2 (matches Evil-M5Project; UART0 = USB log)
 
 // --- SX1262 (LoRa) : SPI + control lines ----------------------------
 // Wired here for a future LoRa feature; not used by any code yet. Note

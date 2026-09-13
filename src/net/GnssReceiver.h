@@ -46,6 +46,12 @@ public:
     // arrive but aren't valid NMEA (wrong baud, or a non-NMEA stream).
     uint32_t rxBytes() const;
 
+    // The baud the reader is currently listening at. Until a valid NMEA
+    // sentence is seen the driver cycles 115200 -> 9600 -> 19200 (see
+    // run()); this reports which one it's on, so the UI can show that it's
+    // still hunting the baud vs locked in.
+    uint32_t activeBaud() const;
+
     // A snapshot of the latest fix. .valid is false until the first
     // position lock; the lat/lon are meaningless while invalid.
     Fix current() const;
@@ -60,6 +66,7 @@ private:
     Fix _fix;
     volatile bool _sawData = false;
     volatile uint32_t _rxBytes = 0;
+    volatile uint32_t _activeBaud = 0;
 };
 
 extern GnssReceiver g_gnss;

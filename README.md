@@ -5628,10 +5628,12 @@ tutte le sessioni precedenti.
 
 - **`net/CapLoRa1262.h`** — un solo posto con tutta la piedinatura del
   cap sul Cardputer ADV, dalla **pin map ufficiale M5Stack** (tabella
-  Cap-Bus): GNSS su UART — `MCU RX = G15` (legge la "GPS-TX" del modulo,
-  il flusso NMEA), `MCU TX = G13`, 9600 baud — e SX1262 su SPI (`NSS=G5`,
-  `MOSI=G14`, `MISO=G39`, `SCK=G40`, `DIO1=G4`, `RST=G3`, `BUSY=G6`). C'è
-  anche un expander I2C PI4IOE5V6408 (`SDA=G8`, `SCL=G9`) il cui P0
+  Cap-Bus) e allineata al firmware funzionante **Evil-M5Project**: GNSS su
+  **UART2**, `MCU RX = G15` (legge la "GPS-TX" del modulo, il flusso NMEA),
+  `MCU TX = G13`, **115200 baud** (il modulo del cap streamma a 115200, non
+  9600 — leggerlo a 9600 dà solo garbage, che sembra "no cap"); SX1262 su
+  SPI (`NSS=G5`, `MOSI=G14`, `MISO=G39`, `SCK=G40`, `DIO1=G4`, `RST=G3`,
+  `BUSY=G6`); expander I2C PI4IOE5V6408 (`SDA=G8`, `SCL=G9`) il cui P0
   abilita l'antenna RF del LoRa — documentato per il futuro uso LoRa, non
   serve al GNSS.
 - **`net/GnssReceiver.{h,cpp}`** — driver GNSS autonomo: apre la UART del
@@ -5639,9 +5641,12 @@ tutte le sessioni precedenti.
   che servono (RMC per posizione+validità, GGA per quota+satelliti),
   ignorando il resto. **Nessuna libreria esterna** (niente TinyGPS++):
   parser minimale scritto a mano per non toccare il budget flash/OTA
-  (vedi `partitions.csv`). Degrada in modo sicuro se non c'è cap: `RX`
-  resta muta, `present()` e `current().valid` restano `false`, come già
-  fanno SD/RTC quando assenti.
+  (vedi `partitions.csv`). **Auto-probe del baud** (115200 → 9600 → 19200)
+  finché non arriva NMEA valido, poi si blocca — stesso set di baud che
+  Evil-M5Project espone come selettore manuale. All'avvio porta anche
+  `NSS` (G5) del LoRa a HIGH per deselezionare l'SX1262 sul bus SPI
+  condiviso, come fa quel firmware. Degrada in sicurezza senza cap:
+  `present()`/`current().valid` restano `false`, come SD/RTC quando assenti.
 - **`WardrivingManager`** — ogni nuova sighting viene marcata con il fix
   GNSS del momento (`lat/lon/altitudeM/satellites`), e il CSV di sessione
   (`/netrunner/wardrive/YYYYMMDD-HHMMSS-wardrive.csv`, nome fissato in
@@ -5649,11 +5654,11 @@ tutte le sessioni precedenti.
 - **`WardrivingScreen`** — una riga di stato GPS **diagnostica** sotto la
   status strip, quattro stati per capire subito dov'è un eventuale
   problema: `no data (G15)` (nessun byte sul pin: cap assente/non
-  alimentato o modulo muto) → `rx<N>B no NMEA` (arrivano byte ma non NMEA
-  valido: quasi sempre baud ≠ 9600) → `acquiring satN` (NMEA ok, manca il
-  fix: **cold start, serve cielo aperto** — `sat0` qui è normale finché
-  non aggancia i satelliti) → `<lat>,<lon> satN` verde (fix ok, coordinate
-  scritte nel CSV).
+  alimentato o modulo muto) → `rx<N>B no NMEA @<baud>` (arrivano byte ma
+  non NMEA valido: l'auto-probe del baud sta ancora cercando) → `acquiring
+  satN` (NMEA ok, manca il fix: **cold start, serve cielo aperto** — `sat0`
+  qui è normale finché non aggancia i satelliti) → `<lat>,<lon> satN` verde
+  (fix ok, coordinate scritte nel CSV).
 
 ### Limiti / scelte
 
@@ -5667,12 +5672,10 @@ tutte le sessioni precedenti.
   `wardrive.csv` monolitico da versioni precedenti resta sulla SD così
   com'è (nessuna migrazione automatica); si può archiviare o cancellare
   a mano.
-- **Non verificato su hardware reale**: in questo ambiente non c'è il
-  toolchain ESP32 né il cap fisico. La piedinatura è quella **ufficiale
-  M5Stack** (quindi i pin non sono più il sospetto n.1). Se dopo il flash
-  la riga GPS resta `no data (G15)`, il modulo non sta emettendo su quel
-  pin: cause probabili sono alimentazione/inserzione del cap, un modulo
-  in cold start molto lungo, oppure — lato software — una contesa sulla
-  UART1 se una libreria M5 la usa per la porta Grove (in quel caso il fix
-  è spostare `kGnssUartNum` a un'altra UART in `net/CapLoRa1262.h`). La
-  riga di stato distingue i casi (vedi sopra).
+- **Allineato al firmware funzionante (Evil-M5Project)**: pin (RX=G15/
+  TX=G13), **UART2** e **115200 baud** combaciano con la sua
+  implementazione per questo cap sul Cardputer-ADV, più l'auto-probe del
+  baud come rete di sicurezza. Se dopo il flash la riga GPS resta `no data
+  (G15)` (zero byte su tutti i baud), il modulo non emette: cause probabili
+  sono alimentazione/inserzione del cap o un cold start molto lungo — non
+  più i pin né il baud. La riga di stato distingue i casi (vedi sopra).
