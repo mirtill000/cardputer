@@ -5679,3 +5679,38 @@ tutte le sessioni precedenti.
   (G15)` (zero byte su tutti i baud), il modulo non emette: cause probabili
   sono alimentazione/inserzione del cap o un cold start molto lungo — non
   più i pin né il baud. La riga di stato distingue i casi (vedi sopra).
+
+## Fase 65: WAR DRIVING robusto in memoria + log SD completo
+
+Su hardware reale il firmware crashava a volte durante il war driving, al
+crescere del numero di reti in lista. Causa: `_sightings` è un
+`std::vector` che raddoppia la capacità man mano che cresce; intorno ai
+~257 AP la riallocazione doveva tenere il vecchio buffer e allocarne uno
+nuovo grande insieme (picco ~114 KB) — su questo hardware **senza PSRAM**,
+con le eccezioni disabilitate, un `bad_alloc` diventa un `abort()`. È lo
+stesso genere di crash "bad_alloc su push_back" già visto con il vecchio
+modulo BLE.
+
+### Correzioni
+
+- **`_sightings.reserve()` una volta in `start()`**: il vector viene
+  pre-allocato alla sua capacità massima all'avvio della sessione, quindi
+  non rialloca mai più a metà scansione. Niente più picco di memoria.
+- **Cap abbassato a 200** (da 300) e **tabella azzerata a ogni sessione**:
+  la lista in RAM cresce entro un limite noto invece di accumulare tra
+  sessioni. Le eccezioni sono off, quindi la strategia è *prevenire*
+  l'allocazione fallimentare, non intercettarla.
+- **Nessuna perdita dati oltre il cap**: ogni nuovo BSSID viene scritto
+  sul CSV di sessione **anche quando la tabella RAM è piena**, deduplicato
+  con un set leggero di hash (~16 KB) separato da `_sightings`. Così in
+  zone dense (>200 AP) la lista a schermo è limitata ma **il log su SD
+  resta completo**.
+
+### Salvataggio su SD
+
+Il log era — e resta — **scritto in modo incrementale e durevole**: ogni
+nuovo AP viene aggiunto al CSV di sessione con `open("a")` → `println` →
+`close()`, quindi è già flushato su SD nel momento in cui è visto. Un
+crash del firmware perde al massimo la riga in corso di scrittura, non la
+sessione. (La scrittura avviene fuori dal mutex, così l'I/O su SD non
+blocca la tabella né la UI.)
