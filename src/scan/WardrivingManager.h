@@ -101,7 +101,19 @@ public:
     bool isAllowlisted(const String& ssid) const;
 
 private:
-    static constexpr size_t kMaxSightings = 300;
+    // In-RAM sighting table cap (display + evil-twin dedup). Lowered from
+    // 300 and, crucially, RESERVED up front in start() so the vector never
+    // reallocates mid-scan: on this no-PSRAM board the doubling realloc at
+    // a few hundred APs needed old+new buffers at once (~114 KB peak) and
+    // hit bad_alloc -> abort (exceptions are off), which was the "crashes
+    // as the network list grows" bug. Every sighting is still written to
+    // the SD CSV as it's seen, so this cap never means lost data — see the
+    // hash-dedup log path in runScanCycle.
+    static constexpr size_t kMaxSightings = 200;
+    // Lightweight per-session set of BSSID hashes already written to the
+    // CSV, so EVERY new network is logged to SD even once the RAM table
+    // above is full (dense areas with >kMaxSightings APs). ~16 KB.
+    static constexpr size_t kMaxLoggedHashes = 4096;
     static constexpr uint32_t kScanIntervalMs = 15000;
 
     static void taskEntry(void* arg);
@@ -113,6 +125,10 @@ private:
 
     mutable SemaphoreHandle_t _mutex = nullptr;
     std::vector<ApSighting> _sightings;
+    // BSSID hashes already logged to the current session's CSV. Kept
+    // separate from _sightings (which is capped for RAM) so logging to SD
+    // stays complete regardless of the display cap. Guarded by _mutex.
+    std::vector<uint32_t> _loggedBssidHashes;
     QueueHandle_t _outQueue = nullptr;
 
     // Destination CSV for the CURRENT wardrive session: one file per run,

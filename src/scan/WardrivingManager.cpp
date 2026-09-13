@@ -33,6 +33,17 @@ bool parseMac(const String& s, uint8_t out[6]) {
     return true;
 }
 
+// Fold a BSSID string into a uint32 for the lightweight "already logged
+// this session" dedup set (see runScanCycle). Uses the low 4 MAC bytes,
+// where the per-device uniqueness lives (the top 3 are the shared OUI);
+// a hash collision would at worst skip logging one AP, which is harmless.
+// Returns 0 for an unparseable BSSID (those are already dropped upstream).
+uint32_t bssidHash(const String& bssid) {
+    uint8_t m[6];
+    if (!parseMac(bssid, m)) return 0;
+    return ((uint32_t)m[2] << 24) | ((uint32_t)m[3] << 16) | ((uint32_t)m[4] << 8) | (uint32_t)m[5];
+}
+
 const char* encryptionName(wifi_auth_mode_t enc) {
     switch (enc) {
         case WIFI_AUTH_OPEN: return "open";
@@ -108,8 +119,22 @@ void WardrivingManager::start() {
     String stamp = TimeSync::isSynced() ? TimeSync::nowFilenameString() : ("uptime-" + String(millis() / 1000));
     if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
         _sessionCsvPath = "/netrunner/wardrive/" + stamp + "-wardrive.csv";
+        // Fresh session: empty the in-RAM tables and pre-allocate the
+        // sightings vector to its full cap ONCE, so it never reallocates
+        // mid-scan (that doubling realloc was the OOM crash). clear()
+        // keeps capacity, so from the second session on this reserve is a
+        // no-op and no new allocation happens. Nothing is lost by clearing:
+        // every sighting is already persisted to the SD CSV as it's seen.
+        _sightings.clear();
+        _sightings.reserve(kMaxSightings);
+        _loggedBssidHashes.clear();
+        _loggedBssidHashes.reserve(kMaxLoggedHashes);
         xSemaphoreGive(_mutex);
     }
+    // Counters are per-session: a new run starts them from zero.
+    _openCount = 0;
+    _discoveredCount = 0;
+    _suspiciousCount = 0;
     _running = true;
 }
 void WardrivingManager::stop() { _running = false; }
@@ -175,7 +200,7 @@ void WardrivingManager::runScanCycle() {
         bool isHidden = r.ssid.isEmpty();
 
         bool allowlisted = isHidden ? false : isAllowlisted(r.ssid);
-        bool isNew = false;
+        bool logThis = false;  // write this AP to the session CSV (new BSSID, deduped by hash)
         ApSighting rec;
 
         if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
@@ -191,7 +216,12 @@ void WardrivingManager::runScanCycle() {
                 existing->lastSeenMs = millis();
                 existing->allowlisted = allowlisted;
                 rec = *existing;
-            } else if (_sightings.size() < kMaxSightings) {
+            } else {
+                // New BSSID this session. Build the record either way; it
+                // joins the RAM table (display + evil-twin) only if there's
+                // room, but it is logged to SD regardless (dedup below), so
+                // nothing is lost past the cap.
+                bool underCap = _sightings.size() < kMaxSightings;
                 rec.ssid = isHidden ? String("<hidden>") : r.ssid;
                 rec.bssid = r.bssid;
                 rec.rssi = r.rssi;
@@ -246,7 +276,7 @@ void WardrivingManager::runScanCycle() {
                 // channels by design, and there's no real-hardware
                 // capture available in this project's dev environment
                 // to validate a channel-based rule against - see README.
-                if (!isHidden) {
+                if (underCap && !isHidden) {
                     for (auto& s : _sightings) {
                         if (s.ssid != rec.ssid) continue;
 
@@ -276,13 +306,28 @@ void WardrivingManager::runScanCycle() {
                     }
                 }
 
-                _sightings.push_back(rec);
-                isNew = true;
+                if (underCap) _sightings.push_back(rec);
+
+                // Log every genuinely-new BSSID to the SD CSV, deduped by
+                // hash, whether or not it fit in the RAM table above - so
+                // dense areas with more than kMaxSightings APs still get
+                // fully persisted (no data loss), while RAM stays bounded.
+                uint32_t h = bssidHash(r.bssid);
+                if (h != 0) {
+                    bool alreadyLogged = false;
+                    for (uint32_t x : _loggedBssidHashes) {
+                        if (x == h) { alreadyLogged = true; break; }
+                    }
+                    if (!alreadyLogged) {
+                        if (_loggedBssidHashes.size() < kMaxLoggedHashes) _loggedBssidHashes.push_back(h);
+                        logThis = true;
+                    }
+                }
             }
             xSemaphoreGive(_mutex);
         }
 
-        if (isNew) {
+        if (logThis) {
             logSighting(rec);
             if (rec.open) {
                 _openCount++;
