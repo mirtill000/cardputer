@@ -214,6 +214,10 @@ void deriveFromDetectors(std::vector<Finding>& out) {
 
 void FindingStore::buildRollup(std::vector<Finding>& out) const {
     out.clear();
+    // B8: the rollup is bounded by kRollupMax and the pushed set by
+    // kMaxPushed; reserve up front so the push_back/mergeUnique passes
+    // below don't trigger a chain of reallocations on a fragmented heap.
+    out.reserve(kRollupMax);
 
     // Pushed findings first (snapshot under the lock), then the two
     // derived passes fold in around them via mergeUnique.

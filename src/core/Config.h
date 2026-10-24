@@ -9,6 +9,12 @@
 // copy and call save() when the user confirms a change, so we are not
 // hammering flash on every keypress.
 struct AppConfig {
+    // A9: minimum spacing between probes. 0 would make the scan loops'
+    // vTaskDelay(0) a no-op (FreeRTOS does not yield on a 0 delay),
+    // starving lower-priority tasks and risking a watchdog trip, so the
+    // editor and load() both clamp up to this.
+    static constexpr uint16_t kMinInterProbeDelayMs = 2;
+
     // net/scan
     // NOTE: subnetBase/subnetPrefix are still unused by the discovery
     // scan itself (ScanManager::startDiscoveryScan targets the live,

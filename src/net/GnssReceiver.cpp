@@ -201,12 +201,22 @@ void GnssReceiver::handleSentence(char* s) {
         }
     } else if (strcmp(typ, "GGA") == 0 && nf >= 10) {
         // $..GGA,time,lat,N/S,lon,E/W,fixQual,numSat,HDOP,alt,M,...
-        int sats = atoi(fields[7]);
-        double alt = atof(fields[9]);
-        if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-            _fix.satellites = (uint8_t)(sats < 0 ? 0 : (sats > 255 ? 255 : sats));
-            _fix.altitudeM = alt;
-            xSemaphoreGive(_mutex);
+        // A5: a corrupt/partial GGA can carry empty fields; atof("") and
+        // atoi("") both silently yield 0, which would stomp a good
+        // altitude/satellite count with zeros. Only adopt each field when
+        // it is actually present.
+        const char* satField = fields[7];
+        const char* altField = fields[9];
+        bool haveSats = satField && satField[0];
+        bool haveAlt = altField && altField[0];
+        if (haveSats || haveAlt) {
+            int sats = haveSats ? atoi(satField) : -1;
+            double alt = haveAlt ? atof(altField) : 0.0;
+            if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+                if (haveSats) _fix.satellites = (uint8_t)(sats < 0 ? 0 : (sats > 255 ? 255 : sats));
+                if (haveAlt) _fix.altitudeM = alt;
+                xSemaphoreGive(_mutex);
+            }
         }
     }
 }

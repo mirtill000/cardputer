@@ -90,12 +90,22 @@ void setup() {
 
     g_config.load();
 
-    // true = format on mount failure. Only bites on a corrupt/never-
-    // initialized filesystem, which on this codebase only happens on a
-    // brand new board (or a partition-table change) — the OUI database
-    // upload (`pio run -t uploadfs`) is what actually populates it.
-    if (!LittleFS.begin(true)) {
-        log_e("main: LittleFS mount failed");
+    // A8: don't format on the first failure — a transient mount error
+    // would otherwise wipe the OUI database and scan history without any
+    // confirmation. Try a plain (non-formatting) mount first, retry once,
+    // and only fall back to format-on-mount if the filesystem really
+    // won't come up. The format path then still bites a genuinely
+    // corrupt/never-initialized FS (new board / partition-table change),
+    // which is the only case it was meant for.
+    if (!LittleFS.begin(false)) {
+        log_w("main: LittleFS mount failed, retrying before any format");
+        delay(50);
+        if (!LittleFS.begin(false)) {
+            log_e("main: LittleFS still unmountable, formatting");
+            if (!LittleFS.begin(true)) {
+                log_e("main: LittleFS format+mount failed");
+            }
+        }
     }
     LittleFS.mkdir("/history");
     sdcard::begin();  // no-op-ish if no card is inserted - see SdCard.cpp

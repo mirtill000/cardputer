@@ -39,7 +39,10 @@ void SettingsScreen::adjust(int direction) {
         }
         case 2: {  // inter-probe delay (ms)
             int v = (int)g_config.interProbeDelayMs + direction * 5;
-            if (v < 0) v = 0;
+            // A9: floor at kMinInterProbeDelayMs, not 0 — a 0 delay makes
+            // the scan loops' vTaskDelay a no-op and can starve the
+            // watchdog.
+            if (v < AppConfig::kMinInterProbeDelayMs) v = AppConfig::kMinInterProbeDelayMs;
             if (v > 200) v = 200;
             g_config.interProbeDelayMs = (uint16_t)v;
             break;

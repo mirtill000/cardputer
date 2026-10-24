@@ -12,6 +12,15 @@ UiManager g_ui;
 
 namespace {
 constexpr TickType_t kFrameDelay = pdMS_TO_TICKS(33);  // ~30fps cap on the render loop
+// C3: once the backlight has dimmed (idle/unattended), there's nobody
+// watching a 30fps redraw, so the render task drops to ~5fps to spend
+// most of each frame sleeping instead of busy-compositing. This cuts the
+// UI task's CPU/power draw during long sentinel/wardrive sessions without
+// the stability risk of a real light-sleep while WiFi + a promiscuous
+// callback are live. The trade-off is a one-time input latency of up to
+// one dim-frame on the first keypress that wakes the screen — then the
+// loop is back to kFrameDelay immediately.
+constexpr TickType_t kDimFrameDelay = pdMS_TO_TICKS(200);
 constexpr UBaseType_t kScanQueueLen = 24;
 
 // Screen timeout: dim the backlight after this long with no key event,
@@ -42,12 +51,25 @@ void UiManager::begin(Screen* initialScreen) {
     // 240x135x2-byte (~65KB) buffer out of scarce internal SRAM by
     // accident when PSRAM was actually available and preferable.
     _canvas.setPsram(false);
-    if (!_canvas.createSprite(display.width(), display.height())) {
-        // Extremely unlikely at ~65KB with no PSRAM, but if the heap is
-        // ever fragmented enough (e.g. by WiFi/TLS buffers during a
-        // scan) to fail this, we want it in the log instead of a silent
-        // black screen.
-        log_e("UiManager: failed to allocate render canvas");
+    // A4: the ~65KB canvas can fail to allocate if the heap is briefly
+    // fragmented (WiFi/TLS buffers during a scan at the moment begin()
+    // runs). Rather than logging once and then drawing into an
+    // unallocated sprite (silent black screen / undefined behaviour),
+    // retry a few times with a short settle delay before giving up.
+    bool canvasReady = false;
+    for (int attempt = 0; attempt < 3 && !canvasReady; attempt++) {
+        if (_canvas.createSprite(display.width(), display.height())) {
+            canvasReady = true;
+            break;
+        }
+        log_e("UiManager: canvas alloc failed (attempt %d), retrying", attempt + 1);
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+    if (!canvasReady) {
+        // Last resort: fall back to drawing directly on the LCD so the UI
+        // still functions (without tear-free compositing) instead of a
+        // dead black screen.
+        log_e("UiManager: canvas allocation failed permanently, UI degraded");
     }
     _canvas.setTextFont(1);
     _canvas.setTextSize(1);
@@ -216,7 +238,10 @@ void UiManager::run() {
         // explicitly here sidesteps needing that stored parent at all.
         _canvas.pushSprite(&M5Cardputer.Display, 0, 0);
 
-        vTaskDelay(kFrameDelay);
+        // C3: slower cadence while dimmed (see kDimFrameDelay). The input
+        // task keeps polling the keyboard at full speed independently, so
+        // only the redraw rate drops here, never key capture itself.
+        vTaskDelay(_dimmed ? kDimFrameDelay : kFrameDelay);
     }
 }
 

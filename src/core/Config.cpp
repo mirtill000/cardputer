@@ -32,6 +32,13 @@ void AppConfig::load() {
     lowPowerMode = prefs.getUChar("lowpow", lowPowerMode);
 
     prefs.end();
+
+    // A9: enforce a floor on the inter-probe delay. A value of 0 makes
+    // the scan/credential loops call vTaskDelay(0), which on FreeRTOS
+    // does NOT yield — a tight 0-delay loop starves lower-priority tasks
+    // and can trip the task watchdog. Clamp anything below the minimum
+    // (including a 0 persisted by an older build) up to it.
+    if (interProbeDelayMs < kMinInterProbeDelayMs) interProbeDelayMs = kMinInterProbeDelayMs;
 }
 
 void AppConfig::save() const {

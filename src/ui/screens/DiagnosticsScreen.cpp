@@ -94,5 +94,14 @@ void DiagnosticsScreen::draw(M5Canvas& gfx) {
     String rtcVal = !rtc ? "absent" : (rtcLow ? "present, battery LOW" : "present");
     statusRow(gfx, 100, "RTC:", rtcVal, rtc && !rtcLow);
 
+    // B2: smallest free stack this task (the UI/render task) has ever had,
+    // in bytes. uxTaskGetStackHighWaterMark(NULL) reports the minimum
+    // remaining headroom in words since the task started; multiply by the
+    // 4-byte stack word. A number trending toward zero here is the early
+    // warning that a task stack size needs raising before it overflows.
+    UBaseType_t uiStackFreeWords = uxTaskGetStackHighWaterMark(nullptr);
+    statusRow(gfx, 110, "UI STACK:", String((unsigned)(uiStackFreeWords * 4)) + " B free",
+              uiStackFreeWords * 4 > 512);
+
     chrome::drawFooter(gfx, "S:speaker  ?:help  DEL:back");
 }

@@ -472,8 +472,15 @@ void WardrivingManager::handleOpenAllowlistedAp(const ApSighting& ap) {
     // itself flags elsewhere (see ApSighting::suspicious).
     fs::FS& fs = sdcard::exportFs();
     String base = netrunner::reportBase(fs, ap.ssid + "_" + ap.bssid);
-    ResultStore::exportJson(fs, (base + ".json").c_str());
-    ResultStore::exportCsv(fs, (base + ".csv").c_str());
+    // C2: surface a failed write (SD full/absent/removed mid-excursion)
+    // instead of silently dropping the report. On an unattended wardrive
+    // this is the only chance the user has to notice the log isn't
+    // actually being saved.
+    bool okJson = ResultStore::exportJson(fs, (base + ".json").c_str());
+    bool okCsv = ResultStore::exportCsv(fs, (base + ".csv").c_str());
+    if (!okJson || !okCsv) {
+        notify("SD WRITE FAILED - report not saved");
+    }
 
     notify("discovered " + String((unsigned)aliveCount) + " host(s) on " + ap.ssid);
 

@@ -17,6 +17,7 @@ constexpr size_t kMaxWordlistEntries = 200;  // bounds RAM + worst-case run time
 
 String readLine(WiFiClient& client, uint16_t timeoutMs) {
     String out;
+    out.reserve(96);  // B4: a status line fits in one allocation, no += churn
     uint32_t start = millis();
     while ((millis() - start) < timeoutMs) {
         if (client.available()) {
@@ -36,6 +37,7 @@ String readLine(WiFiClient& client, uint16_t timeoutMs) {
 // this is heuristic prompt-scraping, not a transcript.
 String readChunk(WiFiClient& client, uint16_t windowMs) {
     String out;
+    out.reserve(208);  // B4: capped at 200 bytes below, reserve up front
     uint32_t start = millis();
     while ((millis() - start) < windowMs && out.length() < 200) {
         if (client.available()) {
@@ -191,9 +193,28 @@ bool CredAuditManager::tryHttpBasicAuth(const IPAddress& ip, uint16_t port, cons
     String statusLine = readLine(client, g_config.scanTimeoutMs);
     client.stop();
 
-    // "HTTP/1.x 200 ..." on a request carrying these credentials means
-    // the server accepted them. A 401/403 means it didn't.
-    return statusLine.indexOf(" 200") > 0;
+    // "HTTP/1.x 200 ..." on a request carrying these credentials is only
+    // meaningful if the endpoint actually requires auth. Many servers
+    // return 200 for GET / regardless of any Authorization header (a
+    // public landing page), which would otherwise mark every candidate
+    // credential "valid" (A3). So a 200 here is confirmed against a
+    // baseline no-auth request: if the endpoint already answers 200
+    // without credentials, this proves nothing and we report failure.
+    if (statusLine.indexOf(" 200") <= 0) return false;
+
+    WiFiClient baseline;
+    if (!baseline.connect(ip, port, g_config.scanTimeoutMs)) {
+        // Can't establish a baseline — stay conservative and don't claim
+        // the credentials worked.
+        return false;
+    }
+    baseline.print("GET / HTTP/1.0\r\nHost: scan\r\nConnection: close\r\n\r\n");
+    String baseStatus = readLine(baseline, g_config.scanTimeoutMs);
+    baseline.stop();
+
+    // Credentials are only "accepted" if the unauthenticated request was
+    // actually rejected (401/403/etc.) while the authenticated one passed.
+    return baseStatus.indexOf(" 200") <= 0;
 }
 
 bool CredAuditManager::tryTelnetLogin(const IPAddress& ip, const String& user, const String& pass) {
