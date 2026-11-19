@@ -5804,10 +5804,11 @@ stessa escursione a **ogni** rete aperta vista, allowlist o meno.
   `/netrunner/` etichettato con SSID+BSSID, poi si riconnette alla rete
   salvata. Gli host vivi per rete sono limitati a 5.
 - **Dato che questo si collega e scansiona reti di terzi che l'utente non
-  ha inserito nell'allowlist**, è trattato come i tool offensivi:
-  disattivato di default, **mai persistito** (a ogni avvio torna off), e
-  attivabile solo digitando per intero la parola **AUTHORIZED** in un
-  disclaimer dedicato (`OpenAutoScanDisclaimerScreen`).
+  ha inserito nell'allowlist**, prima di poterlo attivare viene mostrato
+  un disclaimer dedicato (`OpenAutoScanDisclaimerScreen`) con la nota
+  legale; si conferma con un singolo tasto (**`Y`**). È disattivato di
+  default ma, una volta attivato, **resta attivo anche dopo i riavvii**
+  finché non lo si spegne (scelta dell'utente, persistito in NVS).
 - Si attiva/disattiva con **`G`** dalla schermata WAR DRIVING. Lo stato è
   sempre visibile sulla riga GPS: `OPEN-SCAN:ON` in rosso quando attivo,
   `open:off` in grigio altrimenti. Spegnerlo non richiede conferma.

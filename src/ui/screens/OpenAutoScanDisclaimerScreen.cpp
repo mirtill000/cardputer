@@ -20,35 +20,18 @@ OpenAutoScanDisclaimerScreen& OpenAutoScanDisclaimerScreen::instance() {
     return s;
 }
 
-void OpenAutoScanDisclaimerScreen::onEnter() {
-    _typed = "";
-    g_ui.setTextEntryMode(true);
-}
-
-void OpenAutoScanDisclaimerScreen::onExit() {
-    g_ui.setTextEntryMode(false);
-}
+void OpenAutoScanDisclaimerScreen::onEnter() {}
 
 void OpenAutoScanDisclaimerScreen::onKey(UiKey key, char ch) {
-    if (key == UiKey::Char) {
-        if (_typed.length() < 20) _typed += ch;
+    if (key == UiKey::Char && (ch == 'y' || ch == 'Y')) {
+        // Persisted (user's choice - see AppConfig::wardriveAutoScanOpen):
+        // stays on across reboots until explicitly turned off.
+        g_config.wardriveAutoScanOpen = true;
+        g_config.wardriveAutoScanOpenAcknowledged = true;
+        g_config.save();
+        g_ui.popScreen();  // back to the WAR DRIVING screen
     } else if (key == UiKey::Back) {
-        if (_typed.length() > 0) {
-            _typed.remove(_typed.length() - 1);
-        } else {
-            g_ui.popScreen();  // declined - enable nothing
-        }
-    } else if (key == UiKey::Enter) {
-        if (_typed.equalsIgnoreCase("AUTHORIZED")) {
-            // Session-only: NOT saved to NVS, so it resets to off on the
-            // next boot. Only the "seen it once" acknowledgement persists.
-            g_config.wardriveAutoScanOpen = true;
-            g_config.wardriveAutoScanOpenAcknowledged = true;
-            g_config.save();
-            g_ui.popScreen();  // back to the WAR DRIVING screen
-        } else {
-            _typed = "";  // wrong word typed - clear and let them retry
-        }
+        g_ui.popScreen();  // declined - enable nothing
     }
 }
 
@@ -60,12 +43,10 @@ void OpenAutoScanDisclaimerScreen::draw(M5Canvas& gfx) {
     gfx.setTextColor(theme::AMBER, theme::BG);
     drawWrapped(gfx, kDisclaimer, 6, 20, 9, 37);
 
+    gfx.setTextColor(theme::MAGENTA, theme::BG);
+    gfx.setCursor(6, 110);
+    gfx.print("Y: I am authorized");
     gfx.setTextColor(theme::GREY, theme::BG);
-    gfx.setCursor(6, 104);
-    gfx.print("Type AUTHORIZED, then ENTER:");
-
-    gfx.fillRect(6, 114, gfx.width() - 12, 10, theme::PANEL_BG);
-    gfx.setTextColor(theme::GREEN_BRIGHT, theme::PANEL_BG);
-    gfx.setCursor(8, 115);
-    gfx.print(_typed);
+    gfx.setCursor(6, 122);
+    gfx.print("DEL: cancel");
 }

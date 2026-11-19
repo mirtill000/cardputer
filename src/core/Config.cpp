@@ -29,7 +29,7 @@ void AppConfig::load() {
     offensiveAcknowledged = prefs.getBool("offAck", offensiveAcknowledged);
     // offensiveEnabled likewise never persisted - see its declaration.
     wardriveAutoScanOpenAcknowledged = prefs.getBool("wdAutoAck", wardriveAutoScanOpenAcknowledged);
-    // wardriveAutoScanOpen never persisted - every boot starts at off.
+    wardriveAutoScanOpen = prefs.getBool("wdAutoOpen", wardriveAutoScanOpen);
     uiSoundEnabled = prefs.getUChar("sound", uiSoundEnabled);
     lowPowerMode = prefs.getUChar("lowpow", lowPowerMode);
 
@@ -71,6 +71,7 @@ void AppConfig::save() const {
     prefs.putBool("credAck", credAuditAcknowledged);
     prefs.putBool("offAck", offensiveAcknowledged);
     prefs.putBool("wdAutoAck", wardriveAutoScanOpenAcknowledged);
+    prefs.putBool("wdAutoOpen", wardriveAutoScanOpen);
     prefs.putUChar("sound", uiSoundEnabled);
     prefs.putUChar("lowpow", lowPowerMode);
 

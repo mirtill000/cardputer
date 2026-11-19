@@ -50,10 +50,11 @@ struct AppConfig {
     // known-port scan against it (the same excursion that an allowlisted
     // open AP already triggers, extended to EVERY open AP). This connects
     // to and scans third-party networks the user has NOT named in the
-    // allowlist, so — like offensiveEnabled — it defaults OFF, is gated by
-    // its own typed-"AUTHORIZED" disclaimer (OpenAutoScanDisclaimerScreen)
-    // and is NEVER persisted: every boot starts back at off. The allowlist
-    // path is unaffected and keeps working when this is off.
+    // allowlist, so it defaults OFF and is gated by its own disclaimer
+    // (OpenAutoScanDisclaimerScreen). Unlike offensiveEnabled it is
+    // PERSISTED across reboots (user's choice): once enabled it stays on
+    // until explicitly turned off. The allowlist path is unaffected and
+    // keeps working when this is off.
     bool wardriveAutoScanOpenAcknowledged = false;
     bool wardriveAutoScanOpen = false;
 

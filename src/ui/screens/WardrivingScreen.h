@@ -7,8 +7,9 @@
 // the allowlist that gates its active behavior (auto-connect + discover +
 // well-known-port scan on an open network). 'G' toggles the "auto-scan
 // EVERY open network" mode, which extends that excursion past the
-// allowlist and is therefore held behind a typed-AUTHORIZED disclaimer
-// (OpenAutoScanDisclaimerScreen) — see scan/WardrivingManager.h.
+// allowlist and is therefore shown a disclaimer (one-key confirm,
+// OpenAutoScanDisclaimerScreen) before it can be enabled; once on it
+// persists across reboots — see scan/WardrivingManager.h.
 class WardrivingScreen : public Screen {
 public:
     static WardrivingScreen& instance();

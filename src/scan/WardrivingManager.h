@@ -34,11 +34,11 @@
 //
 // There is also an explicit "auto-scan open networks" mode
 // (AppConfig::wardriveAutoScanOpen) that extends the SAME excursion to
-// EVERY open AP, allowlist or not. It is off by default, never persisted
-// (resets to off each boot), and can only be turned on through a typed-
-// "AUTHORIZED" disclaimer (OpenAutoScanDisclaimerScreen) — the same bar
-// as the offensive tools — precisely because it connects to and scans
-// networks the user has not individually authorized. See README.
+// EVERY open AP, allowlist or not. It is off by default and turned on
+// through a disclaimer screen (OpenAutoScanDisclaimerScreen, a one-key
+// confirm) precisely because it connects to and scans networks the user
+// has not individually authorized; once enabled it persists across
+// reboots until turned off. See README.
 class WardrivingManager {
 public:
     struct ApSighting {
