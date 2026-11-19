@@ -6,6 +6,7 @@
 #include "PmkidSweepScreen.h"
 #include "OpenConnectScreen.h"
 #include "OffensiveDisclaimerScreen.h"
+#include "OpenAutoScanDisclaimerScreen.h"
 #include "../UiManager.h"
 #include "../Theme.h"
 #include "../Chrome.h"
@@ -14,6 +15,7 @@
 #include "../../core/Config.h"
 #include "../../scan/WardrivingManager.h"
 #include <cstdio>
+#include <cstring>
 
 namespace {
 constexpr size_t kMaxAllowlistLen = 32;
@@ -146,6 +148,8 @@ void WardrivingScreen::onKey(UiKey key, char ch) {
                     OpenConnectScreen::instance().setTarget(ap.ssid);
                     g_ui.pushScreen(&OpenConnectScreen::instance());
                 }
+            } else if (key == UiKey::Char && (ch == 'g' || ch == 'G')) {
+                toggleAutoScanOpen();
             } else if (key == UiKey::Back) {
                 g_ui.popScreen();
             }
@@ -164,6 +168,8 @@ void WardrivingScreen::onKey(UiKey key, char ch) {
                 if (_sightingsSelected > 0) _sightingsSelected--;
             } else if (key == UiKey::Down) {
                 if (_sightingsSelected + 1 < g_wardrivingManager.sightingCount()) _sightingsSelected++;
+            } else if (key == UiKey::Char && (ch == 'g' || ch == 'G')) {
+                toggleAutoScanOpen();
             } else if (key == UiKey::Back) {
                 g_ui.popScreen();  // keeps running in the background - see WardrivingManager
             }
@@ -232,6 +238,16 @@ void WardrivingScreen::onKey(UiKey key, char ch) {
                 _state = g_wardrivingManager.isRunning() ? State::Running : State::Idle;
             }
             break;
+    }
+}
+
+void WardrivingScreen::toggleAutoScanOpen() {
+    if (g_config.wardriveAutoScanOpen) {
+        g_config.wardriveAutoScanOpen = false;  // turning it OFF needs no confirmation
+    } else {
+        // Turning it ON goes through the typed-AUTHORIZED disclaimer, which
+        // sets the flag itself on consent and pops back here.
+        g_ui.pushScreen(&OpenAutoScanDisclaimerScreen::instance());
     }
 }
 
@@ -312,20 +328,22 @@ void WardrivingScreen::draw(M5Canvas& gfx) {
         case State::Idle: {
             drawStatusStrip(gfx, /*recording=*/false);
             drawGnssStrip(gfx, 56);
+            drawAutoScanTag(gfx, 56);
             drawSightings(gfx, 66);
             gfx.setTextColor(theme::GREY, theme::BG);
             gfx.setCursor(4, gfx.height() - 9);
-            gfx.print("TAB:loc A:al C:cn O:offensive-menu");
+            gfx.print("A:al C:cn G:auto-open O:offense");
             break;
         }
 
         case State::Running: {
             drawStatusStrip(gfx, /*recording=*/true);
             drawGnssStrip(gfx, 56);
+            drawAutoScanTag(gfx, 56);
             drawSightings(gfx, 66);
             gfx.setTextColor(theme::GREY, theme::BG);
             gfx.setCursor(4, gfx.height() - 9);
-            gfx.print("ENTER:stop A:allowlist DEL:back(bg)");
+            gfx.print("ENTER:stop A:al G:auto-open DEL:bg");
             break;
         }
 
@@ -381,6 +399,19 @@ void WardrivingScreen::draw(M5Canvas& gfx) {
             gfx.print("ENTER:launch DEL:back");
             break;
     }
+}
+
+void WardrivingScreen::drawAutoScanTag(M5Canvas& gfx, int16_t y) {
+    // Right-aligned on the GPS line. Red "OPEN-SCAN:ON" when the blanket
+    // auto-scan-every-open-network mode is armed (the state worth not
+    // missing); a quiet grey "open:off" otherwise so the toggle is
+    // discoverable even when idle.
+    bool on = g_config.wardriveAutoScanOpen;
+    const char* tag = on ? "OPEN-SCAN:ON" : "open:off";
+    int16_t w = (int16_t)strlen(tag) * theme::GLYPH_W;
+    gfx.setTextColor(on ? theme::RED : theme::GREY, theme::BG);
+    gfx.setCursor(gfx.width() - w - 4, y);
+    gfx.print(tag);
 }
 
 void WardrivingScreen::drawOffensiveMenu(M5Canvas& gfx) {

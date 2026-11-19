@@ -25,16 +25,20 @@
 // scan report this firmware produces, then the device disconnects and
 // reconnects to whatever network it had saved before.
 //
-// This is deliberately NOT "every open network encountered" the way it
-// might first sound like war-driving should work: scanning a stranger's
-// network without their consent is not something this assistant will
-// automate indiscriminately, no matter how the encryption on it happens
-// to be set. The allowlist is what turns this from "attack whatever
-// open AP happens to be nearby" into "automate testing across networks
-// I've told this tool I'm explicitly authorized for" — the same shape
-// of scoping every other active module in this firmware already
-// requires (see CredDisclaimerScreen). See README for the full
-// reasoning.
+// By default this excursion runs ONLY for open APs on the allowlist:
+// scanning a stranger's network without consent is not automated
+// indiscriminately just because the encryption happens to be off. The
+// allowlist turns "attack whatever open AP is nearby" into "automate
+// testing across networks I've told this tool I'm authorized for" — the
+// same scoping every other active module here requires.
+//
+// There is also an explicit "auto-scan open networks" mode
+// (AppConfig::wardriveAutoScanOpen) that extends the SAME excursion to
+// EVERY open AP, allowlist or not. It is off by default, never persisted
+// (resets to off each boot), and can only be turned on through a typed-
+// "AUTHORIZED" disclaimer (OpenAutoScanDisclaimerScreen) — the same bar
+// as the offensive tools — precisely because it connects to and scans
+// networks the user has not individually authorized. See README.
 class WardrivingManager {
 public:
     struct ApSighting {
@@ -48,7 +52,7 @@ public:
         uint32_t lastSeenMs = 0;
         bool open = false;
         bool allowlisted = false;
-        bool discovered = false;   // true once an allow-listed open AP has had discovery run against it this session
+        bool discovered = false;   // true once this open AP has had an excursion (discovery + port scan) run this session
 
         // Possible evil twin: another sighting exists with the SAME
         // SSID but a DIFFERENT BSSID, and either a meaningfully weaker/
@@ -115,11 +119,16 @@ private:
     // above is full (dense areas with >kMaxSightings APs). ~16 KB.
     static constexpr size_t kMaxLoggedHashes = 4096;
     static constexpr uint32_t kScanIntervalMs = 15000;
+    // Well-known port range used for an open-AP excursion (PortScanManager
+    // adds its curated well-known high ports on top). Fixed, not the
+    // configurable PORT SCANNER range - see runOpenApExcursion.
+    static constexpr uint16_t kExcursionPortStart = 1;
+    static constexpr uint16_t kExcursionPortEnd = 1024;
 
     static void taskEntry(void* arg);
     void run();
     void runScanCycle();
-    void handleOpenAllowlistedAp(const ApSighting& ap);
+    void runOpenApExcursion(const ApSighting& ap);
     void logSighting(const ApSighting& ap);
     void notify(const String& text);
 

@@ -28,6 +28,8 @@ void AppConfig::load() {
     // with the audit module off, even if it was acknowledged/used before.
     offensiveAcknowledged = prefs.getBool("offAck", offensiveAcknowledged);
     // offensiveEnabled likewise never persisted - see its declaration.
+    wardriveAutoScanOpenAcknowledged = prefs.getBool("wdAutoAck", wardriveAutoScanOpenAcknowledged);
+    // wardriveAutoScanOpen never persisted - every boot starts at off.
     uiSoundEnabled = prefs.getUChar("sound", uiSoundEnabled);
     lowPowerMode = prefs.getUChar("lowpow", lowPowerMode);
 
@@ -68,6 +70,7 @@ void AppConfig::save() const {
     prefs.putBool("autoExport", autoExportOnScanFinish);
     prefs.putBool("credAck", credAuditAcknowledged);
     prefs.putBool("offAck", offensiveAcknowledged);
+    prefs.putBool("wdAutoAck", wardriveAutoScanOpenAcknowledged);
     prefs.putUChar("sound", uiSoundEnabled);
     prefs.putUChar("lowpow", lowPowerMode);
 

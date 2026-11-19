@@ -4,10 +4,11 @@
 
 // "WAR DRIVING": toggles WardrivingManager's continuous background AP
 // scan on/off, shows a live log + counters while it runs, and manages
-// the allowlist that gates its one active behavior (auto-connect +
-// discover on an open, allow-listed network) — see
-// scan/WardrivingManager.h for the full reasoning on why that's
-// allowlist-gated rather than automatic for every open network found.
+// the allowlist that gates its active behavior (auto-connect + discover +
+// well-known-port scan on an open network). 'G' toggles the "auto-scan
+// EVERY open network" mode, which extends that excursion past the
+// allowlist and is therefore held behind a typed-AUTHORIZED disclaimer
+// (OpenAutoScanDisclaimerScreen) — see scan/WardrivingManager.h.
 class WardrivingScreen : public Screen {
 public:
     static WardrivingScreen& instance();
@@ -20,7 +21,7 @@ public:
 
     const char* title() const override { return "WD"; }
     const char* helpText() const override {
-        return "WAR DRIVING\nENTER:scan  Arrows:move\nA:allowlist  TAB:locate\nI:full SSID  C:join open\nO:offensive menu (or E/X/P/S\ndirectly)\nDEL: back (keeps running)";
+        return "WAR DRIVING\nENTER:scan  Arrows:move\nA:allowlist  TAB:locate\nI:full SSID  C:join open\nG:auto-scan EVERY open net\nO:offensive menu (E/X/P/S)\nDEL: back (keeps running)";
     }
 
 private:
@@ -33,7 +34,9 @@ private:
     void drawSightings(M5Canvas& gfx, int16_t top);
     void drawStatusStrip(M5Canvas& gfx, bool recording);
     void drawOffensiveMenu(M5Canvas& gfx);
+    void drawAutoScanTag(M5Canvas& gfx, int16_t y);
     void launchOffensiveAction(size_t index);
+    void toggleAutoScanOpen();
 
     State _state = State::Idle;
     String _log[kLogLines];

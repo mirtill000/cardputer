@@ -5789,3 +5789,34 @@ in esclusiva (SENTINEL, deauth/PMKID, ARP) o con il channel hopping.
   `notify()`; UPNP DISCOVERY è la prima schermata migrata su `ListScreen`.
 - **CI**: oltre alla build dei due env, `pio check` (cppcheck) sui soli
   sorgenti del progetto, bloccante sui difetti HIGH.
+
+## Fase 68: WAR DRIVING — auto-scan delle reti aperte (opt-in)
+
+Finora l'escursione del wardriving (join → discovery → port scan di una
+rete aperta) scattava **solo** per le reti open presenti nell'allowlist.
+Ora esiste anche una modalità **"auto-scan open networks"** che estende la
+stessa escursione a **ogni** rete aperta vista, allowlist o meno.
+
+- Per ogni AP aperto non ancora esaminato (uno per ciclo, per tenere
+  limitata ogni escursione), il wardrive si collega, esegue una discovery
+  degli host e una scansione delle **well-known port** (1–1024 più le
+  high-port note di `PortScanManager`), salva il report sotto
+  `/netrunner/` etichettato con SSID+BSSID, poi si riconnette alla rete
+  salvata. Gli host vivi per rete sono limitati a 5.
+- **Dato che questo si collega e scansiona reti di terzi che l'utente non
+  ha inserito nell'allowlist**, è trattato come i tool offensivi:
+  disattivato di default, **mai persistito** (a ogni avvio torna off), e
+  attivabile solo digitando per intero la parola **AUTHORIZED** in un
+  disclaimer dedicato (`OpenAutoScanDisclaimerScreen`).
+- Si attiva/disattiva con **`G`** dalla schermata WAR DRIVING. Lo stato è
+  sempre visibile sulla riga GPS: `OPEN-SCAN:ON` in rosso quando attivo,
+  `open:off` in grigio altrimenti. Spegnerlo non richiede conferma.
+- Il percorso allowlist resta invariato e continua a funzionare anche con
+  la modalità spenta.
+
+Nota legale (vedi anche l'avviso in testa al README): collegarsi a e
+scansionare una rete di cui non si è proprietari o per cui non si ha
+autorizzazione esplicita è illegale in quasi ogni giurisdizione, a
+prescindere dal fatto che la rete sia aperta. Usare questa modalità solo
+dove si è autorizzati per **tutte** le reti aperte nel raggio d'azione;
+altrimenti usare l'allowlist.

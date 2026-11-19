@@ -339,14 +339,27 @@ void WardrivingManager::runScanCycle() {
                 sound::playCredAlert();  // same urgency tier as a confirmed default credential
                 notify("possible evil twin: " + rec.ssid);
             }
-            if (rec.open && rec.allowlisted && !rec.discovered && !haveToDiscover) {
-                toDiscover = rec;
-                haveToDiscover = true;
-            }
+        }
+
+        // Pick ONE open, not-yet-scanned AP to run a full discovery +
+        // well-known-port scan against this cycle (one per cycle keeps each
+        // excursion bounded; the rest get picked up on later cycles and
+        // marked discovered so they're not repeated). Evaluated for both
+        // newly-seen and already-known APs (not gated on logThis), so
+        // toggling auto-scan on mid-session also reaches APs already in the
+        // table. An allowlisted open AP always qualifies; ANY OTHER open AP
+        // only when the user has explicitly enabled auto-scan of open
+        // networks this session (off by default, never persisted, gated by
+        // OpenAutoScanDisclaimerScreen). Hidden SSIDs are skipped - there's
+        // no name to associate to.
+        bool mayScan = rec.allowlisted || g_config.wardriveAutoScanOpen;
+        if (rec.open && mayScan && !rec.discovered && !haveToDiscover && !rec.ssid.equals("<hidden>")) {
+            toDiscover = rec;
+            haveToDiscover = true;
         }
     }
 
-    if (haveToDiscover) handleOpenAllowlistedAp(toDiscover);
+    if (haveToDiscover) runOpenApExcursion(toDiscover);
 }
 
 void WardrivingManager::logSighting(const ApSighting& ap) {
@@ -418,8 +431,8 @@ void WardrivingManager::logSighting(const ApSighting& ap) {
     notify("new AP: " + ap.ssid + (ap.open ? " (OPEN)" : ""));
 }
 
-void WardrivingManager::handleOpenAllowlistedAp(const ApSighting& ap) {
-    notify("connecting to allow-listed AP: " + ap.ssid);
+void WardrivingManager::runOpenApExcursion(const ApSighting& ap) {
+    notify(String(ap.allowlisted ? "connecting to allow-listed AP: " : "connecting to open AP: ") + ap.ssid);
 
     // Never saved (see WifiManager::saveCredentials) - an open network
     // encountered while war-driving must never displace one of the
@@ -462,7 +475,12 @@ void WardrivingManager::handleOpenAllowlistedAp(const ApSighting& ap) {
         aliveCount++;
         if (portScanned >= kMaxPortScan) continue;
 
-        if (g_portScanManager.startScan(h.ip, g_config.portRangeStart, g_config.portRangeEnd) != StartResult::Started) {
+        // Well-known ports only (1..1024); PortScanManager adds its curated
+        // well-known HIGH ports on top. Deliberately NOT the configurable
+        // PORT SCANNER range: an excursion is a quick per-network survey,
+        // and with auto-scan-open on there can be many of them, so each one
+        // stays bounded regardless of how wide the user set that range.
+        if (g_portScanManager.startScan(h.ip, kExcursionPortStart, kExcursionPortEnd) != StartResult::Started) {
             continue;  // busy with someone else's scan: don't wait on it and count it as this host's
         }
         uint32_t portStart = millis();

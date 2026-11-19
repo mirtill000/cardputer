@@ -45,6 +45,18 @@ struct AppConfig {
     bool offensiveAcknowledged = false;
     bool offensiveEnabled = false;
 
+    // WAR DRIVING "auto-scan open networks": when on, the wardrive doesn't
+    // just LOG open APs, it joins each one and runs a discovery + well-
+    // known-port scan against it (the same excursion that an allowlisted
+    // open AP already triggers, extended to EVERY open AP). This connects
+    // to and scans third-party networks the user has NOT named in the
+    // allowlist, so — like offensiveEnabled — it defaults OFF, is gated by
+    // its own typed-"AUTHORIZED" disclaimer (OpenAutoScanDisclaimerScreen)
+    // and is NEVER persisted: every boot starts back at off. The allowlist
+    // path is unaffected and keeps working when this is off.
+    bool wardriveAutoScanOpenAcknowledged = false;
+    bool wardriveAutoScanOpen = false;
+
     // ui
     uint8_t uiSoundEnabled = 1;
     // Low-power mode: dims the backlight faster (see UiManager) for long
