@@ -41,7 +41,10 @@ const char* riskName(RiskLevel r) {
 // spreadsheet tools write CSV — makes the common case (plain IPs,
 // vendor names without commas) readable unquoted.
 void csvAppendEscaped(String s, String& out) {
-    bool needsQuotes = s.indexOf(',') >= 0 || s.indexOf('"') >= 0 || s.indexOf('\n') >= 0;
+    // '\r' too: a bare CR inside a hostname/banner splits the row in
+    // parsers that accept CR line endings, unless the field is quoted.
+    bool needsQuotes =
+        s.indexOf(',') >= 0 || s.indexOf('"') >= 0 || s.indexOf('\n') >= 0 || s.indexOf('\r') >= 0;
     s.replace("\"", "\"\"");
     if (needsQuotes) {
         out += '"';

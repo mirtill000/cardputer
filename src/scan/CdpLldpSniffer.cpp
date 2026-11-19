@@ -1,4 +1,6 @@
 #include "CdpLldpSniffer.h"
+#include "../net/PromiscDispatcher.h"
+#include "../core/ScanLog.h"
 #include "../net/Ieee80211Frame.h"
 #include <cstring>
 
@@ -32,23 +34,24 @@ void CdpLldpSniffer::run() {
             continue;
         }
 
-        esp_wifi_set_promiscuous_rx_cb(&CdpLldpSniffer::promiscuousRxTrampoline);
-        esp_wifi_set_promiscuous(true);
+        int sub = promisc::subscribe(promisc::kData, &CdpLldpSniffer::onDispatchedFrame);
+        if (sub < 0) {
+            notify("radio unavailable - not listening");
+            _running = false;
+            continue;
+        }
         notify("passive CDP/LLDP sniffing on");
 
         while (_running) vTaskDelay(pdMS_TO_TICKS(500));
 
-        esp_wifi_set_promiscuous(false);
+        promisc::unsubscribe(sub);
         notify("CDP/LLDP sniffing off");
     }
 }
 
-void CdpLldpSniffer::promiscuousRxTrampoline(void* buf, wifi_promiscuous_pkt_type_t type) {
-    if (type != WIFI_PKT_DATA) return;
-    auto* pkt = static_cast<wifi_promiscuous_pkt_t*>(buf);
-    if (!pkt) return;
-    g_cdpLldpSniffer.onPromiscuousFrame(pkt->payload, pkt->rx_ctrl.sig_len);
-}
+// Runs on the shared promiscuous dispatcher task (net/PromiscDispatcher.h),
+// not the WiFi driver task - so the handler may lock/allocate.
+void CdpLldpSniffer::onDispatchedFrame(const promisc::Frame& f) { g_cdpLldpSniffer.onPromiscuousFrame(f.data, f.len); }
 
 void CdpLldpSniffer::onPromiscuousFrame(const uint8_t* p, uint16_t len) {
     ieee80211::ParsedDataFrame frame;
@@ -163,14 +166,7 @@ void CdpLldpSniffer::addOrUpdateNeighbor(const String& deviceId, const String& p
     if (isNew) notify(String(isCdp ? "CDP: " : "LLDP: ") + deviceId + (portId.length() ? (" (" + portId + ")") : ""));
 }
 
-void CdpLldpSniffer::notify(const String& text) {
-    if (!_outQueue) return;
-    ScanNotification n;
-    n.source = ScanSource::CdpLldp;
-    n.type = ScanEventType::LogLine;
-    n.setText(text.c_str());
-    xQueueSend(_outQueue, &n, 0);
-}
+void CdpLldpSniffer::notify(const String& text) { scanlog::post(_outQueue, ScanSource::CdpLldp, text); }
 
 size_t CdpLldpSniffer::neighborCount() const {
     if (!_mutex || xSemaphoreTake(_mutex, pdMS_TO_TICKS(100)) != pdTRUE) return 0;

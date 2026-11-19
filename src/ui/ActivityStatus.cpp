@@ -41,6 +41,12 @@ struct TaskEntry {
     const char* shortTag;  // 3-6 chars, for the compact header widget
     const char* label;     // full name, for the ACTIVITY screen
     bool isRf;              // true = promiscuous-mode radio consumer
+    // true = an RF consumer that receives through the shared dispatcher
+    // (net/PromiscDispatcher.h) and never changes channel: any number of
+    // these coexist on one radio, so together they count as ONE RF user
+    // for conflict purposes. Channel hoppers / exclusive-callback managers
+    // stay false.
+    bool sharedRf;
 };
 
 // Fase 37: single source of truth for every long-running manager this
@@ -51,21 +57,21 @@ struct TaskEntry {
 // used before the two were split into separate literal tables.
 size_t buildTaskTable(TaskEntry* out, size_t cap) {
     size_t n = 0;
-    auto add = [&](bool on, const char* shortTag, const char* label, bool isRf) {
-        if (n < cap) out[n++] = {on, shortTag, label, isRf};
+    auto add = [&](bool on, const char* shortTag, const char* label, bool isRf, bool sharedRf = false) {
+        if (n < cap) out[n++] = {on, shortTag, label, isRf, sharedRf};
     };
     add(g_arpSpoofManager.isRunning(), "ARP", "ARP SPOOF DETECT", true);
     add(g_deauthManager.isRunning(), "DTH", "PMKID/DEAUTH CAPTURE", true);
     add(g_pmkidManager.isRunning(), "PMK", "PMKID CAPTURE", true);
-    add(g_cdpLldpSniffer.isRunning(), "CDP", "LAN TOPOLOGY", true);
-    add(g_rogueDhcpDetector.isRunning(), "DHCP", "ROGUE DHCP", true);
-    add(g_passiveHostDiscovery.isRunning(), "PSV", "PASSIVE HOSTS", true);
+    add(g_cdpLldpSniffer.isRunning(), "CDP", "LAN TOPOLOGY", true, true);
+    add(g_rogueDhcpDetector.isRunning(), "DHCP", "ROGUE DHCP", true, true);
+    add(g_passiveHostDiscovery.isRunning(), "PSV", "PASSIVE HOSTS", true, true);
     add(g_beaconProbeSniffer.isRunning(), "BCN", "BEACON/PROBE INTEL", true);
-    add(g_deauthWatcher.isRunning(), "GRD", "GUARD MODE", true);
+    add(g_deauthWatcher.isRunning(), "GRD", "GUARD MODE", true, true);
     add(g_sentinelManager.isRunning(), "SNT", "SENTINEL MODE", true);
-    add(g_osFingerprint.isRunning(), "OSFP", "OS FINGERPRINT", true);
-    add(g_vlanHopProbe.isRunning(), "VLAN", "VLAN HOP", true);
-    add(g_eapIdentityHarvester.isRunning(), "EAP", "EAP IDENTITY", true);
+    add(g_osFingerprint.isRunning(), "OSFP", "OS FINGERPRINT", true, true);
+    add(g_vlanHopProbe.isRunning(), "VLAN", "VLAN HOP", true, true);
+    add(g_eapIdentityHarvester.isRunning(), "EAP", "EAP IDENTITY", true, true);
 
     add(g_discoveryRunner.isRunning(), "ALL", "RUN ALL DISCOVERY", false);
     add(g_wardrivingManager.isRunning(), "WD", "WAR DRIVING", false);
@@ -112,11 +118,15 @@ uint16_t activity::draw(M5Canvas& gfx, int16_t rightX, int16_t y) {
     const char* promOnly = nullptr;
     int bgCount = 0;
     const char* bgOnly = nullptr;
+    int exclusiveRf = 0;
+    int sharedRf = 0;
     for (size_t i = 0; i < n; i++) {
         if (!table[i].on) continue;
         if (table[i].isRf) {
             promCount++;
             promOnly = table[i].shortTag;
+            if (table[i].sharedRf) sharedRf++;
+            else exclusiveRf++;
         } else {
             bgCount++;
             bgOnly = table[i].shortTag;
@@ -132,12 +142,21 @@ uint16_t activity::draw(M5Canvas& gfx, int16_t rightX, int16_t y) {
     // small (bounded by the fixed-size table above). The %.6s precision
     // below both matches that documented invariant and gives GCC's
     // analysis a real bound to work with.
-    char buf[24];
+    // A real conflict is two radio OWNERS: dispatcher subscribers all
+    // share one callback and one channel, so together they're one owner.
+    bool rfConflict = (exclusiveRf + (sharedRf > 0 ? 1 : 0)) >= 2;
+
+    char buf[32];  // 32, not 24: "RF:%d+%d" carries two ints, see the note above
     uint16_t color;
     bool haveTag = true;
-    if (promCount >= 2) {
+    if (rfConflict) {
         snprintf(buf, sizeof(buf), "RF:%d!", promCount);  // radio conflict — outranks everything
         color = theme::RED;
+    } else if (promCount >= 2) {
+        // Several sharing the dispatcher: not a conflict.
+        if (bgCount) snprintf(buf, sizeof(buf), "RF:%d+%d", promCount, bgCount);
+        else snprintf(buf, sizeof(buf), "RF:%d", promCount);
+        color = theme::AMBER;
     } else if (promCount == 1 && bgCount == 0) {
         snprintf(buf, sizeof(buf), "RF:%.6s", promOnly);
         color = theme::AMBER;
@@ -173,6 +192,6 @@ uint16_t activity::draw(M5Canvas& gfx, int16_t rightX, int16_t y) {
     // RF:N! tag itself); amber otherwise; grey (normal) below threshold.
     constexpr int kBusyThreshold = 3;
     int totalActive = promCount + bgCount;
-    if (totalActive >= kBusyThreshold) return (promCount >= 2) ? theme::RED : theme::AMBER;
+    if (totalActive >= kBusyThreshold) return rfConflict ? theme::RED : theme::AMBER;
     return theme::GREY;
 }

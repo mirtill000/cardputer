@@ -54,6 +54,13 @@ struct AppConfig {
     void load();
     void save() const;
     void resetToDefaults();
+
+    // Forces every field back into the range the rest of the firmware
+    // assumes (the same bounds the SETTINGS editor enforces). load() and
+    // ConfigBackup::restore() both call it, so a stale NVS value or an
+    // edited/foreign backup file can't smuggle in a 0 ms timeout, zero
+    // worker threads, an inverted port range or a 0 inter-probe delay.
+    void clamp();
 };
 
 extern AppConfig g_config;

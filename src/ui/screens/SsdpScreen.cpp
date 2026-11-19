@@ -9,47 +9,24 @@ SsdpScreen& SsdpScreen::instance() {
     return s;
 }
 
-void SsdpScreen::onEnter() {
-    _selected = 0;
-}
+void SsdpScreen::onEnter() { resetSelection(); }
 
 void SsdpScreen::onScanEvent(const ScanNotification& ev) {
     (void)ev;  // just triggers a redraw via the normal event->draw cycle - no per-line log needed here
 }
 
-void SsdpScreen::onKey(UiKey key, char ch) {
-    if (_showDetail) {
-        _showDetail = false;
-        return;
-    }
-    if (key == UiKey::Enter) {
-        if (!g_ssdpDiscovery.isRunning()) g_ssdpDiscovery.start();
-    } else if (key == UiKey::Up) {
-        if (_selected > 0) _selected--;
-    } else if (key == UiKey::Down) {
-        if (_selected + 1 < g_ssdpDiscovery.deviceCount()) _selected++;
-    } else if (key == UiKey::Char && (ch == 'i' || ch == 'I')) {
-        if (g_ssdpDiscovery.deviceCount() > 0) _showDetail = true;
-    } else if (key == UiKey::Back) {
-        g_ui.popScreen();
-    }
+void SsdpScreen::onListKey(UiKey key, char ch) {
+    (void)ch;
+    if (key == UiKey::Enter && !g_ssdpDiscovery.isRunning()) g_ssdpDiscovery.start();
 }
 
-void SsdpScreen::draw(M5Canvas& gfx) {
-    if (_showDetail) {
-        SsdpDiscovery::Device d;
-        if (g_ssdpDiscovery.getDevice(_selected, d)) {
-            String text = "SERVER: " + (d.server.length() ? d.server : String("-")) + " / LOCATION: " +
-                          (d.location.length() ? d.location : String("-")) + " / USN: " +
-                          (d.usn.length() ? d.usn : String("-"));
-            chrome::drawDetailOverlay(gfx, d.fromIp.toString().c_str(), text);
-        }
-        return;
-    }
+size_t SsdpScreen::itemCount() const { return g_ssdpDiscovery.deviceCount(); }
 
-    gfx.fillScreen(theme::BG);
-    chrome::drawHeader(gfx, "UPNP DISCOVERY");
+const char* SsdpScreen::listFooter() const {
+    return g_ssdpDiscovery.deviceCount() > 0 ? "I:full detail  DEL:back" : "DEL:back";
+}
 
+void SsdpScreen::drawAboveList(M5Canvas& gfx) {
     bool running = g_ssdpDiscovery.isRunning();
     gfx.setTextColor(running ? theme::CYAN : theme::GREEN, theme::BG);
     gfx.setCursor(6, 18);
@@ -57,56 +34,41 @@ void SsdpScreen::draw(M5Canvas& gfx) {
     gfx.print((unsigned)g_ssdpDiscovery.deviceCount());
     gfx.print(running ? "  [searching...]" : "");
 
-    drawDevices(gfx, 30);
+    if (g_ssdpDiscovery.deviceCount() > 0) gfx.drawFastHLine(4, 30, gfx.width() - 8, theme::GREY);
 
+    // Above the footer's accent rule (height()-13).
     gfx.setTextColor(theme::MAGENTA, theme::BG);
-    gfx.setCursor(6, gfx.height() - 20);
+    gfx.setCursor(6, gfx.height() - 22);
     gfx.print(running ? "waiting for replies..." : "ENTER: search (M-SEARCH)");
-
-    gfx.setTextColor(theme::GREY, theme::BG);
-    gfx.setCursor(4, gfx.height() - 9);
-    gfx.print(g_ssdpDiscovery.deviceCount() > 0 ? "I:full detail  DEL:back" : "DEL:back");
 }
 
-void SsdpScreen::drawDevices(M5Canvas& gfx, int16_t top) {
-    size_t count = g_ssdpDiscovery.deviceCount();
-    if (count == 0) return;
-
-    gfx.setTextColor(theme::GREY, theme::BG);
-    gfx.drawFastHLine(4, top, gfx.width() - 8, theme::GREY);
-
-    constexpr int16_t kRowH = 10;
-    constexpr size_t kMaxRows = 4;  // two lines per device below, so fewer rows fit
-
-    size_t first = 0;
-    if (_selected >= kMaxRows) first = _selected - kMaxRows + 1;
-
+void SsdpScreen::drawItem(M5Canvas& gfx, size_t index, int16_t y, int16_t rowH, bool selected) {
     SsdpDiscovery::Device d;
-    for (size_t row = 0; row < kMaxRows; row++) {
-        size_t i = first + row;
-        if (i >= count) break;
-        if (!g_ssdpDiscovery.getDevice(i, d)) continue;
+    if (!g_ssdpDiscovery.getDevice(index, d)) return;
+    const int16_t lineH = rowH / 2;
 
-        int16_t y = top + 2 + (int16_t)row * (kRowH * 2);
-        bool sel = (i == _selected);
-        uint16_t rowBg = sel ? theme::PANEL_BG : theme::BG;
-        if (sel) gfx.fillRect(0, y, gfx.width(), kRowH * 2 - 2, rowBg);
+    uint16_t rowBg = selected ? theme::PANEL_BG : theme::BG;
+    if (selected) gfx.fillRect(0, y, gfx.width(), rowH - 2, rowBg);
 
-        gfx.setTextColor(sel ? theme::CYAN : theme::GREEN, rowBg);
-        gfx.setCursor(6, y);
-        gfx.print(d.fromIp.toString());
-        gfx.setCursor(80, y);
-        String server = d.server.length() ? d.server : String("(no SERVER header)");
-        if (server.length() > 25) server = server.substring(0, 25);
-        gfx.print(server);
+    gfx.setTextColor(selected ? theme::CYAN : theme::GREEN, rowBg);
+    gfx.setCursor(6, y);
+    gfx.print(d.fromIp.toString());
+    gfx.setCursor(80, y);
+    String server = d.server.length() ? d.server : String("(no SERVER header)");
+    if (server.length() > 25) server = server.substring(0, 25);
+    gfx.print(server);
 
-        gfx.setTextColor(theme::GREY, rowBg);
-        gfx.setCursor(6, y + kRowH);
-        String usn = d.usn;
-        if (usn.length() > 37) usn = usn.substring(0, 37);
-        gfx.print(usn);
-    }
+    gfx.setTextColor(theme::GREY, rowBg);
+    gfx.setCursor(6, y + lineH);
+    String usn = d.usn;
+    if (usn.length() > 37) usn = usn.substring(0, 37);
+    gfx.print(usn);
+}
 
-    chrome::drawScrollMarkers(gfx, top + 2, top + 2 + (int16_t)kMaxRows * (kRowH * 2), first > 0,
-                               (first + kMaxRows) < count);
+String SsdpScreen::detailText(size_t index) const {
+    SsdpDiscovery::Device d;
+    if (!g_ssdpDiscovery.getDevice(index, d)) return String();
+    _detailTitle = d.fromIp.toString();
+    return "SERVER: " + (d.server.length() ? d.server : String("-")) + " / LOCATION: " +
+           (d.location.length() ? d.location : String("-")) + " / USN: " + (d.usn.length() ? d.usn : String("-"));
 }

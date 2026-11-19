@@ -7,6 +7,7 @@
 #include "PingSweep.h"
 #include "FindingStore.h"
 #include "../core/Config.h"
+#include "../core/RunClaim.h"
 #include "../core/Session.h"
 #include "../net/IpUtil.h"
 #include "../net/WifiManager.h"
@@ -19,11 +20,16 @@ void ScanManager::begin(QueueHandle_t outQueue) {
     _outQueue = outQueue;
 }
 
-void ScanManager::startDiscoveryScan() {
-    if (_running) return;
+StartResult ScanManager::startDiscoveryScan() {
+    // Claimed atomically: this is started from five different tasks (UI,
+    // AUTO ASSESS, SENTINEL, PLAYBOOK, WAR DRIVING). With the old
+    // check-then-set, two simultaneous calls could both pass the check,
+    // both rebuild _hosts and both spawn a worker pool. See core/RunClaim.h.
+    RunClaim claim(_running);
+    if (!claim.owned()) return StartResult::Busy;
     if (!g_wifi.isConnected()) {
         notify(ScanEventType::LogLine, -1, 0, "wifi not connected");
-        return;
+        return StartResult::NoWifi;
     }
 
     // Custom range overrides the DHCP-derived subnet when set (see
@@ -39,12 +45,11 @@ void ScanManager::startDiscoveryScan() {
     }
     if (total == 0) {
         notify(ScanEventType::LogLine, -1, 0, "subnet too small/large to scan");
-        return;
+        return StartResult::InvalidArgs;
     }
 
     if (xSemaphoreTake(_mutex, portMAX_DELAY) == pdTRUE) {
         _hosts.clear();
-        _hosts.reserve(total);
         for (uint32_t i = 1; i <= total; i++) {
             HostInfo h;
             h.ip = iputil::addOffset(network, i);
@@ -58,7 +63,7 @@ void ScanManager::startDiscoveryScan() {
     _hostsProbed = 0;
     _progressPct = 0;
     _scanGeneration++;
-    _running = true;
+    claim.commit();
 
     // Tie this run into an assessment session. A genuinely new session
     // (first scan after boot, or a different target than last time)
@@ -92,6 +97,17 @@ void ScanManager::startDiscoveryScan() {
             onWorkerFinished();
         }
     }
+    return StartResult::Started;
+}
+
+StartResult ScanManager::startDiscoveryScanWhenIdle(uint32_t maxWaitMs) {
+    StartResult r = startDiscoveryScan();
+    if (r != StartResult::Busy) return r;
+    uint32_t waitStart = millis();
+    while (_running && (millis() - waitStart) < maxWaitMs) {
+        vTaskDelay(pdMS_TO_TICKS(250));
+    }
+    return startDiscoveryScan();  // still Busy if the other run outlasted maxWaitMs
 }
 
 void ScanManager::setScanRange(const IPAddress& base, uint32_t count) {
@@ -116,6 +132,31 @@ bool ScanManager::getHost(size_t index, HostInfo& out) const {
     if (ok) out = _hosts[index];
     xSemaphoreGive(_mutex);
     return ok;
+}
+
+bool ScanManager::getHostSummary(size_t index, HostSummary& out) const {
+    if (!_mutex || xSemaphoreTake(_mutex, pdMS_TO_TICKS(100)) != pdTRUE) return false;
+    bool ok = index < _hosts.size();
+    if (ok) {
+        const HostInfo& h = _hosts[index];
+        out.ip = h.ip;
+        out.alive = h.alive;
+        out.risk = h.risk;
+        out.credVulnerable = h.credVulnerable;
+        out.portCount = (uint16_t)(h.ports.size() > 0xFFFF ? 0xFFFF : h.ports.size());
+    }
+    xSemaphoreGive(_mutex);
+    return ok;
+}
+
+std::vector<IPAddress> ScanManager::aliveHostIps() const {
+    std::vector<IPAddress> out;
+    if (!_mutex || xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) != pdTRUE) return out;
+    for (const auto& h : _hosts) {
+        if (h.alive) out.push_back(h.ip);
+    }
+    xSemaphoreGive(_mutex);
+    return out;
 }
 
 bool ScanManager::getHostByIp(const IPAddress& ip, HostInfo& out) const {

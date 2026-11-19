@@ -1,4 +1,6 @@
 #include "PlaybookRunner.h"
+#include "../core/ScanLog.h"
+#include "../core/RunClaim.h"
 #include "AssessmentRunner.h"
 #include "DiscoveryRunner.h"
 #include "ScanManager.h"
@@ -23,7 +25,9 @@ bool wAssessmentRunning() { return g_assessmentRunner.isRunning(); }
 void wStartDiscoveryAll() { g_discoveryRunner.start(); }
 bool wDiscoveryAllRunning() { return g_discoveryRunner.isRunning(); }
 
-void wStartNetworkScan() { g_scanManager.startDiscoveryScan(); }
+// WhenIdle: a scan another task already started would otherwise be
+// polled by this step as if it were the playbook's own.
+void wStartNetworkScan() { g_scanManager.startDiscoveryScanWhenIdle(60000); }
 bool wNetworkScanRunning() { return g_scanManager.isRunning(); }
 
 void wStartSnmp() { g_snmpSweep.start(); }
@@ -126,11 +130,12 @@ const char* PlaybookRunner::playbookStepLabel(size_t playbookIndex, size_t stepI
 void PlaybookRunner::begin(QueueHandle_t outQueue) { _outQueue = outQueue; }
 
 bool PlaybookRunner::start(size_t playbookIndex) {
-    if (_running) return false;
+    RunClaim claim(_running);
+    if (!claim.owned()) return false;
     if (playbookIndex >= kPlaybookCount) return false;
     _playbookIndex = playbookIndex;
     _currentStep = 0;
-    _running = true;
+    claim.commit();
     notify(ScanEventType::ScanStarted);
     if (xTaskCreatePinnedToCore(&PlaybookRunner::taskEntry, "playbook", 4096, this, 1, nullptr, 0) != pdPASS) {
         // Task never started (out of memory) - clear the running flag so
@@ -197,14 +202,7 @@ void PlaybookRunner::run() {
     notify(ScanEventType::ScanFinished, 100);
 }
 
-void PlaybookRunner::notify(const String& text) {
-    if (!_outQueue) return;
-    ScanNotification n;
-    n.source = ScanSource::Playbook;
-    n.type = ScanEventType::LogLine;
-    n.setText(text.c_str());
-    xQueueSend(_outQueue, &n, 0);
-}
+void PlaybookRunner::notify(const String& text) { scanlog::post(_outQueue, ScanSource::Playbook, text); }
 
 void PlaybookRunner::notify(ScanEventType type, uint8_t pct) {
     if (!_outQueue) return;

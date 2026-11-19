@@ -1,4 +1,6 @@
 #include "AssessmentRunner.h"
+#include "../core/ScanLog.h"
+#include "../core/RunClaim.h"
 #include "ScanManager.h"
 #include "PortScanManager.h"
 #include "../core/Types.h"
@@ -16,7 +18,8 @@ void AssessmentRunner::begin(QueueHandle_t outQueue) {
 }
 
 bool AssessmentRunner::start() {
-    if (_running) {
+    RunClaim claim(_running);
+    if (!claim.owned()) {
         notify("assessment already running");
         return false;
     }
@@ -25,7 +28,7 @@ bool AssessmentRunner::start() {
     _hostsTotal = 0;
     _hostsDone = 0;
     _reportOk = false;
-    _running = true;
+    claim.commit();
     notify(ScanEventType::ScanStarted);
     if (xTaskCreatePinnedToCore(&AssessmentRunner::taskEntry, "assess", 6144, this, 1, nullptr, 0) != pdPASS) {
         _running = false;
@@ -53,8 +56,17 @@ void AssessmentRunner::run() {
 
     // --- Phase 1: discovery (0-40% of the overall bar) ---
     setPhase(Phase::Discovery, "discovery scan...");
-    g_scanManager.startDiscoveryScan();
-    vTaskDelay(pdMS_TO_TICKS(400));  // let it flip _running before we poll
+    // Must be OUR scan: if SENTINEL/PLAYBOOK/the UI already has one in
+    // flight, wait for it and start a fresh one rather than reading a
+    // host table this assessment didn't produce. _running is set
+    // synchronously by a successful start, so no settle delay is needed.
+    StartResult started = g_scanManager.startDiscoveryScanWhenIdle(kScanBusyWaitMs);
+    if (started != StartResult::Started) {
+        setPhase(Phase::Failed, String("discovery scan not started: ") + startResultLabel(started));
+        _running = false;
+        notify(ScanEventType::ScanFinished, 100);
+        return;
+    }
     while (_running && g_scanManager.isRunning()) {
         _progressPct = (uint8_t)(g_scanManager.progressPct() * 40 / 100);
         notify(ScanEventType::ScanProgress, _progressPct);
@@ -67,20 +79,28 @@ void AssessmentRunner::run() {
     }
 
     // Snapshot alive hosts.
-    std::vector<IPAddress> targets;
-    size_t n = g_scanManager.hostCount();
-    HostInfo h;
-    for (size_t i = 0; i < n; i++) {
-        if (g_scanManager.getHost(i, h) && h.alive) targets.push_back(h.ip);
-    }
+    std::vector<IPAddress> targets = g_scanManager.aliveHostIps();
     _hostsTotal = (uint16_t)targets.size();
 
     // --- Phase 2: port scan each host in turn (40-90%) ---
     setPhase(Phase::PortScan, String("port-scanning ") + String((unsigned)targets.size()) + " host(s)");
     for (size_t i = 0; i < targets.size() && _running; i++) {
-        g_portScanManager.startScan(targets[i], kPortStart, kPortEnd);
-        vTaskDelay(pdMS_TO_TICKS(300));
-        while (_running && g_portScanManager.isRunning()) vTaskDelay(pdMS_TO_TICKS(250));
+        StartResult ps = g_portScanManager.startScan(targets[i], kPortStart, kPortEnd);
+        if (ps == StartResult::Busy) {
+            // Someone else's port scan (e.g. started from HOST DETAIL):
+            // let it finish, then run ours - never wait on and count
+            // a scan of a different host as this one's.
+            uint32_t waitStart = millis();
+            while (_running && g_portScanManager.isRunning() && (millis() - waitStart) < kScanBusyWaitMs) {
+                vTaskDelay(pdMS_TO_TICKS(250));
+            }
+            ps = g_portScanManager.startScan(targets[i], kPortStart, kPortEnd);
+        }
+        if (ps == StartResult::Started) {
+            while (_running && g_portScanManager.isRunning()) vTaskDelay(pdMS_TO_TICKS(250));
+        } else {
+            notify(String("skipped ") + targets[i].toString() + ": port scan " + startResultLabel(ps));
+        }
         _hostsDone = (uint16_t)(i + 1);
         _progressPct = (uint8_t)(40 + ((i + 1) * 50) / (targets.empty() ? 1 : targets.size()));
         notify(ScanEventType::ScanProgress, _progressPct);
@@ -113,14 +133,7 @@ void AssessmentRunner::setPhase(Phase p, const String& msg) {
     notify(msg);
 }
 
-void AssessmentRunner::notify(const String& text) {
-    if (!_outQueue) return;
-    ScanNotification n;
-    n.source = ScanSource::Assessment;
-    n.type = ScanEventType::LogLine;
-    n.setText(text.c_str());
-    xQueueSend(_outQueue, &n, 0);
-}
+void AssessmentRunner::notify(const String& text) { scanlog::post(_outQueue, ScanSource::Assessment, text); }
 
 void AssessmentRunner::notify(ScanEventType type, uint8_t pct) {
     if (!_outQueue) return;

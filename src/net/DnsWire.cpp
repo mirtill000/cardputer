@@ -1,17 +1,33 @@
 #include "DnsWire.h"
 
 namespace {
-void appendName(std::vector<uint8_t>& out, const String& dotted) {
+// RFC 1035 §2.3.4 limits: a label is at most 63 bytes (its length byte
+// has only 6 usable bits - the top two flag a compression pointer) and an
+// encoded name at most 255 bytes. Names can come off the network
+// (ServiceEnumerator re-queries discovered mDNS instance names), and the
+// old encoder cast an over-long label length straight to uint8_t,
+// silently emitting a malformed query. Empty labels ("a..b", a trailing
+// '.') are skipped - a 0 length byte mid-name would terminate it early.
+constexpr int kMaxLabelLen = 63;
+constexpr size_t kMaxNameLen = 255;
+
+bool appendName(std::vector<uint8_t>& out, const String& dotted) {
+    size_t nameStart = out.size();
     int start = 0;
     int total = (int)dotted.length();
     while (start < total) {
         int dot = dotted.indexOf('.', start);
         int end = (dot < 0) ? total : dot;
-        out.push_back((uint8_t)(end - start));
-        for (int i = start; i < end; i++) out.push_back((uint8_t)dotted[i]);
+        int labelLen = end - start;
+        if (labelLen > kMaxLabelLen) return false;
+        if (labelLen > 0) {
+            out.push_back((uint8_t)labelLen);
+            for (int i = start; i < end; i++) out.push_back((uint8_t)dotted[i]);
+        }
         start = end + 1;
     }
     out.push_back(0x00);
+    return (out.size() - nameStart) <= kMaxNameLen;
 }
 }  // namespace
 
@@ -22,7 +38,7 @@ std::vector<uint8_t> dnswire::buildQuery(const String& name, uint16_t qtype) {
         0x00, 0x01,              // qdcount = 1
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     };
-    appendName(pkt, name);
+    if (!appendName(pkt, name)) return {};
     pkt.push_back((uint8_t)(qtype >> 8));
     pkt.push_back((uint8_t)(qtype & 0xFF));
     pkt.push_back(0x00);

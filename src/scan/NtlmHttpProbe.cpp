@@ -1,4 +1,6 @@
 #include "NtlmHttpProbe.h"
+#include "../core/ScanLog.h"
+#include "../core/RunClaim.h"
 #include "Base64.h"
 #include "ScanManager.h"
 #include "../core/Types.h"
@@ -79,7 +81,8 @@ void NtlmHttpProbe::begin(QueueHandle_t outQueue) {
 }
 
 bool NtlmHttpProbe::start() {
-    if (_running) {
+    RunClaim claim(_running);
+    if (!claim.owned()) {
         notify("ntlm disclosure already running");
         return false;
     }
@@ -88,7 +91,7 @@ bool NtlmHttpProbe::start() {
         xSemaphoreGive(_mutex);
     }
     _progressPct = 0;
-    _running = true;
+    claim.commit();
     notify(ScanEventType::ScanStarted);
     if (xTaskCreatePinnedToCore(&NtlmHttpProbe::taskEntry, "ntlmhttp", 6144, this, 1, nullptr, 0) != pdPASS) {
         _running = false;
@@ -186,14 +189,7 @@ void NtlmHttpProbe::addFinding(const Finding& f) {
     notify(msg);
 }
 
-void NtlmHttpProbe::notify(const String& text) {
-    if (!_outQueue) return;
-    ScanNotification n;
-    n.source = ScanSource::NtlmHttp;
-    n.type = ScanEventType::LogLine;
-    n.setText(text.c_str());
-    xQueueSend(_outQueue, &n, 0);
-}
+void NtlmHttpProbe::notify(const String& text) { scanlog::post(_outQueue, ScanSource::NtlmHttp, text); }
 
 void NtlmHttpProbe::notify(ScanEventType type, uint8_t pct) {
     if (!_outQueue) return;

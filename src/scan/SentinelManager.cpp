@@ -1,4 +1,5 @@
 #include "SentinelManager.h"
+#include "../core/ScanLog.h"
 #include "ScanManager.h"
 #include "../core/Types.h"
 #include "../net/WifiManager.h"
@@ -407,14 +408,7 @@ void SentinelManager::addEvent(const Event& ev) {
     }
 }
 
-void SentinelManager::notify(const String& text) {
-    if (!_outQueue) return;
-    ScanNotification n;
-    n.source = ScanSource::Sentinel;
-    n.type = ScanEventType::LogLine;
-    n.setText(text.c_str());
-    xQueueSend(_outQueue, &n, 0);
-}
+void SentinelManager::notify(const String& text) { scanlog::post(_outQueue, ScanSource::Sentinel, text); }
 
 size_t SentinelManager::eventLogCount() const {
     if (!_mutex || xSemaphoreTake(_mutex, pdMS_TO_TICKS(100)) != pdTRUE) return 0;

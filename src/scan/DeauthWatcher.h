@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../net/PromiscDispatcher.h"
 #include <Arduino.h>
 #include <atomic>
 #include <vector>
@@ -65,7 +66,7 @@ private:
 
     static void taskEntry(void* arg);
     void run();
-    static void promiscuousRxTrampoline(void* buf, wifi_promiscuous_pkt_type_t type);
+    static void onDispatchedFrame(const promisc::Frame& f);
     void onManagementFrame(const uint8_t* p, uint16_t len);
     void rollWindow();
     void notify(const String& text);

@@ -1,4 +1,6 @@
 #include "SmbNegotiateCheck.h"
+#include "../core/ScanLog.h"
+#include "../core/RunClaim.h"
 #include "../net/NetTimeouts.h"
 #include <WiFiClient.h>
 #include <cstring>
@@ -198,7 +200,8 @@ void SmbNegotiateCheck::begin(QueueHandle_t outQueue) {
 }
 
 bool SmbNegotiateCheck::start(const IPAddress& ip, uint16_t port) {
-    if (_running) {
+    RunClaim claim(_running);
+    if (!claim.owned()) {
         notify("SMB check already running");
         return false;
     }
@@ -208,7 +211,7 @@ bool SmbNegotiateCheck::start(const IPAddress& ip, uint16_t port) {
         _result = Result{};  // reset
         xSemaphoreGive(_mutex);
     }
-    _running = true;
+    claim.commit();
     notify(ScanEventType::ScanStarted);
     if (xTaskCreatePinnedToCore(&SmbNegotiateCheck::taskEntry, "smbneg", 4096, this, 1, nullptr, 0) != pdPASS) {
         _running = false;
@@ -312,14 +315,7 @@ void SmbNegotiateCheck::run() {
     notify(ScanEventType::ScanFinished, 100);
 }
 
-void SmbNegotiateCheck::notify(const String& text) {
-    if (!_outQueue) return;
-    ScanNotification n;
-    n.source = ScanSource::Smb;
-    n.type = ScanEventType::LogLine;
-    n.setText(text.c_str());
-    xQueueSend(_outQueue, &n, 0);
-}
+void SmbNegotiateCheck::notify(const String& text) { scanlog::post(_outQueue, ScanSource::Smb, text); }
 
 void SmbNegotiateCheck::notify(ScanEventType type, uint8_t pct) {
     if (!_outQueue) return;

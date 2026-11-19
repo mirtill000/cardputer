@@ -1,4 +1,6 @@
 #include "DiscoveryRunner.h"
+#include "../core/ScanLog.h"
+#include "../core/RunClaim.h"
 #include "SsdpDiscovery.h"
 #include "ServiceEnumerator.h"
 #include "SnmpSweep.h"
@@ -20,13 +22,14 @@ void DiscoveryRunner::begin(QueueHandle_t outQueue) {
 }
 
 bool DiscoveryRunner::start() {
-    if (_running) {
+    RunClaim claim(_running);
+    if (!claim.owned()) {
         notify("discovery already running");
         return false;
     }
     _phase = Phase::Idle;
     _progressPct = 0;
-    _running = true;
+    claim.commit();
     notify(ScanEventType::ScanStarted);
     if (xTaskCreatePinnedToCore(&DiscoveryRunner::taskEntry, "discall", 6144, this, 1, nullptr, 0) != pdPASS) {
         // Task never started (out of memory) - clear the running flag so
@@ -176,14 +179,7 @@ void DiscoveryRunner::setPhase(Phase p, const String& msg, uint8_t pct) {
     notify(ScanEventType::ScanProgress, pct);
 }
 
-void DiscoveryRunner::notify(const String& text) {
-    if (!_outQueue) return;
-    ScanNotification n;
-    n.source = ScanSource::DiscoveryAll;
-    n.type = ScanEventType::LogLine;
-    n.setText(text.c_str());
-    xQueueSend(_outQueue, &n, 0);
-}
+void DiscoveryRunner::notify(const String& text) { scanlog::post(_outQueue, ScanSource::DiscoveryAll, text); }
 
 void DiscoveryRunner::notify(ScanEventType type, uint8_t pct) {
     if (!_outQueue) return;

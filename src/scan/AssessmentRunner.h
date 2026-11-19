@@ -40,6 +40,9 @@ public:
 private:
     static constexpr uint16_t kPortStart = 1;
     static constexpr uint16_t kPortEnd = 1024;
+    // How long to wait for another task's discovery/port scan to finish
+    // before giving up on starting our own (see run()).
+    static constexpr uint32_t kScanBusyWaitMs = 120000;
 
     static void taskEntry(void* arg);
     void run();

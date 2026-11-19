@@ -6,12 +6,17 @@
 // otherwise hides: any long-running scan/sweep that keeps going after you
 // navigate away from the screen that started it. Two buckets, since they
 // carry different meaning:
-//   RF:<name>   one promiscuous-mode feature owns the WiFi radio. esp_wifi
-//   RF:N!       allows only ONE promiscuous callback at a time, so N>=2
-//               active at once (ARP/MITM, deauth, PMKID, CDP-LLDP, rogue
-//               DHCP, passive-host-discovery, beacon/probe intel, guard
-//               mode, sentinel mode) is a real conflict, shown in red
-//               instead of amber.
+//   RF:<name>   one promiscuous-mode feature is using the WiFi radio.
+//   RF:N        N passive listeners sharing the radio through the
+//               promiscuous dispatcher (net/PromiscDispatcher.h: CDP-LLDP,
+//               rogue DHCP, passive hosts, guard mode, OS fingerprint,
+//               VLAN, EAP identity) - fine, shown amber.
+//   RF:N!       two or more radio OWNERS at once: a manager with its own
+//               callback (ARP/MITM, deauth, PMKID, sentinel), or the
+//               channel-hopping beacon/probe intel, alongside another one
+//               or alongside the dispatcher's listeners. esp_wifi allows
+//               one callback and one channel, so this is a real conflict,
+//               shown in red.
 //   BG:<name>   one OTHER background sweep is running (war driving,
 //   BG:N        NETWORK/PORT/SERVICE scans, SNMP/LDAP/NTLM/DataStore/SMB/
 //               cred sweeps, evil-twin, ...). These don't fight over the

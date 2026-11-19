@@ -39,3 +39,33 @@ jobs:
 
       - name: Build ${{ matrix.env }}
         run: pio run -e ${{ matrix.env }}
+
+  # Static analysis (cppcheck via `pio check`). Scope and suppressions live
+  # in platformio.ini (project sources only). Fails the build on any HIGH
+  # severity defect; medium/low are reported in the log but don't block
+  # (the current medium set is cppcheck mistaking member log() methods
+  # for the C math function).
+  static-analysis:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            ~/.cache/pip
+          key: pio-check-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+          restore-keys: pio-check-${{ runner.os }}-
+
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+
+      - name: cppcheck
+        run: pio check -e cardputer-adv --fail-on-defect=high

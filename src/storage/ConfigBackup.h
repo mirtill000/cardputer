@@ -22,9 +22,11 @@ namespace ConfigBackup {
 
 bool backup(fs::FS& fs, const char* path);
 
-// Clears existing saved WiFi networks and war-driving allowlist entries
-// before applying the backup's, so the result matches the backup
-// exactly rather than merging with whatever was already saved.
+// For each section the file contains (wifiNetworks, wardrivingAllowlist),
+// clears the existing entries before applying the backup's, so that
+// section matches the backup exactly rather than merging. A section the
+// file doesn't contain is left untouched. Settings are range-checked
+// (AppConfig::clamp) before being saved.
 bool restore(fs::FS& fs, const char* path);
 
 }  // namespace ConfigBackup

@@ -1,4 +1,6 @@
 #include "EvilTwinManager.h"
+#include "../core/ScanLog.h"
+#include "../core/RunClaim.h"
 #include "../core/Config.h"
 #include "../storage/SdCard.h"
 #include "BeaconProbeSniffer.h"
@@ -41,7 +43,8 @@ size_t EvilTwinManager::previewKarmaCandidates(std::vector<String>& out) const {
 }
 
 bool EvilTwinManager::startKarma(uint8_t channel) {
-    if (_running) return false;
+    RunClaim claim(_running);
+    if (!claim.owned()) return false;
     // Defense in depth: reached only through OffensiveDisclaimerScreen,
     // but never stand up a look-alike AP without the per-boot offensive
     // consent flag set.
@@ -71,7 +74,7 @@ bool EvilTwinManager::startKarma(uint8_t channel) {
         return false;
     }
 
-    _running = true;
+    claim.commit();
     notify("karma AP up: cycling " + String(_karmaCandidates.size()) + " candidate SSID(s), starting \"" + _ssid +
            "\"");
     if (xTaskCreatePinnedToCore(&EvilTwinManager::taskEntry, "eviltwin", 4096, this, 1, nullptr, 0) != pdPASS) {
@@ -100,7 +103,9 @@ void EvilTwinManager::advanceKarmaCandidate() {
 }
 
 bool EvilTwinManager::start(const String& ssid, uint8_t channel) {
-    if (_running || ssid.isEmpty()) return false;
+    if (ssid.isEmpty()) return false;
+    RunClaim claim(_running);
+    if (!claim.owned()) return false;
     // Defense in depth - see startKarma() above.
     if (!g_config.offensiveEnabled) return false;
 
@@ -123,7 +128,7 @@ bool EvilTwinManager::start(const String& ssid, uint8_t channel) {
         return false;
     }
 
-    _running = true;
+    claim.commit();
     notify("evil twin AP up: \"" + _ssid + "\"");
     if (xTaskCreatePinnedToCore(&EvilTwinManager::taskEntry, "eviltwin", 4096, this, 1, nullptr, 0) != pdPASS) {
         _running = false;
@@ -219,14 +224,7 @@ void EvilTwinManager::logAssociation(const String& mac) {
     notify(_karmaMode ? ("client connected: " + mac + " -> \"" + _ssid + "\"") : ("client connected: " + mac));
 }
 
-void EvilTwinManager::notify(const String& text) {
-    if (!_outQueue) return;
-    ScanNotification n;
-    n.source = ScanSource::EvilTwin;
-    n.type = ScanEventType::LogLine;
-    n.setText(text.c_str());
-    xQueueSend(_outQueue, &n, 0);
-}
+void EvilTwinManager::notify(const String& text) { scanlog::post(_outQueue, ScanSource::EvilTwin, text); }
 
 void EvilTwinManager::notify(ScanEventType type, uint8_t pct) {
     if (!_outQueue) return;

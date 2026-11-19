@@ -1,4 +1,6 @@
 #include "LdapProbe.h"
+#include "../core/ScanLog.h"
+#include "../core/RunClaim.h"
 #include "ScanManager.h"
 #include "../core/Types.h"
 #include "../net/LdapWire.h"
@@ -37,7 +39,8 @@ void LdapProbe::begin(QueueHandle_t outQueue) {
 }
 
 bool LdapProbe::start() {
-    if (_running) {
+    RunClaim claim(_running);
+    if (!claim.owned()) {
         notify("ldap sweep already running");
         return false;
     }
@@ -46,7 +49,7 @@ bool LdapProbe::start() {
         xSemaphoreGive(_mutex);
     }
     _progressPct = 0;
-    _running = true;
+    claim.commit();
     notify(ScanEventType::ScanStarted);
     if (xTaskCreatePinnedToCore(&LdapProbe::taskEntry, "ldap", 6144, this, 1, nullptr, 0) != pdPASS) {
         _running = false;
@@ -62,12 +65,8 @@ void LdapProbe::taskEntry(void* arg) {
 }
 
 void LdapProbe::run() {
-    std::vector<IPAddress> targets;
-    size_t n = g_scanManager.hostCount();
-    HostInfo h;
-    for (size_t i = 0; i < n; i++) {
-        if (g_scanManager.getHost(i, h) && h.alive) targets.push_back(h.ip);
-    }
+    // One lock, IPs only - no per-row HostInfo deep copy (ScanManager::aliveHostIps).
+    std::vector<IPAddress> targets = g_scanManager.aliveHostIps();
 
     if (targets.empty()) {
         notify("no alive hosts - run NETWORK SCAN first");
@@ -150,14 +149,7 @@ void LdapProbe::addFinding(const Finding& f) {
     notify(msg);
 }
 
-void LdapProbe::notify(const String& text) {
-    if (!_outQueue) return;
-    ScanNotification n;
-    n.source = ScanSource::Ldap;
-    n.type = ScanEventType::LogLine;
-    n.setText(text.c_str());
-    xQueueSend(_outQueue, &n, 0);
-}
+void LdapProbe::notify(const String& text) { scanlog::post(_outQueue, ScanSource::Ldap, text); }
 
 void LdapProbe::notify(ScanEventType type, uint8_t pct) {
     if (!_outQueue) return;

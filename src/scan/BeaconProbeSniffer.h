@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../net/PromiscDispatcher.h"
 #include <Arduino.h>
 #include <atomic>
 #include <vector>
@@ -138,10 +139,10 @@ private:
 
     static void taskEntry(void* arg);
     void run();
-    static void promiscuousRxTrampoline(void* buf, wifi_promiscuous_pkt_type_t type);
-    void onManagementFrame(const uint8_t* p, uint16_t len, int8_t rssi);
+    static void onDispatchedFrame(const promisc::Frame& f);
+    void onManagementFrame(const uint8_t* p, uint16_t len, int8_t rssi, uint8_t rxChannel);
     void handleApFrame(const uint8_t bssid[6], uint16_t bodyStart, const uint8_t* p, uint16_t len, bool privacy,
-                        int8_t rssi);
+                        int8_t rssi, uint8_t rxChannel);
     void handleProbeRequest(const uint8_t clientMac[6], uint16_t bodyStart, const uint8_t* p, uint16_t len,
                              int8_t rssi);
     void updateAp(const uint8_t bssid[6], const String& ssid, bool hasSsid, uint8_t channel, wifi_auth_mode_t enc,

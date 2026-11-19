@@ -1,4 +1,6 @@
 #include "ArpSpoofManager.h"
+#include "../core/ScanLog.h"
+#include "../core/RunClaim.h"
 #include "ArpResolver.h"
 #include "PingSweep.h"
 #include "ScanManager.h"
@@ -200,7 +202,8 @@ void ArpSpoofManager::begin(QueueHandle_t outQueue) {
 }
 
 bool ArpSpoofManager::start(const IPAddress& target, uint16_t durationS, bool sniffTraffic) {
-    if (_running) return false;
+    RunClaim claim(_running);
+    if (!claim.owned()) return false;
     // Defense in depth: the UI already gates this behind
     // OffensiveDisclaimerScreen, but never launch a live offensive
     // session if that per-boot consent flag somehow isn't set.
@@ -235,7 +238,7 @@ bool ArpSpoofManager::start(const IPAddress& target, uint16_t durationS, bool sn
     }
 
     _startMs = millis();
-    _running = true;
+    claim.commit();
     notify(ScanEventType::ScanStarted);
     // Larger stack than most other managers' worker tasks: maybeSpoofDns()
     // builds a full Ethernet+IP+UDP+DNS frame in on-stack buffers
@@ -614,14 +617,7 @@ void ArpSpoofManager::harvest(const String& kind, const String& line, const uint
     }
 }
 
-void ArpSpoofManager::notify(const String& text) {
-    if (!_outQueue) return;
-    ScanNotification n;
-    n.source = ScanSource::ArpSpoof;
-    n.type = ScanEventType::LogLine;
-    n.setText(text.c_str());
-    xQueueSend(_outQueue, &n, 0);
-}
+void ArpSpoofManager::notify(const String& text) { scanlog::post(_outQueue, ScanSource::ArpSpoof, text); }
 
 void ArpSpoofManager::notify(ScanEventType type, uint8_t pct) {
     if (!_outQueue) return;

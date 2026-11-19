@@ -37,16 +37,32 @@ void FindingStore::add(ScanSource source, FindingCategory category, RiskLevel se
         }
     }
 
+    Finding f;
+    f.source = source;
+    f.category = category;
+    f.severity = severity;
+    f.host = host;
+    f.title = title;
+    f.detail = detail.length() ? detail : title;
+    f.whenMs = millis();
+
     if (_pushed.size() < kMaxPushed) {
-        Finding f;
-        f.source = source;
-        f.category = category;
-        f.severity = severity;
-        f.host = host;
-        f.title = title;
-        f.detail = detail.length() ? detail : title;
-        f.whenMs = millis();
         _pushed.push_back(f);
+    } else {
+        // Full. This used to drop the NEW finding whatever its severity,
+        // so 48 early recon entries could hide a Critical raised later.
+        // Evict the least severe entry instead (oldest among equals), and
+        // only if the new one is at least as severe as it.
+        size_t victim = 0;
+        for (size_t i = 1; i < _pushed.size(); i++) {
+            const Finding& c = _pushed[i];
+            const Finding& v = _pushed[victim];
+            if ((uint8_t)c.severity < (uint8_t)v.severity ||
+                (c.severity == v.severity && c.whenMs < v.whenMs)) {
+                victim = i;
+            }
+        }
+        if ((uint8_t)severity >= (uint8_t)_pushed[victim].severity) _pushed[victim] = f;
     }
 
     xSemaphoreGive(_mutex);

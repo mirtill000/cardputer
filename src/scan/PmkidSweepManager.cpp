@@ -1,4 +1,5 @@
 #include "PmkidSweepManager.h"
+#include "../core/ScanLog.h"
 #include "PmkidManager.h"
 #include "WardrivingManager.h"
 #include "../net/WifiManager.h"
@@ -123,14 +124,7 @@ void PmkidSweepManager::addResult(const SweepResult& r) {
     }
 }
 
-void PmkidSweepManager::notify(const String& text) {
-    if (!_outQueue) return;
-    ScanNotification n;
-    n.source = ScanSource::PmkidSweep;
-    n.type = ScanEventType::LogLine;
-    n.setText(text.c_str());
-    xQueueSend(_outQueue, &n, 0);
-}
+void PmkidSweepManager::notify(const String& text) { scanlog::post(_outQueue, ScanSource::PmkidSweep, text); }
 
 size_t PmkidSweepManager::resultCount() const {
     if (!_mutex || xSemaphoreTake(_mutex, pdMS_TO_TICKS(100)) != pdTRUE) return 0;

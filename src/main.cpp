@@ -1,6 +1,7 @@
 #include <M5Unified.h>
 #include <M5Cardputer.h>
 #include <LittleFS.h>
+#include <esp_ota_ops.h>
 
 #include "core/Config.h"
 #include "ui/UiManager.h"
@@ -50,6 +51,7 @@
 #include "net/CaptivePortalDetector.h"
 #include "net/TimeSync.h"
 #include "net/GnssReceiver.h"
+#include "net/PromiscDispatcher.h"
 #include "storage/SdCard.h"
 #include "ui/screens/ScanHistoryScreen.h"
 #include "ui/screens/WardrivingScreen.h"
@@ -66,8 +68,32 @@
 // DiscoveryMenuScreen, so main.cpp doesn't reference their screens here.
 // Their background managers are still begin()'d below.
 
+// OTA rollback. The bootloader is built with rollback enabled, but the
+// Arduino core's initArduino() marks a freshly-OTA'd image valid BEFORE
+// setup() even runs - so a build that crashes during init (or shortly
+// after) would never be rolled back. Returning true here tells the core
+// to leave that decision to us; loop() marks the image valid only once it
+// has run for kOtaHealthyAfterMs. A crash or reset before then reboots
+// into the bootloader with the image still pending-verify, and the
+// bootloader falls back to the previous slot. extern "C": the core
+// declares this hook as a weak C symbol (esp32-hal-misc.c).
+extern "C" bool verifyRollbackLater() { return true; }
+
 namespace {
 BootScreen g_bootScreen;
+
+constexpr uint32_t kOtaHealthyAfterMs = 30000;
+bool g_otaConfirmed = false;
+
+void confirmRunningImageIfPending() {
+    const esp_partition_t* running = esp_ota_get_running_partition();
+    esp_ota_img_states_t state;
+    if (running && esp_ota_get_state_partition(running, &state) == ESP_OK && state == ESP_OTA_IMG_PENDING_VERIFY) {
+        if (esp_ota_mark_app_valid_cancel_rollback() == ESP_OK) {
+            log_i("main: OTA image confirmed after %u ms of healthy uptime", (unsigned)kOtaHealthyAfterMs);
+        }
+    }
+}
 
 // Fase 61: BLE rollback returned MainMenuScreen to the top-level entry
 // point (BootScreen -> MainMenuScreen directly, no HomeScreen split
@@ -115,6 +141,10 @@ void setup() {
     // it - see scan/FindingStore.h). Just creates its mutex; safe to call
     // before the scan managers, and must precede any add()/buildRollup().
     g_findings.begin();
+    // Shared promiscuous-mode dispatcher (one radio callback for every
+    // passive sniffer - see net/PromiscDispatcher.h). Only creates its
+    // lock here; queue + task are allocated on the first subscription.
+    promisc::begin();
 
     // PORT SCANNER and CREDENTIAL AUDIT are NOT top-level menu entries:
     // both are per-host actions reached from HOST DETAIL (TAB for a port
@@ -212,6 +242,12 @@ void setup() {
 void loop() {
     // All real work happens in the UI, input and scan FreeRTOS tasks
     // created in setup()/UiManager::begin(). The Arduino loopTask is
-    // left idle on purpose so it never competes with them for CPU time.
+    // left idle on purpose so it never competes with them for CPU time -
+    // its only job is the one-shot OTA confirmation (see
+    // verifyRollbackLater() above).
+    if (!g_otaConfirmed && millis() > kOtaHealthyAfterMs) {
+        confirmRunningImageIfPending();
+        g_otaConfirmed = true;
+    }
     vTaskDelay(pdMS_TO_TICKS(1000));
 }

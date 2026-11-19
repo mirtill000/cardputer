@@ -7,6 +7,8 @@
 #include "../../net/TimeSync.h"
 #include "../../storage/SdCard.h"
 #include <M5Unified.h>
+#include <esp_core_dump.h>
+#include <esp_system.h>
 
 DiagnosticsScreen& DiagnosticsScreen::instance() {
     static DiagnosticsScreen s;
@@ -15,6 +17,8 @@ DiagnosticsScreen& DiagnosticsScreen::instance() {
 
 void DiagnosticsScreen::onEnter() {
     _lastKey = 0;
+    size_t addr = 0, size = 0;
+    _coreDumpPresent = esp_core_dump_image_get(&addr, &size) == ESP_OK && size > 0;
 }
 
 void DiagnosticsScreen::onKey(UiKey key, char ch) {
@@ -29,6 +33,24 @@ void DiagnosticsScreen::onKey(UiKey key, char ch) {
 }
 
 namespace {
+// Why the chip last reset - the first thing to know after an unexplained
+// reboot in the field. "bad" = a crash-type reset (shown amber).
+const char* resetReasonLabel(esp_reset_reason_t r, bool& bad) {
+    bad = false;
+    switch (r) {
+        case ESP_RST_POWERON: return "power-on";
+        case ESP_RST_SW: return "restart";
+        case ESP_RST_EXT: return "ext-pin";
+        case ESP_RST_DEEPSLEEP: return "deepsleep";
+        case ESP_RST_PANIC: bad = true; return "PANIC";
+        case ESP_RST_INT_WDT:
+        case ESP_RST_TASK_WDT:
+        case ESP_RST_WDT: bad = true; return "WATCHDOG";
+        case ESP_RST_BROWNOUT: bad = true; return "BROWNOUT";
+        default: return "other";
+    }
+}
+
 void statusRow(M5Canvas& gfx, int16_t y, const char* label, const String& value, bool ok) {
     gfx.setTextColor(theme::GREY, theme::BG);
     gfx.setCursor(6, y);
@@ -81,7 +103,13 @@ void DiagnosticsScreen::draw(M5Canvas& gfx) {
     uint32_t up = millis() / 1000;
     char ub[16];
     snprintf(ub, sizeof(ub), "%02u:%02u:%02u", (unsigned)(up / 3600), (unsigned)((up / 60) % 60), (unsigned)(up % 60));
-    statusRow(gfx, 80, "UPTIME:", ub, true);
+    // Uptime + last reset reason, plus "+dump" if a crash coredump is
+    // sitting in the coredump partition (dump it over USB with esptool
+    // read_flash + espcoredump.py; see partitions.csv).
+    bool badReset = false;
+    const char* rst = resetReasonLabel(esp_reset_reason(), badReset);
+    String upVal = String(ub) + " rst:" + rst + (_coreDumpPresent ? "+dump" : "");
+    statusRow(gfx, 80, "UPTIME:", upVal, !badReset && !_coreDumpPresent);
 
     // Free heap
     statusRow(gfx, 90, "FREE RAM:", String((unsigned)(ESP.getFreeHeap() / 1024)) + " KB", true);

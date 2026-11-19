@@ -2,8 +2,10 @@
 
 #include <IPAddress.h>
 #include <atomic>
+#include <deque>
 #include <vector>
 #include "../core/EventQueue.h"
+#include "../core/StartResult.h"
 #include "../core/Types.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -25,8 +27,18 @@ public:
     void begin(QueueHandle_t outQueue);
 
     // Starts a fresh sweep of the currently-connected WiFi subnet.
-    // No-op if a scan is already running, or if WiFi isn't connected.
-    void startDiscoveryScan();
+    // Returns Started only when THIS call started the run: Busy if a scan
+    // (possibly another task's) is already in progress, NoWifi /
+    // InvalidArgs if nothing could be scanned. Callers that go on to read
+    // the host table must check this - otherwise they consume a previous
+    // run's results, or someone else's scan.
+    StartResult startDiscoveryScan();
+
+    // For background orchestrators (AUTO ASSESS, PLAYBOOK, WAR DRIVING):
+    // if another task's scan is in progress, waits up to maxWaitMs for it
+    // to finish and then starts a fresh one, so the caller always gets a
+    // run of its own. Blocks the calling task - never call from the UI.
+    StartResult startDiscoveryScanWhenIdle(uint32_t maxWaitMs);
 
     // Optional custom target range: overrides the DHCP-derived subnet with
     // an explicit base network address + host count (base+1 .. base+count).
@@ -44,6 +56,21 @@ public:
 
     size_t hostCount() const;
     bool getHost(size_t index, HostInfo& out) const;
+
+    // Light accessors for loops that only filter/select: getHost() deep-
+    // copies the whole HostInfo (every String plus the ports and mDNS
+    // vectors) and takes the mutex once per row, which for a 254-512 row
+    // table adds up. These take the lock once and copy only what's asked.
+    struct HostSummary {
+        IPAddress ip;
+        bool alive = false;
+        RiskLevel risk = RiskLevel::Ok;
+        bool credVulnerable = false;
+        uint16_t portCount = 0;
+    };
+    bool getHostSummary(size_t index, HostSummary& out) const;
+    // IPs of every alive host, in table order, under a single lock.
+    std::vector<IPAddress> aliveHostIps() const;
 
     // Same as getHost(), but matched by IP instead of table index —
     // for callers (PortScanManager, CredAuditManager) that only know
@@ -94,7 +121,14 @@ private:
     void notify(ScanEventType type, int16_t hostIndex = -1, uint8_t pct = 0, const char* text = nullptr);
 
     mutable SemaphoreHandle_t _mutex = nullptr;
-    std::vector<HostInfo> _hosts;
+    // One row per address in the scan range (up to 512), most of them
+    // never alive. A std::vector needs that whole table as ONE contiguous
+    // block (~130 B per HostInfo: 33KB for a /24, 66KB for a /23), which
+    // on this no-PSRAM board can fail outright once WiFi has fragmented
+    // the heap. A deque allocates in small chunks with the same indexed
+    // access; rows are only ever appended at scan start, so references
+    // into it stay valid for the whole run.
+    std::deque<HostInfo> _hosts;
     QueueHandle_t _outQueue = nullptr;
 
     std::atomic<bool> _running{false};

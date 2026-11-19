@@ -1,4 +1,6 @@
 #include "PmkidManager.h"
+#include "../core/ScanLog.h"
+#include "../core/RunClaim.h"
 #include "DeauthManager.h"  // parseMacString - shared free function
 #include "../net/EapolWire.h"
 #include "../net/WifiManager.h"
@@ -14,7 +16,9 @@ void PmkidManager::begin(QueueHandle_t outQueue) {
 }
 
 bool PmkidManager::start(const String& ssid, const String& bssid, uint8_t channel) {
-    if (_running || ssid.isEmpty()) return false;
+    if (ssid.isEmpty()) return false;
+    RunClaim claim(_running);
+    if (!claim.owned()) return false;
     if (!parseMacString(bssid, _apBssid)) return false;
 
     _ssid = ssid;
@@ -34,7 +38,7 @@ bool PmkidManager::start(const String& ssid, const String& bssid, uint8_t channe
     _captureQueue = xQueueCreate(kCaptureQueueDepth, sizeof(CapturedFrame));
     if (!_captureQueue) return false;
 
-    _running = true;
+    claim.commit();
     notify("PMKID capture: associating to " + ssid + " (no deauth)");
     if (xTaskCreatePinnedToCore(&PmkidManager::taskEntry, "pmkid", 8192, this, 1, nullptr, 0) != pdPASS) {
         // Task never started (out of memory) - unwind the capture queue
@@ -136,11 +140,4 @@ void PmkidManager::onCapturedFrame(const uint8_t* p, uint16_t len) {
     xQueueSend(_captureQueue, &frame, 0);
 }
 
-void PmkidManager::notify(const String& text) {
-    if (!_outQueue) return;
-    ScanNotification n;
-    n.source = ScanSource::Pmkid;
-    n.type = ScanEventType::LogLine;
-    n.setText(text.c_str());
-    xQueueSend(_outQueue, &n, 0);
-}
+void PmkidManager::notify(const String& text) { scanlog::post(_outQueue, ScanSource::Pmkid, text); }

@@ -1,4 +1,6 @@
 #include "PasswordSprayManager.h"
+#include "../core/ScanLog.h"
+#include "../core/RunClaim.h"
 #include "CredAuditManager.h"
 #include "ScanManager.h"
 #include "WordlistLoader.h"
@@ -42,7 +44,9 @@ void PasswordSprayManager::begin(QueueHandle_t outQueue) {
 }
 
 bool PasswordSprayManager::start(const String& password) {
-    if (_running || password.isEmpty()) return false;
+    if (password.isEmpty()) return false;
+    RunClaim claim(_running);
+    if (!claim.owned()) return false;
     if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
         _hits.clear();
         xSemaphoreGive(_mutex);
@@ -50,7 +54,7 @@ bool PasswordSprayManager::start(const String& password) {
     _password = password;
     _attempts = 0;
     _targets = 0;
-    _running = true;
+    claim.commit();
     notify(ScanEventType::ScanStarted);
     xTaskCreatePinnedToCore(&PasswordSprayManager::taskEntry, "spray", 6144, this, 1, nullptr, 0);
     return true;
@@ -143,14 +147,7 @@ void PasswordSprayManager::addHit(const Hit& h) {
     }
 }
 
-void PasswordSprayManager::notify(const String& text) {
-    if (!_outQueue) return;
-    ScanNotification n;
-    n.source = ScanSource::Spray;
-    n.type = ScanEventType::LogLine;
-    n.setText(text.c_str());
-    xQueueSend(_outQueue, &n, 0);
-}
+void PasswordSprayManager::notify(const String& text) { scanlog::post(_outQueue, ScanSource::Spray, text); }
 
 void PasswordSprayManager::notify(ScanEventType type, uint8_t pct) {
     if (!_outQueue) return;

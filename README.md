@@ -5737,3 +5737,55 @@ YYYYMMDD-HHMMSS-wardrive.csv` e colonna `time`) diventano **UTC reali
 anche completamente offline**, non più `uptime-<sec>`, non appena il GPS
 aggancia. Priorità sorgenti: NTP / RTC / GPS (la prima che fornisce
 un'ora reale vince; le altre restano disponibili e coerenti, tutto UTC).
+
+## Fase 67: hardening — race, radio condivisa, robustezza
+
+Due passaggi di revisione del firmware. Il primo ha corretto l'overflow di
+`drawWrapped()` su SSID/banner senza spazi, i falsi positivi della basic
+auth HTTP, i campi NMEA vuoti, il format di LittleFS al primo errore, il
+delay tra probe a 0 e aggiunto la CI. Il secondo:
+
+### Correzioni
+- **Avvio atomico dei manager** (`core/RunClaim.h`): lo schema
+  `if (_running) return; … _running = true;` lasciava una finestra in cui
+  due task potevano avviare la stessa scansione due volte (NETWORK SCAN è
+  avviata da UI, AUTO ASSESS, SENTINEL, PLAYBOOK e WAR DRIVING). Ora il
+  flag è preso con un solo `exchange(true)` in 24 funzioni `start`.
+- **Esito dell'avvio** (`core/StartResult.h`): `startDiscoveryScan()` e
+  `PortScanManager::startScan()` dicono se la scansione è partita davvero.
+  AUTO ASSESS, PLAYBOOK e WAR DRIVING non leggono più la tabella host di
+  una scansione precedente o altrui: se ne gira già una, aspettano che
+  finisca e ne avviano una propria (`startDiscoveryScanWhenIdle`).
+- **Restore della configurazione**: i valori vengono riportati nei limiti
+  (`AppConfig::clamp()`, usata anche da `load()`), le reti WiFi e
+  l'allowlist vengono sostituite solo se il file le contiene, e
+  `lowPowerMode` ora è incluso nel backup.
+- **Finding critici non più persi**: a store pieno (48) viene sostituito
+  il finding meno grave e più vecchio, invece di scartare il nuovo.
+- **Wordlist**: righe limitate a 128 byte (un file senza a-capo non
+  esaurisce più la RAM); le liste vengono liberate a fine audit.
+- **DNS**: label > 63 byte / nomi > 255 byte rifiutati invece di generare
+  query malformate. **CSV**: anche `\r` forza le virgolette.
+
+### Radio condivisa: `net/PromiscDispatcher`
+Un solo callback promiscuo che copia il frame in coda (niente lock né
+allocazioni nel task del driver WiFi) e un task che lo smista agli
+iscritti. I listener passivi (LAN TOPOLOGY, ROGUE DHCP, PASSIVE HOSTS,
+GUARD MODE, OS FINGERPRINT, VLAN, EAP IDENTITY, BEACON/PROBE) ora possono
+girare insieme: l'header mostra `RF:N` in ambra invece di `RF:N!` in
+rosso. Il conflitto resta segnalato solo con un manager che usa la radio
+in esclusiva (SENTINEL, deauth/PMKID, ARP) o con il channel hopping.
+
+### Robustezza e diagnostica
+- **Rollback OTA**: l'immagine aggiornata viene confermata solo dopo 30 s
+  di funzionamento; un crash prima di allora fa tornare il bootloader
+  alla versione precedente.
+- **DIAGNOSTICS**: motivo dell'ultimo reset (PANIC/WATCHDOG/BROWNOUT in
+  ambra) e presenza di un coredump nella riga UPTIME.
+- **Memoria**: tabella host in `std::deque` (niente blocco contiguo da
+  33–66 KB) e accessor leggeri (`getHostSummary`, `aliveHostIps`) al
+  posto di copie complete di `HostInfo` nei loop.
+- **Codice**: `scanlog::post` sostituisce 31 copie identiche di
+  `notify()`; UPNP DISCOVERY è la prima schermata migrata su `ListScreen`.
+- **CI**: oltre alla build dei due env, `pio check` (cppcheck) sui soli
+  sorgenti del progetto, bloccante sui difetti HIGH.

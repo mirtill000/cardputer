@@ -1,4 +1,6 @@
 #include "IotCredScanner.h"
+#include "../core/ScanLog.h"
+#include "../core/RunClaim.h"
 #include "CredAuditManager.h"
 #include "IotDefaultCreds.h"
 #include "ScanManager.h"
@@ -23,13 +25,14 @@ void IotCredScanner::begin(QueueHandle_t outQueue) {
 }
 
 bool IotCredScanner::start() {
-    if (_running) return false;
+    RunClaim claim(_running);
+    if (!claim.owned()) return false;
     if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
         _hits.clear();
         xSemaphoreGive(_mutex);
     }
     _attempts = 0;
-    _running = true;
+    claim.commit();
     notify(ScanEventType::ScanStarted);
     xTaskCreatePinnedToCore(&IotCredScanner::taskEntry, "iotcred", 6144, this, 1, nullptr, 0);
     return true;
@@ -118,14 +121,7 @@ void IotCredScanner::addHit(const Hit& h) {
            (h.pass.length() ? h.pass : String("<blank>")));
 }
 
-void IotCredScanner::notify(const String& text) {
-    if (!_outQueue) return;
-    ScanNotification n;
-    n.source = ScanSource::IotCred;
-    n.type = ScanEventType::LogLine;
-    n.setText(text.c_str());
-    xQueueSend(_outQueue, &n, 0);
-}
+void IotCredScanner::notify(const String& text) { scanlog::post(_outQueue, ScanSource::IotCred, text); }
 
 void IotCredScanner::notify(ScanEventType type, uint8_t pct) {
     if (!_outQueue) return;

@@ -33,12 +33,25 @@ void AppConfig::load() {
 
     prefs.end();
 
-    // A9: enforce a floor on the inter-probe delay. A value of 0 makes
-    // the scan/credential loops call vTaskDelay(0), which on FreeRTOS
-    // does NOT yield — a tight 0-delay loop starves lower-priority tasks
-    // and can trip the task watchdog. Clamp anything below the minimum
-    // (including a 0 persisted by an older build) up to it.
+    clamp();
+}
+
+void AppConfig::clamp() {
+    // Same bounds as SettingsScreen::adjust().
+    if (scanTimeoutMs < 50) scanTimeoutMs = 50;
+    if (scanTimeoutMs > 5000) scanTimeoutMs = 5000;
+    if (maxConcurrentProbes < 1) maxConcurrentProbes = 1;
+    if (maxConcurrentProbes > 8) maxConcurrentProbes = 8;
+    // A 0 delay makes the scan/credential loops call vTaskDelay(0), which
+    // on FreeRTOS does NOT yield - it starves lower-priority tasks and can
+    // trip the task watchdog.
     if (interProbeDelayMs < kMinInterProbeDelayMs) interProbeDelayMs = kMinInterProbeDelayMs;
+    if (interProbeDelayMs > 200) interProbeDelayMs = 200;
+    if (portRangeStart < 1) portRangeStart = 1;
+    if (portRangeEnd < portRangeStart) portRangeEnd = portRangeStart;
+    if (subnetPrefix < 1 || subnetPrefix > 32) subnetPrefix = 24;
+    uiSoundEnabled = uiSoundEnabled ? 1 : 0;
+    lowPowerMode = lowPowerMode ? 1 : 0;
 }
 
 void AppConfig::save() const {

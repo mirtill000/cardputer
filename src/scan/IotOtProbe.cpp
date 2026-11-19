@@ -1,4 +1,6 @@
 #include "IotOtProbe.h"
+#include "../core/ScanLog.h"
+#include "../core/RunClaim.h"
 #include "ScanManager.h"
 #include "../core/Types.h"
 #include <WiFiClient.h>
@@ -60,13 +62,14 @@ void IotOtProbe::begin(QueueHandle_t outQueue) {
 }
 
 bool IotOtProbe::start() {
-    if (_running) return false;
+    RunClaim claim(_running);
+    if (!claim.owned()) return false;
     if (_mutex && xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
         _findings.clear();
         xSemaphoreGive(_mutex);
     }
     _progressPct = 0;
-    _running = true;
+    claim.commit();
     notify(ScanEventType::ScanStarted);
     if (xTaskCreatePinnedToCore(&IotOtProbe::taskEntry, "iotot", 6144, this, 1, nullptr, 0) != pdPASS) {
         // Task never started (out of memory) - clear the running flag so
@@ -84,12 +87,8 @@ void IotOtProbe::taskEntry(void* arg) {
 }
 
 void IotOtProbe::run() {
-    std::vector<IPAddress> targets;
-    size_t n = g_scanManager.hostCount();
-    HostInfo h;
-    for (size_t i = 0; i < n; i++) {
-        if (g_scanManager.getHost(i, h) && h.alive) targets.push_back(h.ip);
-    }
+    // One lock, IPs only - no per-row HostInfo deep copy (ScanManager::aliveHostIps).
+    std::vector<IPAddress> targets = g_scanManager.aliveHostIps();
 
     if (targets.empty()) {
         notify("no alive hosts - run NETWORK SCAN first");
@@ -347,14 +346,7 @@ void IotOtProbe::addFinding(const IPAddress& ip, const char* service, const Stri
     notify(String(noAuth ? "OPEN " : "") + service + " @ " + ip.toString());
 }
 
-void IotOtProbe::notify(const String& text) {
-    if (!_outQueue) return;
-    ScanNotification n;
-    n.source = ScanSource::IotOt;
-    n.type = ScanEventType::LogLine;
-    n.setText(text.c_str());
-    xQueueSend(_outQueue, &n, 0);
-}
+void IotOtProbe::notify(const String& text) { scanlog::post(_outQueue, ScanSource::IotOt, text); }
 
 void IotOtProbe::notify(ScanEventType type, uint8_t pct) {
     if (!_outQueue) return;

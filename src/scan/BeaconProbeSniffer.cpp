@@ -1,4 +1,6 @@
 #include "BeaconProbeSniffer.h"
+#include "../net/PromiscDispatcher.h"
+#include "../core/ScanLog.h"
 #include "OuiDatabase.h"
 #include "../core/Types.h"
 #include "../net/WifiManager.h"
@@ -145,8 +147,12 @@ void BeaconProbeSniffer::run() {
             continue;
         }
 
-        esp_wifi_set_promiscuous_rx_cb(&BeaconProbeSniffer::promiscuousRxTrampoline);
-        esp_wifi_set_promiscuous(true);
+        int sub = promisc::subscribe(promisc::kMgmt, &BeaconProbeSniffer::onDispatchedFrame);
+        if (sub < 0) {
+            notify("radio unavailable - not listening");
+            _running = false;
+            continue;
+        }
         notify("beacon/probe intel: listening (hopping channels)");
 
         uint8_t channel = 1;
@@ -164,7 +170,7 @@ void BeaconProbeSniffer::run() {
             vTaskDelay(pdMS_TO_TICKS(50));
         }
 
-        esp_wifi_set_promiscuous(false);
+        promisc::unsubscribe(sub);
         notify("beacon/probe intel: stopped, reconnecting");
         // Channel-hopping necessarily broke any STA association this
         // device had - see the header's own-connection-disruption note.
@@ -173,14 +179,11 @@ void BeaconProbeSniffer::run() {
     }
 }
 
-void BeaconProbeSniffer::promiscuousRxTrampoline(void* buf, wifi_promiscuous_pkt_type_t type) {
-    if (type != WIFI_PKT_MGMT) return;
-    auto* pkt = static_cast<wifi_promiscuous_pkt_t*>(buf);
-    if (!pkt) return;
-    g_beaconProbeSniffer.onManagementFrame(pkt->payload, pkt->rx_ctrl.sig_len, pkt->rx_ctrl.rssi);
-}
+// Runs on the shared promiscuous dispatcher task (net/PromiscDispatcher.h),
+// not the WiFi driver task - so the handler may lock/allocate.
+void BeaconProbeSniffer::onDispatchedFrame(const promisc::Frame& f) { g_beaconProbeSniffer.onManagementFrame(f.data, f.len, f.rssi, f.channel); }
 
-void BeaconProbeSniffer::onManagementFrame(const uint8_t* p, uint16_t len, int8_t rssi) {
+void BeaconProbeSniffer::onManagementFrame(const uint8_t* p, uint16_t len, int8_t rssi, uint8_t rxChannel) {
     if (len < 24) return;
 
     uint8_t fc0 = p[0];
@@ -198,7 +201,7 @@ void BeaconProbeSniffer::onManagementFrame(const uint8_t* p, uint16_t len, int8_
         if (len < 24 + 12) return;
         uint16_t capInfo = (uint16_t)p[24 + 10] | ((uint16_t)p[24 + 11] << 8);  // little-endian, per 802.11
         bool privacy = (capInfo & 0x0010) != 0;
-        handleApFrame(addr3, 24 + 12, p, len, privacy, rssi);
+        handleApFrame(addr3, 24 + 12, p, len, privacy, rssi, rxChannel);
     } else if (subtype == 4) {
         // Probe Request: no fixed fields at all - tagged parameters start
         // right after the 24-byte MAC header. addr2 is the sender (the
@@ -209,7 +212,7 @@ void BeaconProbeSniffer::onManagementFrame(const uint8_t* p, uint16_t len, int8_
 }
 
 void BeaconProbeSniffer::handleApFrame(const uint8_t bssid[6], uint16_t bodyStart, const uint8_t* p, uint16_t len,
-                                        bool privacy, int8_t rssi) {
+                                        bool privacy, int8_t rssi, uint8_t rxChannel) {
     String ssid;
     bool hasSsid = false;
     uint16_t ssidOff;
@@ -219,7 +222,11 @@ void BeaconProbeSniffer::handleApFrame(const uint8_t bssid[6], uint16_t bodyStar
         ssid = decodeSsidBytes(p + ssidOff, ssidLen);
     }
 
-    uint8_t channel = _currentChannel;
+    // Fallback when the beacon carries no DS Parameter Set: the channel
+    // the radio received it on. Frames are now processed off a queue
+    // (net/PromiscDispatcher.h), so by the time this runs the hop loop
+    // may already have moved _currentChannel on - use the frame's own.
+    uint8_t channel = rxChannel ? rxChannel : _currentChannel.load();
     uint16_t dsOff;
     uint8_t dsLen;
     if (findIe(p, len, bodyStart, /*tag DS Parameter Set=*/3, dsOff, dsLen) && dsLen >= 1) {
@@ -395,14 +402,7 @@ void BeaconProbeSniffer::updateClient(const uint8_t mac[6], const String& probed
     }
 }
 
-void BeaconProbeSniffer::notify(const String& text) {
-    if (!_outQueue) return;
-    ScanNotification n;
-    n.source = ScanSource::BeaconProbe;
-    n.type = ScanEventType::LogLine;
-    n.setText(text.c_str());
-    xQueueSend(_outQueue, &n, 0);
-}
+void BeaconProbeSniffer::notify(const String& text) { scanlog::post(_outQueue, ScanSource::BeaconProbe, text); }
 
 size_t BeaconProbeSniffer::apCount() const {
     if (!_mutex || xSemaphoreTake(_mutex, pdMS_TO_TICKS(100)) != pdTRUE) return 0;

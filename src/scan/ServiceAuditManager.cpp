@@ -1,4 +1,6 @@
 #include "ServiceAuditManager.h"
+#include "../core/ScanLog.h"
+#include "../core/RunClaim.h"
 #include "ScanManager.h"
 #include "Base64.h"
 #include "../core/Types.h"
@@ -628,13 +630,14 @@ void ServiceAuditManager::begin(QueueHandle_t outQueue) {
 }
 
 bool ServiceAuditManager::start(const IPAddress& target) {
-    if (_running) return false;
+    RunClaim claim(_running);
+    if (!claim.owned()) return false;
     _target = target;
     if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
         _findings.clear();
         xSemaphoreGive(_mutex);
     }
-    _running = true;
+    claim.commit();
     notify(ScanEventType::ScanStarted);
     xTaskCreatePinnedToCore(&ServiceAuditManager::taskEntry, "svcaudit", 8192, this, 1, nullptr, 0);
     return true;
@@ -772,14 +775,7 @@ void ServiceAuditManager::addFinding(const char* service, const String& result, 
     notify(String(critical ? "! " : "") + service + ": " + result);
 }
 
-void ServiceAuditManager::notify(const String& text) {
-    if (!_outQueue) return;
-    ScanNotification n;
-    n.source = ScanSource::ServiceAudit;
-    n.type = ScanEventType::LogLine;
-    n.setText(text.c_str());
-    xQueueSend(_outQueue, &n, 0);
-}
+void ServiceAuditManager::notify(const String& text) { scanlog::post(_outQueue, ScanSource::ServiceAudit, text); }
 
 void ServiceAuditManager::notify(ScanEventType type, uint8_t pct) {
     if (!_outQueue) return;

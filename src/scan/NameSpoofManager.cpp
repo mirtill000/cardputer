@@ -1,4 +1,6 @@
 #include "NameSpoofManager.h"
+#include "../core/ScanLog.h"
+#include "../core/RunClaim.h"
 #include <WiFiUdp.h>
 #include <WiFiServer.h>
 #include <WiFiClient.h>
@@ -25,7 +27,8 @@ void NameSpoofManager::begin(QueueHandle_t outQueue) {
 }
 
 bool NameSpoofManager::start(uint16_t durationS, bool wpadEnabled) {
-    if (_running) return false;
+    RunClaim claim(_running);
+    if (!claim.owned()) return false;
     // Defense in depth: NAME SPOOF is a gated top-level menu entry
     // (reached through OffensiveDisclaimerScreen), but never answer
     // name queries LAN-wide unless the per-boot consent flag is set.
@@ -42,7 +45,7 @@ bool NameSpoofManager::start(uint16_t durationS, bool wpadEnabled) {
     _wpadEnabled = wpadEnabled;
     _startMs = millis();
     _durationMs = (uint32_t)durationS * 1000UL;
-    _running = true;
+    claim.commit();
     notify(ScanEventType::ScanStarted);
     if (xTaskCreatePinnedToCore(&NameSpoofManager::taskEntry, "namespoof", 4096, this, 1, nullptr, 0) != pdPASS) {
         // Task never started (out of memory) - clear the running flag so
@@ -210,14 +213,7 @@ void NameSpoofManager::log(const String& text) {
     notify(text);
 }
 
-void NameSpoofManager::notify(const String& text) {
-    if (!_outQueue) return;
-    ScanNotification n;
-    n.source = ScanSource::NameSpoof;
-    n.type = ScanEventType::LogLine;
-    n.setText(text.c_str());
-    xQueueSend(_outQueue, &n, 0);
-}
+void NameSpoofManager::notify(const String& text) { scanlog::post(_outQueue, ScanSource::NameSpoof, text); }
 
 void NameSpoofManager::notify(ScanEventType type, uint8_t pct) {
     if (!_outQueue) return;

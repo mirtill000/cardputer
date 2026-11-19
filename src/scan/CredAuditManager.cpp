@@ -1,4 +1,5 @@
 #include "CredAuditManager.h"
+#include "../core/RunClaim.h"
 #include "Base64.h"
 #include "DefaultCredsDictionary.h"
 #include "ScanManager.h"
@@ -65,11 +66,12 @@ void CredAuditManager::ensureWordlistsLoaded() {
 }
 
 void CredAuditManager::startAudit(const IPAddress& target) {
-    if (_running) return;
+    RunClaim claim(_running);
+    if (!claim.owned()) return;
     _target = target;
     _attempts = 0;
     _successes = 0;
-    _running = true;
+    claim.commit();
     notify(ScanEventType::ScanStarted);
     if (xTaskCreatePinnedToCore(&CredAuditManager::taskEntry, "credaudit", 6144, this, 1, nullptr, 0) != pdPASS) {
         // Task never started (out of memory) - clear the running flag so
@@ -131,6 +133,16 @@ void CredAuditManager::run() {
     if (vulnerable) sound::playCredAlert();
 
     g_scanManager.setHostCredResult(_target, vulnerable, note);
+
+    // Up to 2 x 200 Strings stayed resident for the rest of the session
+    // after one audit. Only run() uses them (tryLogin() - shared with the
+    // IoT cred scanner and password spray - doesn't), so drop them now;
+    // the next audit reloads them from LittleFS. swap() actually returns
+    // the vectors' capacity, clear() alone would keep it.
+    std::vector<String>().swap(_users);
+    std::vector<String>().swap(_passwords);
+    _wordlistsLoaded = false;
+
     _running = false;
     notify(ScanEventType::ScanFinished, 100);
 }

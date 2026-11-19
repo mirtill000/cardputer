@@ -2,6 +2,7 @@
 
 #include "Screen.h"
 #include "../../core/Types.h"
+#include "../../scan/ScanManager.h"
 #include <IPAddress.h>
 #include <vector>
 #include <cstddef>
@@ -36,7 +37,7 @@ private:
     void drawTable(M5Canvas& gfx, int16_t top);
     bool isNewHost(const IPAddress& ip) const;
     bool isNeverSeenBefore(const IPAddress& ip) const;
-    bool matchesFilter(const HostInfo& h) const;
+    bool matchesFilter(const ScanManager::HostSummary& h) const;
 
     std::vector<size_t> _aliveIndices;
     Filter _filter = Filter::All;

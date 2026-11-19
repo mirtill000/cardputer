@@ -1,4 +1,5 @@
 #include "CaptivePortalDetector.h"
+#include "../core/ScanLog.h"
 #include "WifiManager.h"
 #include <WiFiClient.h>
 
@@ -118,14 +119,7 @@ void CaptivePortalDetector::run() {
     _running = false;
 }
 
-void CaptivePortalDetector::notify(const String& text) {
-    if (!_outQueue) return;
-    ScanNotification n;
-    n.source = ScanSource::CaptivePortal;
-    n.type = ScanEventType::LogLine;
-    n.setText(text.c_str());
-    xQueueSend(_outQueue, &n, 0);
-}
+void CaptivePortalDetector::notify(const String& text) { scanlog::post(_outQueue, ScanSource::CaptivePortal, text); }
 
 CaptivePortalDetector::Result CaptivePortalDetector::result() const {
     Result r;

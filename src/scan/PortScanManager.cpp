@@ -5,6 +5,7 @@
 #include "VulnSignatures.h"
 #include "WellKnownHighPorts.h"
 #include "../core/Config.h"
+#include "../core/RunClaim.h"
 #include "../storage/ScanHistory.h"
 #include "../storage/SdCard.h"
 #include <WiFiClient.h>
@@ -16,9 +17,12 @@ void PortScanManager::begin(QueueHandle_t outQueue) {
     _outQueue = outQueue;
 }
 
-void PortScanManager::startScan(const IPAddress& target, uint16_t portStart, uint16_t portEnd) {
-    if (_running) return;
-    if (portEnd < portStart) return;
+StartResult PortScanManager::startScan(const IPAddress& target, uint16_t portStart, uint16_t portEnd) {
+    if (portEnd < portStart) return StartResult::InvalidArgs;
+    // Atomic claim - started from the UI, AUTO ASSESS and WAR DRIVING
+    // tasks; see core/RunClaim.h for the check-then-set race this closes.
+    RunClaim claim(_running);
+    if (!claim.owned()) return StartResult::Busy;
 
     // See kMaxRangeSpan in PortScanManager.h: bound the span before
     // allocating _portList so a pathological range can't exhaust internal
@@ -51,7 +55,7 @@ void PortScanManager::startScan(const IPAddress& target, uint16_t portStart, uin
     _portsProbed = 0;
     _progressPct = 0;
     _scanGeneration++;
-    _running = true;
+    claim.commit();
     _hasResult = false;
 
     notify(ScanEventType::ScanStarted);
@@ -76,6 +80,7 @@ void PortScanManager::startScan(const IPAddress& target, uint16_t portStart, uin
             onWorkerFinished();
         }
     }
+    return StartResult::Started;
 }
 
 size_t PortScanManager::resultCount() const {

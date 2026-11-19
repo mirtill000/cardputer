@@ -28,10 +28,10 @@ void HostListScreen::onEnter() {
     rebuildAliveList();
 }
 
-bool HostListScreen::matchesFilter(const HostInfo& h) const {
+bool HostListScreen::matchesFilter(const ScanManager::HostSummary& h) const {
     switch (_filter) {
         case Filter::Risky: return h.risk != RiskLevel::Ok || h.credVulnerable;
-        case Filter::WithPorts: return !h.ports.empty();
+        case Filter::WithPorts: return h.portCount > 0;
         default: return true;
     }
 }
@@ -39,9 +39,11 @@ bool HostListScreen::matchesFilter(const HostInfo& h) const {
 void HostListScreen::rebuildAliveList() {
     _aliveIndices.clear();
     size_t n = g_scanManager.hostCount();
-    HostInfo h;
+    // Summary, not getHost(): this walks every row of the table (up to
+    // 512), and only needs the few fields matchesFilter() looks at.
+    ScanManager::HostSummary h;
     for (size_t i = 0; i < n; i++) {
-        if (g_scanManager.getHost(i, h) && h.alive && matchesFilter(h)) _aliveIndices.push_back(i);
+        if (g_scanManager.getHostSummary(i, h) && h.alive && matchesFilter(h)) _aliveIndices.push_back(i);
     }
     if (_selected >= _aliveIndices.size()) {
         _selected = _aliveIndices.empty() ? 0 : _aliveIndices.size() - 1;

@@ -1,4 +1,5 @@
 #include "WardrivingManager.h"
+#include "../core/ScanLog.h"
 #include "OuiDatabase.h"
 #include "PortScanManager.h"
 #include "ScanManager.h"
@@ -436,7 +437,15 @@ void WardrivingManager::handleOpenAllowlistedAp(const ApSighting& ap) {
         return;
     }
 
-    g_scanManager.startDiscoveryScan();
+    // Must be this excursion's own scan of the AP just joined - a scan
+    // already in flight (e.g. SENTINEL's) would leave a host table that
+    // isn't this network's, and get exported under this AP's name below.
+    StartResult started = g_scanManager.startDiscoveryScanWhenIdle(30000);
+    if (started != StartResult::Started) {
+        notify(String("scan of ") + ap.ssid + " not started: " + startResultLabel(started));
+        g_wifi.autoConnect();  // back to our own network, same as the failed-join path above
+        return;
+    }
     uint32_t scanStart = millis();
     while (g_scanManager.isRunning() && (millis() - scanStart) < 90000) {
         vTaskDelay(pdMS_TO_TICKS(500));
@@ -453,7 +462,9 @@ void WardrivingManager::handleOpenAllowlistedAp(const ApSighting& ap) {
         aliveCount++;
         if (portScanned >= kMaxPortScan) continue;
 
-        g_portScanManager.startScan(h.ip, g_config.portRangeStart, g_config.portRangeEnd);
+        if (g_portScanManager.startScan(h.ip, g_config.portRangeStart, g_config.portRangeEnd) != StartResult::Started) {
+            continue;  // busy with someone else's scan: don't wait on it and count it as this host's
+        }
         uint32_t portStart = millis();
         while (g_portScanManager.isRunning() && (millis() - portStart) < 30000) {
             vTaskDelay(pdMS_TO_TICKS(500));
@@ -499,14 +510,7 @@ void WardrivingManager::handleOpenAllowlistedAp(const ApSighting& ap) {
     g_wifi.autoConnect();  // no-op if nothing is saved; otherwise rejoins the MRU-front saved network
 }
 
-void WardrivingManager::notify(const String& text) {
-    if (!_outQueue) return;
-    ScanNotification n;
-    n.source = ScanSource::Wardriving;
-    n.type = ScanEventType::LogLine;
-    n.setText(text.c_str());
-    xQueueSend(_outQueue, &n, 0);
-}
+void WardrivingManager::notify(const String& text) { scanlog::post(_outQueue, ScanSource::Wardriving, text); }
 
 size_t WardrivingManager::sightingCount() const {
     if (!_mutex || xSemaphoreTake(_mutex, pdMS_TO_TICKS(100)) != pdTRUE) return 0;

@@ -15,7 +15,9 @@ namespace dnswire {
 // Builds a minimal standard DNS query: 12-byte header (arbitrary fixed
 // txn id, recursion-desired flag, qdcount=1) + one question for `name`
 // (dotted form, e.g. "10.1.168.192.in-addr.arpa") of the given qtype,
-// class IN.
+// class IN. Returns an EMPTY vector if `name` breaks the RFC 1035 limits
+// (a label over 63 bytes, or over 255 bytes encoded) - callers must not
+// send it.
 std::vector<uint8_t> buildQuery(const String& name, uint16_t qtype);
 
 // Skips a (possibly-compressed) name starting at buf[pos] during a

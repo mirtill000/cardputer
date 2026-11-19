@@ -19,6 +19,7 @@ bool ConfigBackup::backup(fs::FS& fs, const char* path) {
     cfg["portRangeEnd"] = g_config.portRangeEnd;
     cfg["autoExportOnScanFinish"] = g_config.autoExportOnScanFinish;
     cfg["uiSoundEnabled"] = g_config.uiSoundEnabled;
+    cfg["lowPowerMode"] = g_config.lowPowerMode;  // persisted in NVS, so it belongs in the backup too
 
     // Written oldest-to-most-recently-used, matching storage order -
     // restore() reinserts in the same order via saveCredentials(), so
@@ -59,27 +60,38 @@ bool ConfigBackup::restore(fs::FS& fs, const char* path) {
     g_config.portRangeEnd = cfg["portRangeEnd"] | g_config.portRangeEnd;
     g_config.autoExportOnScanFinish = cfg["autoExportOnScanFinish"] | g_config.autoExportOnScanFinish;
     g_config.uiSoundEnabled = cfg["uiSoundEnabled"] | g_config.uiSoundEnabled;
+    g_config.lowPowerMode = cfg["lowPowerMode"] | g_config.lowPowerMode;
+    // The file is user-editable (and may come from an older/other build):
+    // bring every value back into range before it reaches NVS.
+    g_config.clamp();
     g_config.save();
 
-    g_wifi.forgetSavedCredentials();  // clears all saved networks first - see header
-    JsonArray networks = doc["wifiNetworks"].as<JsonArray>();
-    size_t netCount = networks.size();
-    // Reversed: saveCredentials() always inserts at the front, so
-    // inserting oldest-first reconstructs the original MRU order.
-    for (size_t i = netCount; i-- > 0;) {
-        JsonObject n = networks[i];
-        String ssid = n["ssid"] | "";
-        String pass = n["pass"] | "";
-        if (ssid.length()) g_wifi.saveCredentials(ssid, pass);
+    // Only replace a section the file actually contains. Previously the
+    // saved networks (and the allowlist) were wiped unconditionally, so a
+    // partial or settings-only backup silently erased every saved WiFi.
+    if (doc["wifiNetworks"].is<JsonArray>()) {
+        g_wifi.forgetSavedCredentials();  // clears all saved networks first - see header
+        JsonArray networks = doc["wifiNetworks"].as<JsonArray>();
+        size_t netCount = networks.size();
+        // Reversed: saveCredentials() always inserts at the front, so
+        // inserting oldest-first reconstructs the original MRU order.
+        for (size_t i = netCount; i-- > 0;) {
+            JsonObject n = networks[i];
+            String ssid = n["ssid"] | "";
+            String pass = n["pass"] | "";
+            if (ssid.length()) g_wifi.saveCredentials(ssid, pass);
+        }
     }
 
-    while (g_wardrivingManager.allowlistCount() > 0) {
-        g_wardrivingManager.removeFromAllowlist(0);
-    }
-    JsonArray allowlist = doc["wardrivingAllowlist"].as<JsonArray>();
-    for (JsonVariant v : allowlist) {
-        String ssid = v.as<String>();
-        if (ssid.length()) g_wardrivingManager.addToAllowlist(ssid);
+    if (doc["wardrivingAllowlist"].is<JsonArray>()) {
+        while (g_wardrivingManager.allowlistCount() > 0) {
+            g_wardrivingManager.removeFromAllowlist(0);
+        }
+        JsonArray allowlist = doc["wardrivingAllowlist"].as<JsonArray>();
+        for (JsonVariant v : allowlist) {
+            String ssid = v.as<String>();
+            if (ssid.length()) g_wardrivingManager.addToAllowlist(ssid);
+        }
     }
 
     return true;

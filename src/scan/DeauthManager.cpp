@@ -1,4 +1,6 @@
 #include "DeauthManager.h"
+#include "../core/ScanLog.h"
+#include "../core/RunClaim.h"
 #include "../net/EapolWire.h"
 #include "../core/Config.h"
 #include "../storage/SdCard.h"
@@ -30,7 +32,8 @@ void DeauthManager::begin(QueueHandle_t outQueue) {
 }
 
 bool DeauthManager::start(const String& apBssid, uint8_t channel, const String& clientMac) {
-    if (_running) return false;
+    RunClaim claim(_running);
+    if (!claim.owned()) return false;
     // Defense in depth: DeauthScreen is only reachable through
     // OffensiveDisclaimerScreen, but never inject deauth frames unless
     // the per-boot offensive consent flag is actually set.
@@ -56,7 +59,7 @@ bool DeauthManager::start(const String& apBssid, uint8_t channel, const String& 
     _captureQueue = xQueueCreate(kCaptureQueueDepth, sizeof(CapturedFrame));
     if (!_captureQueue) return false;
 
-    _running = true;
+    claim.commit();
     notify("starting deauth burst against " + clientMac);
     if (xTaskCreatePinnedToCore(&DeauthManager::taskEntry, "deauth", 8192, this, 1, nullptr, 0) != pdPASS) {
         // Task never started (out of memory) - unwind the queue and the
@@ -177,11 +180,4 @@ void DeauthManager::onCapturedFrame(const uint8_t* p, uint16_t len) {
     xQueueSend(_captureQueue, &frame, 0);
 }
 
-void DeauthManager::notify(const String& text) {
-    if (!_outQueue) return;
-    ScanNotification n;
-    n.source = ScanSource::Deauth;
-    n.type = ScanEventType::LogLine;
-    n.setText(text.c_str());
-    xQueueSend(_outQueue, &n, 0);
-}
+void DeauthManager::notify(const String& text) { scanlog::post(_outQueue, ScanSource::Deauth, text); }

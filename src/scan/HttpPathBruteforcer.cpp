@@ -1,4 +1,6 @@
 #include "HttpPathBruteforcer.h"
+#include "../core/ScanLog.h"
+#include "../core/RunClaim.h"
 #include "../core/Config.h"
 #include <WiFiClient.h>
 
@@ -42,13 +44,10 @@ void HttpPathBruteforcer::begin(QueueHandle_t outQueue) {
 }
 
 void HttpPathBruteforcer::start(const IPAddress& target, uint16_t port) {
-    if (_running) {
+    RunClaim claim(_running);
+    if (!claim.owned()) {
         // Already probing - tell the user instead of silently doing nothing.
-        ScanNotification busy;
-        busy.source = ScanSource::HttpBrute;
-        busy.type = ScanEventType::LogLine;
-        busy.setText("path brute already running");
-        if (_outQueue) xQueueSend(_outQueue, &busy, 0);
+        scanlog::post(_outQueue, ScanSource::HttpBrute, "path brute already running");
         return;
     }
     _target = target;
@@ -59,15 +58,11 @@ void HttpPathBruteforcer::start(const IPAddress& target, uint16_t port) {
         xSemaphoreGive(_mutex);
     }
 
-    _running = true;
+    claim.commit();
     notify(ScanEventType::ScanStarted);
     if (xTaskCreatePinnedToCore(&HttpPathBruteforcer::taskEntry, "httpbrute", 4096, this, 1, nullptr, 0) != pdPASS) {
         _running = false;
-        ScanNotification fail;
-        fail.source = ScanSource::HttpBrute;
-        fail.type = ScanEventType::LogLine;
-        fail.setText("failed to start path brute task");
-        if (_outQueue) xQueueSend(_outQueue, &fail, 0);
+        scanlog::post(_outQueue, ScanSource::HttpBrute, "failed to start path brute task");
         notify(ScanEventType::ScanFinished, 100);
     }
 }

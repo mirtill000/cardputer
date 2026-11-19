@@ -1,4 +1,6 @@
 #include "VlanHopProbe.h"
+#include "../net/PromiscDispatcher.h"
+#include "../core/ScanLog.h"
 #include "../net/Ieee80211Frame.h"
 #include "../net/RawFrame.h"
 #include "../core/Config.h"
@@ -34,23 +36,24 @@ void VlanHopProbe::run() {
             continue;
         }
 
-        esp_wifi_set_promiscuous_rx_cb(&VlanHopProbe::promiscuousRxTrampoline);
-        esp_wifi_set_promiscuous(true);
+        int sub = promisc::subscribe(promisc::kData, &VlanHopProbe::onDispatchedFrame);
+        if (sub < 0) {
+            notify("radio unavailable - not listening");
+            _running = false;
+            continue;
+        }
         notify("VLAN tag-leak listen on");
 
         while (_running) vTaskDelay(pdMS_TO_TICKS(500));
 
-        esp_wifi_set_promiscuous(false);
+        promisc::unsubscribe(sub);
         notify("VLAN tag-leak listen off");
     }
 }
 
-void VlanHopProbe::promiscuousRxTrampoline(void* buf, wifi_promiscuous_pkt_type_t type) {
-    if (type != WIFI_PKT_DATA) return;
-    auto* pkt = static_cast<wifi_promiscuous_pkt_t*>(buf);
-    if (!pkt) return;
-    g_vlanHopProbe.onPromiscuousFrame(pkt->payload, pkt->rx_ctrl.sig_len);
-}
+// Runs on the shared promiscuous dispatcher task (net/PromiscDispatcher.h),
+// not the WiFi driver task - so the handler may lock/allocate.
+void VlanHopProbe::onDispatchedFrame(const promisc::Frame& f) { g_vlanHopProbe.onPromiscuousFrame(f.data, f.len); }
 
 void VlanHopProbe::onPromiscuousFrame(const uint8_t* p, uint16_t len) {
     ieee80211::ParsedDataFrame frame;
@@ -177,14 +180,7 @@ bool VlanHopProbe::sendDoubleTagProbe(uint16_t nativeVlanId, uint16_t targetVlan
     return ok;
 }
 
-void VlanHopProbe::notify(const String& text) {
-    if (!_outQueue) return;
-    ScanNotification n;
-    n.source = ScanSource::VlanHop;
-    n.type = ScanEventType::LogLine;
-    n.setText(text.c_str());
-    xQueueSend(_outQueue, &n, 0);
-}
+void VlanHopProbe::notify(const String& text) { scanlog::post(_outQueue, ScanSource::VlanHop, text); }
 
 size_t VlanHopProbe::sightingCount() const {
     if (!_mutex || xSemaphoreTake(_mutex, pdMS_TO_TICKS(100)) != pdTRUE) return 0;

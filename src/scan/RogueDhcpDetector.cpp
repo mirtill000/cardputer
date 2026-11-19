@@ -1,4 +1,6 @@
 #include "RogueDhcpDetector.h"
+#include "../net/PromiscDispatcher.h"
+#include "../core/ScanLog.h"
 #include "../net/Ieee80211Frame.h"
 #include "../net/WifiManager.h"
 #include <cstring>
@@ -42,23 +44,24 @@ void RogueDhcpDetector::run() {
             continue;
         }
 
-        esp_wifi_set_promiscuous_rx_cb(&RogueDhcpDetector::promiscuousRxTrampoline);
-        esp_wifi_set_promiscuous(true);
+        int sub = promisc::subscribe(promisc::kData, &RogueDhcpDetector::onDispatchedFrame);
+        if (sub < 0) {
+            notify("radio unavailable - not listening");
+            _running = false;
+            continue;
+        }
         notify("passive rogue-DHCP watch on");
 
         while (_running) vTaskDelay(pdMS_TO_TICKS(500));
 
-        esp_wifi_set_promiscuous(false);
+        promisc::unsubscribe(sub);
         notify("rogue-DHCP watch off");
     }
 }
 
-void RogueDhcpDetector::promiscuousRxTrampoline(void* buf, wifi_promiscuous_pkt_type_t type) {
-    if (type != WIFI_PKT_DATA) return;
-    auto* pkt = static_cast<wifi_promiscuous_pkt_t*>(buf);
-    if (!pkt) return;
-    g_rogueDhcpDetector.onPromiscuousFrame(pkt->payload, pkt->rx_ctrl.sig_len);
-}
+// Runs on the shared promiscuous dispatcher task (net/PromiscDispatcher.h),
+// not the WiFi driver task - so the handler may lock/allocate.
+void RogueDhcpDetector::onDispatchedFrame(const promisc::Frame& f) { g_rogueDhcpDetector.onPromiscuousFrame(f.data, f.len); }
 
 void RogueDhcpDetector::onPromiscuousFrame(const uint8_t* p, uint16_t len) {
     ieee80211::ParsedDataFrame frame;
@@ -170,14 +173,7 @@ void RogueDhcpDetector::addSighting(const IPAddress& serverIp, const IPAddress& 
     }
 }
 
-void RogueDhcpDetector::notify(const String& text) {
-    if (!_outQueue) return;
-    ScanNotification n;
-    n.source = ScanSource::RogueDhcp;
-    n.type = ScanEventType::LogLine;
-    n.setText(text.c_str());
-    xQueueSend(_outQueue, &n, 0);
-}
+void RogueDhcpDetector::notify(const String& text) { scanlog::post(_outQueue, ScanSource::RogueDhcp, text); }
 
 size_t RogueDhcpDetector::sightingCount() const {
     if (!_mutex || xSemaphoreTake(_mutex, pdMS_TO_TICKS(100)) != pdTRUE) return 0;

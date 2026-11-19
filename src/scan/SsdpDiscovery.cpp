@@ -1,4 +1,6 @@
 #include "SsdpDiscovery.h"
+#include "../core/ScanLog.h"
+#include "../core/RunClaim.h"
 #include <WiFiUdp.h>
 #include <cstring>
 
@@ -33,7 +35,8 @@ void SsdpDiscovery::begin(QueueHandle_t outQueue) {
 }
 
 void SsdpDiscovery::start() {
-    if (_running) {
+    RunClaim claim(_running);
+    if (!claim.owned()) {
         notify("SSDP discovery already running");
         return;
     }
@@ -41,7 +44,7 @@ void SsdpDiscovery::start() {
         _devices.clear();
         xSemaphoreGive(_mutex);
     }
-    _running = true;
+    claim.commit();
     notify(ScanEventType::ScanStarted);
     if (xTaskCreatePinnedToCore(&SsdpDiscovery::taskEntry, "ssdp", 4096, this, 1, nullptr, 0) != pdPASS) {
         _running = false;
@@ -133,14 +136,7 @@ void SsdpDiscovery::addDevice(const Device& d) {
     }
 }
 
-void SsdpDiscovery::notify(const String& text) {
-    if (!_outQueue) return;
-    ScanNotification n;
-    n.source = ScanSource::Ssdp;
-    n.type = ScanEventType::LogLine;
-    n.setText(text.c_str());
-    xQueueSend(_outQueue, &n, 0);
-}
+void SsdpDiscovery::notify(const String& text) { scanlog::post(_outQueue, ScanSource::Ssdp, text); }
 
 void SsdpDiscovery::notify(ScanEventType type, uint8_t pct) {
     if (!_outQueue) return;

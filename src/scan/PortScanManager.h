@@ -4,6 +4,7 @@
 #include <atomic>
 #include <vector>
 #include "../core/EventQueue.h"
+#include "../core/StartResult.h"
 #include "../core/Types.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -37,8 +38,11 @@ public:
 
     void begin(QueueHandle_t outQueue);
 
-    // No-op if a scan is already running or the range is invalid.
-    void startScan(const IPAddress& target, uint16_t portStart, uint16_t portEnd);
+    // Returns Started only if THIS call started the scan; Busy if a scan
+    // (possibly another task's) is in progress, InvalidArgs for an
+    // inverted range. Orchestrators that then wait on isRunning() and read
+    // the results must check it, or they'd consume someone else's scan.
+    StartResult startScan(const IPAddress& target, uint16_t portStart, uint16_t portEnd);
 
     bool isRunning() const { return _running; }
     uint8_t progressPct() const { return _progressPct; }

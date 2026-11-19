@@ -1,4 +1,6 @@
 #include "ServiceEnumerator.h"
+#include "../core/ScanLog.h"
+#include "../core/RunClaim.h"
 #include "../net/DnsWire.h"
 #include <WiFiUdp.h>
 
@@ -32,6 +34,7 @@ String instanceLabel(const String& fullName) {
 template <typename CB>
 void queryAndWalk(WiFiUDP& udp, const String& name, uint16_t qtype, uint32_t windowMs, CB cb) {
     std::vector<uint8_t> pkt = dnswire::buildQuery(name, qtype);
+    if (pkt.empty()) return;  // name off the wire too long to encode - skip it
     udp.beginPacket(kMdnsMcast, kMdnsPort);
     udp.write(pkt.data(), pkt.size());
     udp.endPacket();
@@ -82,7 +85,8 @@ void ServiceEnumerator::begin(QueueHandle_t outQueue) {
 }
 
 bool ServiceEnumerator::start() {
-    if (_running) {
+    RunClaim claim(_running);
+    if (!claim.owned()) {
         notify("service enum already running");
         return false;
     }
@@ -90,7 +94,7 @@ bool ServiceEnumerator::start() {
         _services.clear();
         xSemaphoreGive(_mutex);
     }
-    _running = true;
+    claim.commit();
     notify(ScanEventType::ScanStarted);
     if (xTaskCreatePinnedToCore(&ServiceEnumerator::taskEntry, "svcenum", 8192, this, 1, nullptr, 0) != pdPASS) {
         _running = false;
@@ -189,14 +193,7 @@ void ServiceEnumerator::addService(const Service& s) {
     }
 }
 
-void ServiceEnumerator::notify(const String& text) {
-    if (!_outQueue) return;
-    ScanNotification n;
-    n.source = ScanSource::ServiceEnum;
-    n.type = ScanEventType::LogLine;
-    n.setText(text.c_str());
-    xQueueSend(_outQueue, &n, 0);
-}
+void ServiceEnumerator::notify(const String& text) { scanlog::post(_outQueue, ScanSource::ServiceEnum, text); }
 
 void ServiceEnumerator::notify(ScanEventType type, uint8_t pct) {
     if (!_outQueue) return;

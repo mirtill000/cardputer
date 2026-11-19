@@ -21,4 +21,7 @@ public:
 
 private:
     char _lastKey = 0;
+    // Sampled once per visit in onEnter(): checking the coredump partition
+    // reads flash, too slow to repeat every frame.
+    bool _coreDumpPresent = false;
 };
