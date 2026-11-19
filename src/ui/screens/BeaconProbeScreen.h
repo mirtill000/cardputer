@@ -18,7 +18,7 @@ public:
 
     const char* title() const override { return "BCN"; }
     const char* helpText() const override {
-        return "BEACON/PROBE INTEL\nMENU>NET>D>Ent(BCN)\nTAB:switch view  ENTER:start/stop\nI:detail  Arrows:move  DEL:back\nW on AP row=WPS (red=unlocked,\namber=locked). Detect only.\nHops channels - your WiFi drops\nwhile on, reconnects on stop.";
+        return "BEACON/PROBE INTEL\nMENU>NET>D>Ent(BCN)\nTAB:view ENTER:start/stop I:detail\nW:active WPS probe (tx wildcard\nprobes to pull WPS info)\nW on AP row=WPS (red=PIN cand,\namber=locked/PBC). Detect only.\nHops channels; WiFi drops while on.";
     }
 
 private:

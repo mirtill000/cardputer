@@ -170,11 +170,14 @@ void deriveFromDetectors(std::vector<Finding>& out) {
     size_t apCount = g_beaconProbeSniffer.apCount();
     BeaconProbeSniffer::ApBeacon ap;
     for (size_t i = 0; i < apCount; i++) {
-        if (g_beaconProbeSniffer.getAp(i, ap) && ap.wpsEnabled && !ap.wpsLocked) {
+        if (g_beaconProbeSniffer.getAp(i, ap) && wps::candidacy(ap.wps) == wps::Candidacy::PinCandidate) {
+            // WPS on, unlocked, AND a PIN method advertised - the actual
+            // attackable case. A push-button-only or locked AP no longer
+            // raises this (it has no recoverable PIN / refuses attempts).
             mergeUnique(out, mk(ScanSource::BeaconProbe, FindingCategory::Weakness, RiskLevel::Warning,
                                 IPAddress((uint32_t)0),
-                                (ap.hidden ? String("<hidden>") : ap.ssid) + " WPS unlocked",
-                                "WPS enabled and unlocked - vulnerable to Reaver/pixie-dust PIN attacks"));
+                                (ap.hidden ? String("<hidden>") : ap.ssid) + " WPS-PIN candidate",
+                                "WPS enabled, unlocked and PIN-capable - vulnerable to Reaver/pixie-dust PIN attacks"));
         }
     }
 

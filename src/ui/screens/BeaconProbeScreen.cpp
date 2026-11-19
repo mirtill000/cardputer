@@ -3,6 +3,7 @@
 #include "../Theme.h"
 #include "../Chrome.h"
 #include "../../scan/BeaconProbeSniffer.h"
+#include <cstring>
 
 namespace {
 // Best-effort text summary of a WPS Config Methods bitmask (WSC spec) -
@@ -73,6 +74,14 @@ void BeaconProbeScreen::onKey(UiKey key, char ch) {
         case UiKey::Tab:
             _view = (_view == View::Aps) ? View::Clients : View::Aps;
             break;
+        case UiKey::Char:
+            if (ch == 'w' || ch == 'W') {
+                // Toggle active WPS probe: transmit wildcard probe requests
+                // while hopping, to pull probe responses (and WPS IEs) from
+                // quiet APs. Benign standard frames - see BeaconProbeSniffer.
+                g_beaconProbeSniffer.setActiveProbe(!g_beaconProbeSniffer.activeProbe());
+            }
+            break;
         case UiKey::Up:
             if (_view == View::Aps) {
                 if (_apSelected > 0) _apSelected--;
@@ -100,11 +109,16 @@ void BeaconProbeScreen::draw(M5Canvas& gfx) {
         if (_view == View::Aps) {
             BeaconProbeSniffer::ApBeacon a;
             if (g_beaconProbeSniffer.getAp(_apSelected, a)) {
+                String wpsText = a.wps.present
+                                     ? (String(a.wps.locked ? "enabled, locked" : "enabled, unlocked") + ", " +
+                                        wpsConfigMethodsText(a.wps.configMethods) +
+                                        (a.wps.version ? (String(", v") + String(a.wps.version >> 4) + "." +
+                                                          String(a.wps.version & 0x0F))
+                                                       : String("")) +
+                                        " [" + wps::candidacyLabel(wps::candidacy(a.wps)) + "]")
+                                     : String("not seen");
                 String text = "SSID: " + (a.hidden ? String("<hidden>") : a.ssid) + " / BSSID: " + a.bssid +
-                              " / vendor: " + (a.vendor.length() ? a.vendor : String("unknown")) + " / WPS: " +
-                              (a.wpsEnabled ? ("enabled, " + String(a.wpsLocked ? "locked" : "unlocked") + ", " +
-                                                wpsConfigMethodsText(a.wpsConfigMethods))
-                                            : String("not seen"));
+                              " / vendor: " + (a.vendor.length() ? a.vendor : String("unknown")) + " / WPS: " + wpsText;
                 chrome::drawDetailOverlay(gfx, "AP DETAIL", text);
             }
         } else {
@@ -161,10 +175,16 @@ void BeaconProbeScreen::draw(M5Canvas& gfx) {
     gfx.setTextColor(theme::MAGENTA, theme::BG);
     gfx.setCursor(6, gfx.height() - 20);
     gfx.print(_running ? "ENTER: stop" : "ENTER: start (hops channels)");
+    // Active WPS probe indicator (right side of the same line).
+    bool active = g_beaconProbeSniffer.activeProbe();
+    const char* atag = active ? "WPS-PROBE:ON" : "wps-probe:off";
+    gfx.setTextColor(active ? theme::RED : theme::GREY, theme::BG);
+    gfx.setCursor(gfx.width() - (int16_t)strlen(atag) * theme::GLYPH_W - 4, gfx.height() - 20);
+    gfx.print(atag);
 
     gfx.setTextColor(theme::GREY, theme::BG);
     gfx.setCursor(4, gfx.height() - 9);
-    gfx.print("TAB:view  I:detail  DEL:back");
+    gfx.print("TAB:view I:detail W:wps-probe DEL:back");
 }
 
 void BeaconProbeScreen::drawAps(M5Canvas& gfx, int16_t top) {
@@ -204,8 +224,11 @@ void BeaconProbeScreen::drawAps(M5Canvas& gfx, int16_t top) {
         // that's the more actionable state. Blank when WPS wasn't seen
         // in this AP's beacon (most APs today, and plenty that still
         // have it just don't advertise it in every single frame).
-        if (a.wpsEnabled) {
-            gfx.setTextColor(sel ? theme::CYAN : (a.wpsLocked ? theme::AMBER : theme::RED), rowBg);
+        if (a.wps.present) {
+            // Red 'W' = a live PIN candidate (unlocked + PIN method), amber
+            // = WPS present but not a candidate (locked, or push-button only).
+            bool pinCand = wps::candidacy(a.wps) == wps::Candidacy::PinCandidate;
+            gfx.setTextColor(sel ? theme::CYAN : (pinCand ? theme::RED : theme::AMBER), rowBg);
             gfx.setCursor(94, y);
             gfx.print("W");
         }

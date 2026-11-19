@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../net/PromiscDispatcher.h"
+#include "../net/WpsInfo.h"
 #include <Arduino.h>
 #include <atomic>
 #include <vector>
@@ -28,8 +29,18 @@
 // MAC-address randomization something OS vendors eventually shipped by
 // default (see macRandomized below).
 //
-// NEVER TRANSMITS ANYTHING — strictly receive-only, unlike DeauthManager/
-// PmkidManager/EvilTwinManager/ArpSpoofManager. Everything captured here
+// PASSIVE BY DEFAULT — receive-only, unlike DeauthManager/PmkidManager/
+// EvilTwinManager/ArpSpoofManager. There is ONE opt-in exception, off
+// unless setActiveProbe(true) is called (the WPS audit uses it): an
+// "active probe" mode that transmits standard WILDCARD probe-request
+// frames (empty SSID, broadcast) on each channel as it hops, to solicit
+// probe responses from APs that beacon their WPS IE rarely or not at all.
+// A wildcard probe request is the single most benign 802.11 frame there
+// is — every unassociated phone/laptop broadcasts them constantly, they
+// name no target, carry no payload, and act on no third-party device — so
+// this needs no offensive gate (it only makes this device do what an
+// ordinary client's background scanning already does). It never sends a
+// directed/deauth/any other frame. Everything captured here
 // (SSIDs, BSSIDs, client MACs, which SSIDs a client has probed for) is
 // information devices already broadcast in the clear, unencrypted, to
 // anyone with a receiver in range, by the ordinary operation of 802.11 —
@@ -82,12 +93,13 @@ public:
         String vendor;         // OUI lookup off the BSSID, best-effort
         bool hidden = false;   // true if the most recent frame from this BSSID had an empty SSID element
         bool hiddenRevealed = false;  // true once a non-empty SSID was seen for a BSSID first recorded as hidden
-        // WPS (Wi-Fi Protected Setup), detection only - see findWpsIe()/
-        // parseWpsAttributes() in the .cpp. This firmware never attempts
-        // a PIN (Reaver/pixie-dust-style) against anything it finds here.
-        bool wpsEnabled = false;
-        bool wpsLocked = false;         // AP Setup Locked attribute - only meaningful when wpsEnabled
-        uint16_t wpsConfigMethods = 0;  // raw Config Methods bitmask, 0 if absent/not found
+        // WPS (Wi-Fi Protected Setup) attributes + attackability verdict,
+        // parsed from the AP's WPS IE (beacon or probe response) - see
+        // net/WpsInfo.h. Detection/recon only: this firmware never runs a
+        // PIN (reaver/pixie-dust) attempt against anything it finds here;
+        // wps::candidacy(wps) just says whether it WOULD be a candidate
+        // for one offline.
+        wps::Info wps;
         uint32_t beaconCount = 0;
         uint32_t firstSeenMs = 0;
         uint32_t lastSeenMs = 0;
@@ -124,6 +136,13 @@ public:
 
     uint8_t currentChannel() const { return _currentChannel; }
 
+    // Active WPS probe: when enabled, the hop loop transmits wildcard
+    // probe requests to solicit probe responses (and their WPS IEs). Off
+    // by default - see the header comment on why this one opt-in transmit
+    // needs no gate. Safe to toggle while running.
+    void setActiveProbe(bool on) { _activeProbe = on; }
+    bool activeProbe() const { return _activeProbe; }
+
     size_t apCount() const;
     bool getAp(size_t index, ApBeacon& out) const;  // most-recently-seen first
 
@@ -146,8 +165,9 @@ private:
     void handleProbeRequest(const uint8_t clientMac[6], uint16_t bodyStart, const uint8_t* p, uint16_t len,
                              int8_t rssi);
     void updateAp(const uint8_t bssid[6], const String& ssid, bool hasSsid, uint8_t channel, wifi_auth_mode_t enc,
-                  int8_t rssi, bool wpsEnabled, bool wpsLocked, uint16_t wpsConfigMethods);
+                  int8_t rssi, const wps::Info& wpsInfo);
     void updateClient(const uint8_t mac[6], const String& probedSsid, bool hasSsid, int8_t rssi);
+    void sendWildcardProbe();  // active-probe mode only - see setActiveProbe
     void notify(const String& text);
 
     mutable SemaphoreHandle_t _mutex = nullptr;
@@ -156,6 +176,7 @@ private:
     QueueHandle_t _outQueue = nullptr;
 
     std::atomic<bool> _running{false};
+    std::atomic<bool> _activeProbe{false};
     std::atomic<uint8_t> _currentChannel{1};
 };
 

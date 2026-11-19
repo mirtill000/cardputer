@@ -5849,3 +5849,43 @@ Nota: viene emessa solo la variante PMKID (`WPA*01`). La variante del
 4-way handshake completo (`WPA*02`, che richiede il frame EAPOL con il MIC
 azzerato e il message-pair byte) non è generata on-device; per quei casi
 resta valido il `.pcap` + `hcxpcapngtool`.
+
+## Fase 70: WPS audit — parsing ricco, candidatura, probe attivo
+
+`BEACON/PROBE INTEL` ora fa un vero audit WPS invece della sola rilevazione
+"WPS sì/no".
+
+### Parsing WPS ricco + candidatura (`net/WpsInfo.h`)
+Il parser delle attribute WSC legge ora, oltre a *locked* e *config
+methods*, anche **Version**, **Device Password ID** e **Selected
+Registrar**, e calcola un verdetto di attaccabilità:
+- `WPS-PIN candidate` — WPS attivo, **non** locked, e un metodo **PIN**
+  pubblicizzato (Label/Display/Keypad): l'unico caso realmente attaccabile
+  offline (reaver/pixiewps).
+- `WPS locked` — WPS attivo ma AP Setup Locked (i tentativi PIN vengono
+  rifiutati).
+- `WPS PBC-only` — WPS attivo ma solo push-button: niente PIN da recuperare.
+
+L'helper è puro (niente dipendenze Arduino) e **unit-testato su host** con
+ASAN (TLV costruiti a mano, inclusi casi malformati/troncati). La `W` sulla
+riga AP è ora **rossa** solo per i candidati PIN, **ambra** per
+locked/PBC-only. Il finding "WPS unlocked" in THREATS diventa "WPS-PIN
+candidate" e scatta solo sul caso attaccabile, non più su qualsiasi WPS
+sbloccato.
+
+### Probe WPS attivo (opt-in, `W`)
+Di default `BEACON/PROBE INTEL` resta **passivo** (riceve soltanto). Il
+tasto **`W`** attiva una modalità che, mentre il modulo salta di canale,
+**trasmette probe-request wildcard** (SSID vuoto, broadcast) per sollecitare
+le probe-response — e quindi le loro IE WPS — dagli AP che annunciano il WPS
+di rado o mai. Una probe-request wildcard è il frame 802.11 più innocuo che
+esista (ogni telefono non associato ne manda in continuazione): non nomina
+alcun bersaglio, non ha payload, non agisce su dispositivi di terzi — quindi
+**non richiede il gate offensive** (fa solo ciò che la scansione di
+background di un normale client fa già). Stato visibile come
+`WPS-PROBE:ON`/`off` in fondo alla schermata.
+
+**Il firmware continua a non eseguire alcun attacco PIN/Pixie-Dust**: è
+recon che dice *quali* AP sarebbero candidati; l'attacco resta offline. La
+parte di trasmissione non è verificata su hardware reale (stesso caveat di
+ogni altro percorso di injection del firmware).
