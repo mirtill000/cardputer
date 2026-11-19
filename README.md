@@ -5821,3 +5821,31 @@ autorizzazione esplicita è illegale in quasi ogni giurisdizione, a
 prescindere dal fatto che la rete sia aperta. Usare questa modalità solo
 dove si è autorizzati per **tutte** le reti aperte nel raggio d'azione;
 altrimenti usare l'allowlist.
+
+## Fase 69: PMKID — export hashcat `22000` (hc22000) on-device
+
+Finora la cattura PMKID (`PmkidManager`) salvava solo un `.pcap`: per
+ottenere qualcosa di dato in pasto a hashcat bisognava passare da
+`hcxpcapngtool` su un PC. Ora, quando un PMKID viene effettivamente
+estratto, il firmware scrive **anche** un file **`.hc22000`** accanto al
+pcap, già nel formato `hashcat -m 22000` (variante `WPA*01`):
+
+```
+WPA*01*<pmkid>*<ap_mac>*<client_mac>*<essid_hex>***
+```
+
+- **Solo export, nessun crack on-device.** È una ri-codifica di byte che
+  il firmware salva comunque nel pcap; non deriva, indovina né verifica
+  alcuna passphrase. Il crack resta offline (`hashcat -m 22000`), come
+  già indicato nella schermata PMKID.
+- `net/EapolWire.h` guadagna un estrattore esplicito `extractPmkid()` (i
+  16 byte della PMKID KDE), separato dal classificatore `classify()` che
+  continua a non leggerli. PMKID tutta-zero (placeholder) scartata.
+- Formato verificato contro il vettore d'esempio di hashcat
+  (`hashcat-essid`).
+- La schermata PMKID mostra il percorso del `.hc22000` quando c'è.
+
+Nota: viene emessa solo la variante PMKID (`WPA*01`). La variante del
+4-way handshake completo (`WPA*02`, che richiede il frame EAPOL con il MIC
+azzerato e il message-pair byte) non è generata on-device; per quei casi
+resta valido il `.pcap` + `hcxpcapngtool`.

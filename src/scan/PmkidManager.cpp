@@ -6,6 +6,7 @@
 #include "../net/WifiManager.h"
 #include "../storage/SdCard.h"
 #include "../storage/PcapWriter.h"
+#include "../storage/Hc22000.h"
 #include <WiFi.h>
 #include <cstring>
 
@@ -27,6 +28,9 @@ bool PmkidManager::start(const String& ssid, const String& bssid, uint8_t channe
     _m1Count = 0;
     _m2Count = 0;
     _pmkidSeen = false;
+    _havePmkid = false;
+    _hc22000Written = false;
+    _hc22000Path = "";
     WiFi.macAddress(_selfMac);
 
     fs::FS& fs = sdcard::exportFs();
@@ -89,8 +93,23 @@ void PmkidManager::run() {
     vQueueDelete(_captureQueue);
     _captureQueue = nullptr;
 
+    // hashcat 22000 export, next to the pcap - only when a real PMKID was
+    // actually extracted. Re-encodes bytes already saved to the pcap; no
+    // crack is attempted here.
+    if (_havePmkid) {
+        _hc22000Path = _pcapPath;
+        _hc22000Path.replace(".pcap", ".hc22000");
+        File hf = fs.open(_hc22000Path, "w");
+        if (hf) {
+            hf.println(hc22000::pmkidLine(_pmkid, _apBssid, _selfMac, _ssid));
+            hf.close();
+            _hc22000Written = true;
+        }
+    }
+
     WiFi.disconnect(true);
     notify(pmkidLikelyCaptured() ? "PMKID likely captured!" : "capture done, no PMKID seen");
+    if (_hc22000Written) notify("hc22000 saved - hashcat -m 22000");
     notify("reconnecting to your own network");
     g_wifi.autoConnect();  // no-op if nothing is saved; otherwise rejoins the MRU-front saved network
 
@@ -128,7 +147,13 @@ void PmkidManager::onCapturedFrame(const uint8_t* p, uint16_t len) {
     eapol::Classification c = eapol::classify(p, len);
     if (c.kind == eapol::MessageKind::Message1) {
         _m1Count++;
-        if (c.hasPmkidKde) _pmkidSeen = true;
+        if (c.hasPmkidKde) {
+            _pmkidSeen = true;
+            // Grab the 16 PMKID bytes once, for the hc22000 export written
+            // in run(). The pcap already stores the whole frame regardless;
+            // this just saves re-parsing it. First usable one wins.
+            if (!_havePmkid && eapol::extractPmkid(p, len, _pmkid)) _havePmkid = true;
+        }
     } else if (c.kind == eapol::MessageKind::Message2) {
         _m2Count++;
     }

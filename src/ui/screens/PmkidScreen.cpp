@@ -134,9 +134,22 @@ void PmkidScreen::draw(M5Canvas& gfx) {
                 gfx.print(path);
             }
 
-            gfx.setTextColor(theme::GREY, theme::BG);
-            gfx.setCursor(6, 80);
-            gfx.print(likely ? "verify offline: hashcat -m 22000" : "try again, or a different AP");
+            // When a PMKID was actually extracted, a ready-to-crack
+            // hc22000 file sits next to the pcap - point at it directly.
+            String hc = g_pmkidManager.hc22000Path();
+            if (hc.length()) {
+                gfx.setTextColor(theme::GREEN, theme::BG);
+                gfx.setCursor(6, 80);
+                gfx.print("hc22000 saved (hashcat -m 22000):");
+                gfx.setTextColor(theme::GREY, theme::BG);
+                gfx.setCursor(6, 90);
+                if (hc.length() > 37) hc = hc.substring(0, 37);
+                gfx.print(hc);
+            } else {
+                gfx.setTextColor(theme::GREY, theme::BG);
+                gfx.setCursor(6, 80);
+                gfx.print(likely ? "verify offline: hashcat -m 22000" : "try again, or a different AP");
+            }
 
             gfx.setCursor(4, gfx.height() - 9);
             gfx.print("ENTER/DEL:back");

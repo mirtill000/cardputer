@@ -56,6 +56,11 @@ public:
     uint32_t message1Count() const { return _m1Count; }
     uint32_t message2Count() const { return _m2Count; }
 
+    // hashcat `22000` export of the captured PMKID, written next to the
+    // pcap when one was actually extracted. Empty until then. No crack is
+    // ever attempted on-device - see net/EapolWire.h / storage/Hc22000.h.
+    String hc22000Path() const { return _hc22000Written ? _hc22000Path : String(); }
+
 private:
     static constexpr uint32_t kCaptureWindowMs = 8000;  // bounded - the association attempt fails on its own well before this
     static constexpr uint8_t kCaptureQueueDepth = 16;
@@ -84,7 +89,15 @@ private:
     std::atomic<uint32_t> _m1Count{0};
     std::atomic<uint32_t> _m2Count{0};
     std::atomic<bool> _pmkidSeen{false};
+    // The 16 PMKID bytes once extracted (for the hc22000 export), plus the
+    // flag guarding them. Written on the capture task in onCapturedFrame,
+    // read on the same task in run() after the capture loop ends - no
+    // cross-task access, so no lock needed.
+    uint8_t _pmkid[16] = {0};
+    bool _havePmkid = false;
     String _pcapPath;
+    String _hc22000Path;
+    bool _hc22000Written = false;
 };
 
 extern PmkidManager g_pmkidManager;

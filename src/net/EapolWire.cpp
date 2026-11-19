@@ -98,6 +98,51 @@ eapol::Classification eapol::classify(const uint8_t* p, uint16_t len) {
     return c;
 }
 
+bool eapol::extractPmkid(const uint8_t* p, uint16_t len, uint8_t pmkidOut[16]) {
+    ieee80211::ParsedDataFrame frame;
+    if (!ieee80211::parseDataFrame(p, len, frame)) return false;
+    if (frame.protectedFrame) return false;
+
+    uint8_t oui[3];
+    uint16_t protocolId, payloadOffset;
+    if (!ieee80211::parseSnap(p, len, frame.payloadOffset, oui, protocolId, payloadOffset)) return false;
+    bool standardOui = (oui[0] == 0 && oui[1] == 0 && oui[2] == 0);
+    if (!standardOui || protocolId != kEtherTypeEapol) return false;
+
+    if ((uint32_t)payloadOffset + kKeyDataOffset > len) return false;
+    if (p[payloadOffset + 1] != kEapolTypeKey) return false;
+
+    uint16_t keyDataLen =
+        ((uint16_t)p[payloadOffset + kKeyDataLenOffset] << 8) | p[payloadOffset + kKeyDataLenOffset + 1];
+    if (keyDataLen == 0) return false;
+
+    uint32_t kdStart = (uint32_t)payloadOffset + kKeyDataOffset;
+    uint32_t kdEnd = kdStart + keyDataLen;
+    if (kdEnd > len) kdEnd = len;
+
+    // Same KDE walk as classify(), but here we copy the 16 PMKID bytes
+    // that follow the OUI(3)+type(1) prefix - so the KDE must carry at
+    // least 4+16 = 20 bytes of value.
+    uint32_t pos = kdStart;
+    while (pos + 2 <= kdEnd) {
+        uint8_t tag = p[pos];
+        uint8_t tlen = p[pos + 1];
+        if (pos + 2 + tlen > kdEnd) break;
+        if (tag == 0xDD && tlen >= 20) {
+            const uint8_t* v = p + pos + 2;
+            if (v[0] == 0x00 && v[1] == 0x0F && v[2] == 0xAC && v[3] == 0x04) {
+                uint8_t zero = 0;
+                for (int i = 0; i < 16; i++) zero |= v[4 + i];
+                if (zero == 0) return false;  // all-zero = placeholder, not a usable PMKID
+                memcpy(pmkidOut, v + 4, 16);
+                return true;
+            }
+        }
+        pos += 2 + tlen;
+    }
+    return false;
+}
+
 bool eapol::parseEapIdentity(const uint8_t* p, uint16_t len, String& identityOut, uint8_t supplicantMac[6]) {
     identityOut = "";
 

@@ -11,17 +11,19 @@
 // messages a frame structurally looks like, plus whether Message 1
 // carries a PMKID (RSN vendor KDE, OUI 00:0F:AC type 4) in its Key Data.
 //
-// DELIBERATE LIMIT, the whole point of this file: never reads the Key
-// Nonce, Key MIC, Key IV/RSC/ID, or the PMKID's own 16 bytes once found
-// — only confirms a PMKID marker is PRESENT, never copies, stores, logs
-// or displays it. This firmware still never attempts to derive, guess,
-// or verify a passphrase from anything captured — see PmkidManager.h/
-// DeauthManager.h. What changes with this file: PmkidManager/
-// DeauthManager can now tell you "this capture structurally looks like
-// it has a usable PMKID/handshake" on-device, instead of only "N frames
-// were captured, go find out on a PC" — still nothing beyond what
-// Wireshark's own EAPOL dissector already shows for free from the same
-// bytes.
+// classify() DELIBERATE LIMIT: it never reads the Key Nonce, Key MIC,
+// Key IV/RSC/ID, or the PMKID's own 16 bytes — only confirms a PMKID
+// marker is PRESENT. The one place those PMKID bytes ARE read is the
+// separate, explicit extractPmkid() below, used solely to write the
+// standard hashcat `22000` export of a capture the firmware ALREADY
+// saves in full to a .pcap (the PMKID is already on the SD card either
+// way — the export just re-encodes it into the format hashcat ingests).
+// This firmware still never attempts to derive, guess, or verify a
+// passphrase from anything captured — no cracking happens on-device,
+// same as PmkidManager.h/DeauthManager.h. What classify() adds: telling
+// you "this capture structurally looks like it has a usable PMKID/
+// handshake" on-device instead of only "N frames captured, find out on a
+// PC" — nothing beyond what Wireshark's EAPOL dissector shows for free.
 //
 // Message-number heuristic (standard, used by Wireshark/aircrack-ng/
 // hcxdumptool alike — see IEEE 802.11-2020 §12.7.2 Key Information
@@ -61,6 +63,16 @@ struct Classification {
 // layer, so a frame marked protected here is either mis-detected or
 // simply unreadable either way.
 Classification classify(const uint8_t* p, uint16_t len);
+
+// Copies the 16-byte PMKID out of a Message-1 frame's RSN PMKID KDE, for
+// building a hashcat `22000` (WPA*01) line from a capture already written
+// to pcap. Returns true and fills pmkidOut[16] only when a well-formed
+// PMKID KDE (OUI 00:0F:AC, type 4) with its full 16 bytes is present and
+// not all-zero; false otherwise (no KDE, truncated, or an all-zero PMKID,
+// which is a padding placeholder, not a real one). Same bounds-checked,
+// fail-closed style as classify(). Does NOT read nonce/MIC and still
+// cracks nothing — see the header-top note.
+bool extractPmkid(const uint8_t* p, uint16_t len, uint8_t pmkidOut[16]);
 
 // EAP-Response/Identity extraction — a DIFFERENT EAPOL type from the
 // EAPOL-Key handshake classify() above (EAPOL Type 0 = EAP-Packet, not
